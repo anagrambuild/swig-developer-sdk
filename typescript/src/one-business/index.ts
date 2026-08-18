@@ -30,9 +30,7 @@ export interface OneBusinessGrantAccessResult {
 }
 
 export type OneBusinessGrantAccessCallbackInput =
-  | string
-  | URL
-  | Pick<Location, 'href'>;
+  string | URL | Pick<Location, 'href'>;
 
 export class OneBusinessGrantAccessCallbackError extends Error {
   readonly code: string;

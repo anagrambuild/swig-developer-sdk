@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - run: bun run build
+
+  python:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          python-version: '3.10'
+          working-directory: python
+          enable-cache: true
+      - run: uv sync --frozen --all-groups
+      - run: uv run --frozen ruff format --check src tests scripts
+      - run: uv run --frozen ruff check src tests scripts
+      - run: uv run --frozen mypy src scripts
+      - run: uv run --frozen pytest
+      - run: uv build

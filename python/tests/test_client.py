@@ -222,6 +222,34 @@ async def test_http_client_retries_transport_exceptions() -> None:
     assert attempts == 2
 
 
+async def test_http_client_does_not_retry_post_by_default() -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(503, text="temporary")
+
+    swig = SwigClient(
+        api_key="secret",
+        base_url="https://example.test",
+        network="devnet",
+        retry_options=RetryOptions(max_retries=1, retry_delay=0),
+        transport=httpx.MockTransport(handler),
+    )
+    wallet = swig.wallets.use(
+        "swig-address",
+        requester_authority={"ed25519": {"publicKey": "requester"}},
+    )
+    with pytest.raises(SwigDeveloperSdkError):
+        await wallet.transfer.sol(
+            fee_payer="payer",
+            destination="destination",
+            amount=123,
+        )
+    assert attempts == 1
+
+
 async def test_required_response_fields_are_rejected() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"data": {"signatureRequests": []}})

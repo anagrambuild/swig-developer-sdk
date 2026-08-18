@@ -1,4 +1,4 @@
-export const DEFAULT_BACKEND_URL = 'https://backend.prod.infra.onswig.com';
+export const DEFAULT_BACKEND_URL = 'https://api.onswig.com';
 
 export const DEFAULT_RETRY_OPTIONS = {
   maxRetries: 3,

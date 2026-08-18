@@ -4,32 +4,23 @@ import type { WalletAddressInfo } from './wallet.js';
 
 export type TransactionEncoding = 'base64';
 export type ProtoTransactionEncoding =
-  | 'TRANSACTION_ENCODING_UNSPECIFIED'
-  | 'TRANSACTION_ENCODING_BASE64';
+  'TRANSACTION_ENCODING_UNSPECIFIED' | 'TRANSACTION_ENCODING_BASE64';
 export type TransactionEncodingWire =
-  | TransactionEncoding
-  | ProtoTransactionEncoding
-  | number;
+  TransactionEncoding | ProtoTransactionEncoding | number;
 
 export type ProtoNetwork =
-  | 'NETWORK_UNSPECIFIED'
-  | 'NETWORK_DEVNET'
-  | 'NETWORK_MAINNET';
+  'NETWORK_UNSPECIFIED' | 'NETWORK_DEVNET' | 'NETWORK_MAINNET';
 export type NetworkWire = Network | ProtoNetwork | number;
 
 export type PreparedTransactionKind =
-  | 'create-swig-wallet'
-  | 'add-authority'
-  | 'configure-recovery';
+  'create-swig-wallet' | 'add-authority' | 'configure-recovery';
 export type ProtoPreparedTransactionKind =
   | 'PREPARED_TRANSACTION_KIND_UNSPECIFIED'
   | 'PREPARED_TRANSACTION_KIND_CREATE_SWIG_WALLET'
   | 'PREPARED_TRANSACTION_KIND_ADD_AUTHORITY'
   | 'PREPARED_TRANSACTION_KIND_CONFIGURE_RECOVERY';
 export type PreparedTransactionKindWire =
-  | PreparedTransactionKind
-  | ProtoPreparedTransactionKind
-  | number;
+  PreparedTransactionKind | ProtoPreparedTransactionKind | number;
 
 export interface PreparedTransaction {
   transaction: string;
@@ -137,11 +128,38 @@ export interface SponsorSignedTransactionArgs {
 }
 
 export interface SubmittedTransaction {
+  requestId: string;
   signature: string;
-  status?: 'submitted' | 'confirmed';
+  spentByPaymaster: string;
 }
 
 export interface SubmittedTransactionWire {
+  request_id?: string;
+  requestId?: string;
   signature?: string;
-  status?: 'submitted' | 'confirmed';
+  spent_by_paymaster?: number | string;
+  spentByPaymaster?: number | string;
+}
+
+export interface SponsorSignedTransactionBundleArgs {
+  transactions: string[];
+  network?: Network;
+  idempotencyKey?: string;
+}
+
+export interface SubmittedTransactionBundle {
+  requestId: string;
+  bundleId: string;
+  signatures: string[];
+  estimatedSpentByPaymaster: string;
+}
+
+export interface SubmittedTransactionBundleWire {
+  request_id?: string;
+  requestId?: string;
+  bundle_id?: string;
+  bundleId?: string;
+  signatures?: string[];
+  estimated_spent_by_paymaster?: number | string;
+  estimatedSpentByPaymaster?: number | string;
 }

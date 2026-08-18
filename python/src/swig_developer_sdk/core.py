@@ -75,11 +75,17 @@ class HttpClient:
     async def get(self, path: str) -> object:
         return await self._request(path, method="GET")
 
-    async def post(self, path: str, body: Mapping[str, object]) -> object:
+    async def post(
+        self,
+        path: str,
+        body: Mapping[str, object],
+        *,
+        retry: bool = False,
+    ) -> object:
         compacted = _compact(body)
         if not isinstance(compacted, Mapping):
             raise TypeError("Request body must be an object")
-        return await self._request(path, method="POST", body=compacted)
+        return await self._request(path, method="POST", body=compacted, retry=retry)
 
     async def _request(
         self,
@@ -87,9 +93,11 @@ class HttpClient:
         *,
         method: str,
         body: Mapping[str, object] | None = None,
+        retry: bool = True,
     ) -> object:
         last_error: SwigDeveloperSdkError | None = None
-        for attempt in range(self._retry.max_retries + 1):
+        max_retries = self._retry.max_retries if retry else 0
+        for attempt in range(max_retries + 1):
             try:
                 async with httpx.AsyncClient(transport=self._transport) as client:
                     response = await client.request(
@@ -117,7 +125,7 @@ class HttpClient:
             except Exception as error:
                 last_error = SwigDeveloperSdkError(str(error), "NETWORK_ERROR", 0)
 
-            if attempt < self._retry.max_retries:
+            if attempt < max_retries:
                 await asyncio.sleep(
                     self._retry.retry_delay * self._retry.backoff_multiplier**attempt
                 )
@@ -125,7 +133,7 @@ class HttpClient:
         if last_error is not None:
             raise last_error
         raise SwigDeveloperSdkError(
-            f"Request failed after {self._retry.max_retries} retries",
+            f"Request failed after {max_retries} retries",
             "RETRY_EXHAUSTED",
             0,
         )

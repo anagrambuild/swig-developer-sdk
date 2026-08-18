@@ -1,0 +1,61 @@
+name: Publish TypeScript SDK
+
+on:
+  push:
+    tags: ['typescript-v*']
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-typescript-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: Verify release tag
+        shell: bash
+        run: |
+          package_version="$(node -p "require('./typescript/package.json').version")"
+          expected_tag="typescript-v${package_version}"
+          if [[ "${GITHUB_REF_NAME}" != "${expected_tag}" ]]; then
+            echo "Expected tag ${expected_tag}, got ${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+          git fetch origin main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "Release tag must point to a commit on main" >&2
+            exit 1
+          fi
+      - run: bun run check
+      - run: bun run build
+      - run: npm publish --workspace typescript --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "${GITHUB_REF_NAME}"
+          --repo "${GITHUB_REPOSITORY}"
+          --title "${GITHUB_REF_NAME}"
+          --generate-notes

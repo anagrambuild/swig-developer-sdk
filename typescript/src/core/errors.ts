@@ -10,24 +10,25 @@ export class SwigDeveloperSdkError extends Error {
   }
 
   static fromResponse(response: Response, body?: unknown) {
-    const errorBody = body as Record<string, unknown> | undefined;
-    const nestedError = errorBody?.error as
-      | { code?: string; message?: string; details?: unknown }
-      | undefined;
+    const errorBody = isRecord(body) ? body : undefined;
+    const nestedError = isRecord(errorBody?.error)
+      ? errorBody.error
+      : undefined;
 
-    if (nestedError && typeof nestedError === 'object') {
+    if (nestedError) {
       return new SwigDeveloperSdkError(
-        nestedError.message ?? `Request failed with status ${response.status}`,
-        nestedError.code ?? `HTTP_${response.status}`,
+        optionalString(nestedError.message) ??
+          `Request failed with status ${response.status}`,
+        optionalString(nestedError.code) ?? `HTTP_${response.status}`,
         response.status,
         nestedError.details ?? errorBody,
       );
     }
 
     return new SwigDeveloperSdkError(
-      (errorBody?.message as string | undefined) ??
+      optionalString(errorBody?.message) ??
         `Request failed with status ${response.status}`,
-      (errorBody?.code as string | undefined) ?? `HTTP_${response.status}`,
+      optionalString(errorBody?.code) ?? `HTTP_${response.status}`,
       response.status,
       errorBody?.details ?? body,
     );
@@ -48,4 +49,12 @@ export class SwigDeveloperSdkError extends Error {
       0,
     );
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
 }

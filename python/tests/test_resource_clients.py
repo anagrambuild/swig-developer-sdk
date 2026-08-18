@@ -5,14 +5,12 @@ import json
 
 import base58
 import httpx
-import pytest
 
 from swig_developer_sdk import (
     QuoteRampArgs,
-    RampWalletContext,
     SponsorSignedTransactionArgs,
+    SponsorSignedTransactionBundleArgs,
     SwigClient,
-    ramp_customer,
 )
 
 
@@ -23,7 +21,13 @@ async def test_sponsor_converts_base64_transaction_to_base58() -> None:
         requests.append(request)
         return httpx.Response(
             200,
-            json={"data": {"signature": "chain-signature", "status": "submitted"}},
+            json={
+                "data": {
+                    "request_id": "request-123",
+                    "signature": "chain-signature",
+                    "spent_by_paymaster": "5000",
+                }
+            },
         )
 
     swig = SwigClient(
@@ -40,6 +44,8 @@ async def test_sponsor_converts_base64_transaction_to_base58() -> None:
         )
     )
     assert submitted.signature == "chain-signature"
+    assert submitted.request_id == "request-123"
+    assert submitted.spent_by_paymaster == "5000"
     assert json.loads(requests[0].content) == {
         "base58_encoded_transaction": base58.b58encode(transaction).decode("ascii"),
         "network": "devnet",
@@ -47,152 +53,7 @@ async def test_sponsor_converts_base64_transaction_to_base58() -> None:
     }
 
 
-async def test_ramp_options_subdivisions_and_legacy_fallback() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.params.get("countryCode") == "US":
-            return httpx.Response(
-                200,
-                json={
-                    "data": {
-                        "country_codes": ["GB", "US"],
-                        "countries": [
-                            {
-                                "country_code": "GB",
-                                "country_name": "United Kingdom",
-                                "subdivisions": [],
-                            },
-                            {
-                                "country_code": "US",
-                                "country_name": "United States",
-                                "subdivisions": [
-                                    {
-                                        "subdivision_code": "US-CA",
-                                        "subdivision_name": "California",
-                                    },
-                                    {
-                                        "subdivisionCode": "US-NY",
-                                        "subdivisionName": "New York",
-                                    },
-                                ],
-                            },
-                        ],
-                        "fiat_currency_codes": ["USD"],
-                        "payment_method_types": [
-                            "RAMP_PAYMENT_METHOD_TYPE_CREDIT_DEBIT_CARD",
-                        ],
-                        "crypto_currency_codes": ["USDC_SOLANA"],
-                    }
-                },
-            )
-        return httpx.Response(
-            200,
-            json={
-                "data": {
-                    "country_codes": ["BR"],
-                    "countries": [],
-                    "fiat_currency_codes": ["BRL"],
-                    "payment_method_types": ["RAMP_PAYMENT_METHOD_TYPE_PIX"],
-                    "crypto_currency_codes": ["USDC_SOLANA"],
-                }
-            },
-        )
-
-    swig = SwigClient(
-        api_key="secret",
-        base_url="https://example.test",
-        network="devnet",
-        transport=httpx.MockTransport(handler),
-    )
-
-    options = await swig.ramp.get_options(country_code="US", fiat_currency_code="USD")
-    assert options.country_codes == ("GB", "US")
-    assert options.countries[0].country_code == "GB"
-    assert options.countries[0].country_name == "United Kingdom"
-    assert options.countries[0].subdivisions == ()
-    assert options.countries[1].country_code == "US"
-    assert options.countries[1].subdivisions[0].subdivision_code == "US-CA"
-    assert options.countries[1].subdivisions[0].subdivision_name == "California"
-    assert options.countries[1].subdivisions[1].subdivision_code == "US-NY"
-    assert options.countries[1].subdivisions[1].subdivision_name == "New York"
-    assert options.payment_method_types == ("credit-debit-card",)
-
-    legacy_options = await swig.ramp.get_options(country_code="BR")
-    assert legacy_options.country_codes == ("BR",)
-    assert legacy_options.countries[0].country_code == "BR"
-    assert legacy_options.countries[0].country_name == "BR"
-    assert legacy_options.countries[0].subdivisions == ()
-
-
-async def test_ramp_options_reject_malformed_country_options() -> None:
-    def client_with_countries(countries: object) -> SwigClient:
-        def handler(_request: httpx.Request) -> httpx.Response:
-            return httpx.Response(
-                200,
-                json={
-                    "data": {
-                        "country_codes": ["US"],
-                        "countries": countries,
-                        "fiat_currency_codes": ["USD"],
-                        "payment_method_types": [
-                            "RAMP_PAYMENT_METHOD_TYPE_CREDIT_DEBIT_CARD",
-                        ],
-                        "crypto_currency_codes": ["USDC_SOLANA"],
-                    }
-                },
-            )
-
-        return SwigClient(
-            api_key="secret",
-            base_url="https://example.test",
-            network="devnet",
-            transport=httpx.MockTransport(handler),
-        )
-
-    cases: list[tuple[object, str]] = [
-        (
-            [{"country_name": "United States", "subdivisions": []}],
-            "countryCode",
-        ),
-        (
-            [{"country_code": "US", "subdivisions": []}],
-            "countryName",
-        ),
-        (
-            [{"country_code": "US", "country_name": "United States"}],
-            "subdivisions",
-        ),
-        (
-            [
-                {
-                    "country_code": "US",
-                    "country_name": "United States",
-                    "subdivisions": [{"subdivision_name": "California"}],
-                }
-            ],
-            "subdivisionCode",
-        ),
-        (
-            [
-                {
-                    "country_code": "US",
-                    "country_name": "United States",
-                    "subdivisions": [{"subdivision_code": "US-CA"}],
-                }
-            ],
-            "subdivisionName",
-        ),
-        (
-            None,
-            "countries",
-        ),
-    ]
-
-    for countries, error in cases:
-        with pytest.raises(ValueError, match=error):
-            await client_with_countries(countries).ramp.get_options()
-
-
-async def test_ramp_quote_matches_enum_and_normalization_contract() -> None:
+async def test_sponsor_bundle_converts_transactions_to_base58() -> None:
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -201,39 +62,80 @@ async def test_ramp_quote_matches_enum_and_normalization_contract() -> None:
             200,
             json={
                 "data": {
+                    "request_id": "request-bundle",
+                    "bundle_id": "bundle-123",
+                    "signatures": ["signature-1"],
+                    "estimated_spent_by_paymaster": "9000",
+                }
+            },
+        )
+
+    swig = SwigClient(
+        api_key="secret",
+        base_url="https://example.test",
+        network="mainnet",
+        transport=httpx.MockTransport(handler),
+    )
+    transaction = b"\x00\x01\x02\xff"
+    submitted = await swig.transactions.sponsor_bundle(
+        SponsorSignedTransactionBundleArgs(
+            transactions=(base64.b64encode(transaction).decode("ascii"),),
+            idempotency_key="bundle-request-123",
+        )
+    )
+    assert submitted.bundle_id == "bundle-123"
+    assert submitted.estimated_spent_by_paymaster == "9000"
+    assert json.loads(requests[0].content) == {
+        "base58_encoded_transactions": [base58.b58encode(transaction).decode("ascii")],
+        "network": "mainnet",
+        "idempotencyKey": "bundle-request-123",
+    }
+
+
+async def test_onramp_contract_uses_current_routes_and_fields() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path.endswith("/options"):
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "countries": [
+                            {
+                                "country_code": "US",
+                                "country_name": "United States",
+                                "subdivisions": [
+                                    {
+                                        "subdivision_code": "US-CA",
+                                        "subdivision_name": "California",
+                                    }
+                                ],
+                            }
+                        ],
+                        "fiat_currency_codes": ["USD"],
+                        "payment_method_types": ["CARD"],
+                        "crypto_currency_codes": ["USDC_SOLANA"],
+                    }
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "data": {
                     "quotes": [
                         {
-                            "quote_id": "quote",
-                            "direction": "RAMP_DIRECTION_ONRAMP",
-                            "service_provider": "RAMP_SERVICE_PROVIDER_OTHER",
-                            "payment_method_type": "RAMP_PAYMENT_METHOD_TYPE_ACH",
+                            "quote_id": "quote-123",
+                            "service_provider": "TRANSAK",
+                            "payment_method_type": "CARD",
                             "source_amount": "100",
                             "source_currency_code": "USD",
                             "destination_amount": "99",
-                            "destination_currency_code": "USDC",
-                            "exchange_rate": "1",
+                            "destination_currency_code": "USDC_SOLANA",
+                            "exchange_rate": "0.99",
                             "total_fee": "1",
-                            "network_fee": "0.1",
-                            "transaction_fee": "0.8",
-                            "partner_fee": "0.1",
-                            "service_provider_code": "TRANSAK",
-                        },
-                        {
-                            "quoteId": "quote-camel",
-                            "direction": "RAMP_DIRECTION_ONRAMP",
-                            "serviceProvider": "RAMP_SERVICE_PROVIDER_OTHER",
-                            "paymentMethodType": "RAMP_PAYMENT_METHOD_TYPE_PIX",
-                            "sourceAmount": "200",
-                            "sourceCurrencyCode": "BRL",
-                            "destinationAmount": "30",
-                            "destinationCurrencyCode": "USDC",
-                            "exchangeRate": "0.15",
-                            "totalFee": "2",
-                            "networkFee": "0.1",
-                            "transactionFee": "1.8",
-                            "partnerFee": "0.1",
-                            "serviceProviderCode": "TRANSFI",
-                        },
+                        }
                     ]
                 }
             },
@@ -245,57 +147,108 @@ async def test_ramp_quote_matches_enum_and_normalization_contract() -> None:
         network="devnet",
         transport=httpx.MockTransport(handler),
     )
-    result = await swig.ramp.quote(
+    options = await swig.ramp.onramp.get_options(
+        organization_meld_configuration_id="config-123",
+        environment="sandbox",
+        country_code="US",
+    )
+    quote = await swig.ramp.onramp.quote(
         QuoteRampArgs(
-            customer=ramp_customer.partner_customer(
-                partner_application_id="partner",
-                external_customer_id="customer",
-            ),
-            wallet=RampWalletContext("wallet-id", "wallet-address", "devnet"),
-            direction="onramp",
+            organization_meld_configuration_id="config-123",
+            environment="sandbox",
+            external_customer_id="customer-123",
+            swig_config_address="swig-123",
             source_amount="100",
             source_currency_code="USD",
-            destination_currency_code="USDC",
+            destination_currency_code="USDC_SOLANA",
             country_code="US",
-            payment_method_type="ach",
-            service_providers=("other",),
         )
     )
-    assert result.quotes[0].payment_method_type == "ach"
-    assert result.quotes[0].service_provider_code == "TRANSAK"
-    assert result.quotes[1].payment_method_type == "pix"
-    assert result.quotes[1].service_provider_code == "TRANSFI"
-    body = json.loads(requests[0].content)
-    assert body["direction"] == "RAMP_DIRECTION_ONRAMP"
-    assert body["customer"]["customerType"] == "RAMP_CUSTOMER_TYPE_INDIVIDUAL"
-    assert body["wallet"]["network"] == "NETWORK_DEVNET"
-    assert body["serviceProviders"] == ["RAMP_SERVICE_PROVIDER_OTHER"]
+
+    assert options.countries[0].subdivisions[0].subdivision_code == "US-CA"
+    assert options.crypto_currency_codes == ("USDC_SOLANA",)
+    assert quote.quotes[0].quote_id == "quote-123"
+    assert requests[0].url.path == "/wallet/api/ramp/onramp/options"
+    assert requests[0].url.params["organizationMeldConfigurationId"] == "config-123"
+    assert requests[0].url.params["environment"] == "MELD_ENVIRONMENT_SANDBOX"
+    assert requests[1].url.path == "/wallet/api/ramp/onramp/quote"
+    assert json.loads(requests[1].content)["network"] == "NETWORK_DEVNET"
 
 
-@pytest.mark.parametrize("provider_code", [None, "", 123, True])
-async def test_ramp_quote_requires_provider_code(provider_code: object) -> None:
-    def handler(_request: httpx.Request) -> httpx.Response:
-        quote = {
-            "quote_id": "quote",
-            "direction": "RAMP_DIRECTION_ONRAMP",
-            "service_provider": "RAMP_SERVICE_PROVIDER_OTHER",
-            "payment_method_type": "RAMP_PAYMENT_METHOD_TYPE_CREDIT_DEBIT_CARD",
-            "source_amount": "100",
-            "source_currency_code": "USD",
-            "destination_amount": "99",
-            "destination_currency_code": "USDC",
-            "exchange_rate": "1",
-            "total_fee": "1",
-            "network_fee": "0.1",
-            "transaction_fee": "0.8",
-            "partner_fee": "0.1",
-        }
-        if provider_code is not None:
-            quote["service_provider_code"] = provider_code
+async def test_ramp_rejects_an_invalid_environment_at_runtime() -> None:
+    swig = SwigClient(
+        api_key="secret",
+        base_url="https://example.test",
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={})),
+    )
 
+    try:
+        await swig.ramp.onramp.get_options(
+            organization_meld_configuration_id="config-123",
+            environment="staging",  # type: ignore[arg-type]
+        )
+    except ValueError as error:
+        assert str(error) == 'environment must be "sandbox" or "production"'
+    else:
+        raise AssertionError("invalid ramp environment was accepted")
+
+
+async def test_wallet_reads_preserve_asset_kind() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/token-balances"):
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "swig_config_address": "swig-123",
+                        "wallet_address": "wallet-123",
+                        "total_usd_value": 1,
+                        "balances": [
+                            {
+                                "mint_address": "mint-123",
+                                "token_program": 1,
+                                "token_symbol": "USDC",
+                                "token_name": "USD Coin",
+                                "decimals": 6,
+                                "amount_raw": "1000000",
+                                "ui_amount": 1,
+                                "usd_price": 1,
+                                "usd_value": 1,
+                                "asset_kind": "ASSET_KIND_TOKEN",
+                            }
+                        ],
+                    }
+                },
+            )
         return httpx.Response(
             200,
-            json={"data": {"quotes": [quote]}},
+            json={
+                "data": {
+                    "swig_config_address": "swig-123",
+                    "wallet_address": "wallet-123",
+                    "transactions": [
+                        {
+                            "transaction_signature": "signature-123",
+                            "slot": "42",
+                            "owner_address": "owner-123",
+                            "wallet_address": "wallet-123",
+                            "is_subaccount": False,
+                            "token_account_address": "wallet-123",
+                            "mint_address": "11111111111111111111111111111111",
+                            "token_program": 0,
+                            "direction": 1,
+                            "amount_raw": "1000000000",
+                            "decimals": 9,
+                            "ui_amount": 1,
+                            "usd_price": 100,
+                            "usd_value": 100,
+                            "token_symbol": "SOL",
+                            "token_name": "Solana",
+                            "asset_kind": 2,
+                        }
+                    ],
+                }
+            },
         )
 
     swig = SwigClient(
@@ -304,22 +257,73 @@ async def test_ramp_quote_requires_provider_code(provider_code: object) -> None:
         network="devnet",
         transport=httpx.MockTransport(handler),
     )
+    wallet = swig.wallets.use("swig-123")
 
-    with pytest.raises(ValueError, match="serviceProviderCode"):
-        await swig.ramp.quote(
-            QuoteRampArgs(
-                customer=ramp_customer.partner_customer(
-                    partner_application_id="partner",
-                    external_customer_id="customer",
-                ),
-                wallet=RampWalletContext("wallet-id", "wallet-address", "devnet"),
-                direction="onramp",
-                source_amount="100",
-                source_currency_code="USD",
-                destination_currency_code="USDC",
-                country_code="US",
+    balances = await wallet.list_token_balances()
+    transactions = await wallet.list_token_transactions()
+
+    assert balances.balances[0].asset_kind == "token"
+    assert transactions.transactions[0].asset_kind == "native-sol"
+
+
+async def test_offramp_prepare_and_submit_contract() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path.endswith("/prepare"):
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "authorization_id": "authorization-123",
+                        "prepared_transaction": {
+                            "transaction": "prepared",
+                            "signature_requests": [],
+                            "transaction_encoding": "TRANSACTION_ENCODING_BASE64",
+                            "network": "NETWORK_MAINNET",
+                        },
+                        "display": {
+                            "source_wallet_address": "source-wallet",
+                            "destination_wallet_address": "destination-wallet",
+                            "source_amount": "10",
+                            "source_currency_code": "USDC_SOLANA",
+                            "destination_amount": "9.75",
+                            "destination_currency_code": "USD",
+                            "service_provider": "TRANSAK",
+                        },
+                    }
+                },
             )
+        return httpx.Response(
+            200,
+            json={"data": {"solana_signature": "solana-signature"}},
         )
+
+    swig = SwigClient(
+        api_key="secret",
+        base_url="https://example.test",
+        network="mainnet",
+        transport=httpx.MockTransport(handler),
+    )
+    prepared = await swig.ramp.offramp.prepare_authorization(
+        session_id="session/123",
+        requester_authority={"ed25519": {"publicKey": "requester"}},
+        environment="production",
+        fee_payer="payer",
+    )
+    submitted = await swig.ramp.offramp.submit_authorization(
+        session_id="session/123",
+        authorization_id=prepared.authorization_id,
+        signed_transaction="signed-base64",
+        environment="production",
+    )
+
+    assert prepared.prepared_transaction.transaction == "prepared"
+    assert prepared.display.destination_wallet_address == "destination-wallet"
+    assert submitted.solana_signature == "solana-signature"
+    assert requests[0].url.raw_path.decode().endswith("/session/session%2F123/prepare")
+    assert json.loads(requests[1].content)["authorizationId"] == "authorization-123"
 
 
 async def test_paymaster_idp_balance_uses_typed_query() -> None:

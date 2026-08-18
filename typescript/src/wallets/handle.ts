@@ -2,6 +2,7 @@ import type {
   BuildTransactionArgs,
   CancelRecoveryArgs,
   ExecuteRecoveryArgs,
+  ListSwigRolesResult,
   ListSwigTokenBalancesResult,
   ListSwigTokenTransactionsArgs,
   ListSwigTokenTransactionsResult,
@@ -86,6 +87,9 @@ export class WalletHandle {
     args?: ListSwigTokenTransactionsArgs,
   ): Promise<ListSwigTokenTransactionsResult> =>
     this.wallets.listTokenTransactions(this, args);
+
+  listRoles = (args?: WalletReadArgs): Promise<ListSwigRolesResult> =>
+    this.wallets.listRoles(this, args);
 }
 
 function createWalletTransferClient(

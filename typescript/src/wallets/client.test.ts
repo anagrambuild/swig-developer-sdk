@@ -215,6 +215,7 @@ describe('WalletsClient', () => {
           feePayer: 'payer_123',
           guardianPubkey: 'guardian_123',
           newAuthority: 'new_authority_123',
+          newAuthorityKind: 'secp256r1',
         },
         'devnet',
       ),
@@ -224,6 +225,7 @@ describe('WalletsClient', () => {
       swigAddress: 'swig_config_123',
       guardianPubkey: 'guardian_123',
       newAuthority: 'new_authority_123',
+      newAuthorityKind: 'WALLET_AUTHORITY_KIND_SECP256R1',
     });
     expect(
       addRecoveryAuthorityRequest(
@@ -278,6 +280,7 @@ describe('WalletsClient', () => {
         {
           feePayer: 'payer_123',
           newAuthority: 'new_authority_123',
+          newAuthorityKind: 'secp256r1',
         },
         'devnet',
       ),
@@ -286,6 +289,7 @@ describe('WalletsClient', () => {
       feePayer: 'payer_123',
       swigAddress: 'swig_config_123',
       newAuthority: 'new_authority_123',
+      newAuthorityKind: 'WALLET_AUTHORITY_KIND_SECP256R1',
     });
   });
 
@@ -993,6 +997,7 @@ describe('WalletsClient', () => {
       feePayer: 'payer_123',
       guardianPubkey: 'guardian_123',
       newAuthority: 'new_authority_123',
+      newAuthorityKind: 'secp256r1',
     });
     const cancelled = await wallet.recovery.cancel({
       feePayer: 'payer_123',
@@ -1000,6 +1005,7 @@ describe('WalletsClient', () => {
     const executed = await wallet.recovery.execute({
       feePayer: 'payer_123',
       newAuthority: 'new_authority_123',
+      newAuthorityKind: 'secp256r1',
     });
 
     expect(calls).toHaveLength(3);
@@ -1012,6 +1018,7 @@ describe('WalletsClient', () => {
         swigAddress: 'swig_config_123',
         guardianPubkey: 'guardian_123',
         newAuthority: 'new_authority_123',
+        newAuthorityKind: 'WALLET_AUTHORITY_KIND_SECP256R1',
       },
     });
     expect(calls[1]).toMatchObject({
@@ -1032,6 +1039,7 @@ describe('WalletsClient', () => {
         feePayer: 'payer_123',
         swigAddress: 'swig_config_123',
         newAuthority: 'new_authority_123',
+        newAuthorityKind: 'WALLET_AUTHORITY_KIND_SECP256R1',
       },
     });
     expect(started).toMatchObject({

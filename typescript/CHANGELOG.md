@@ -1,5 +1,26 @@
 # @swig-wallet/developer-sdk
 
+## 0.8.0
+
+### Major Changes
+
+- Replace the generic ramp client with direction-specific `swig.ramp.onramp` and `swig.ramp.offramp` clients. The removed `/ramp/options`, `/ramp/quote`, `/ramp/sessions`, and ramp transaction-history routes are not part of the deployed API. Every ramp call now requires a `sandbox` or `production` environment; options, quotes, and session creation also require `organizationMeldConfigurationId`, while quotes additionally require `externalCustomerId` and `swigConfigAddress`.
+
+### Minor Changes
+
+- Move the package to its own repository at `anagrambuild/swig-developer-sdk`, published alongside the Python `swig-developer-sdk` package at the same version.
+- Default the API base URL to `https://api.onswig.com`.
+- Add offramp authorization: `prepareAuthorization` returns a prepared transfer plus display fields, and `submitAuthorization` returns the Solana signature.
+- Add `wallet.listRoles()` for reading on-chain roles, authorities, and per-role actions.
+- Add `swig.transactions.sponsorBundle(...)` for mainnet-only bundles of one to five signed transactions, returning `requestId`, `bundleId`, `signatures`, and `estimatedSpentByPaymaster`.
+- Expose wallet reads, paymaster balance, and the ramp routes through the Next.js, NestJS, and fetch proxy adapters and through `SwigBrowserClient`.
+- Remove wallet-preparation idempotency fields that the backend does not consume.
+- Preserve the backend `assetKind` discriminator on token balances and token transactions as `token`, `native-sol`, or `unspecified`.
+
+### Patch Changes
+
+- Document that `POST` requests do not retry unless an idempotency key makes the retry safe.
+
 ## 0.7.0
 
 ### Minor Changes
@@ -37,7 +58,6 @@
 ### Patch Changes
 
 - 21191af: Add API-key scoped Swig wallet balance, token activity, and paymaster balance read helpers.
-- de93161: Update the documented recovery setup flow to feed the create-time `recoverySetup` plan directly into `wallet.recovery.prepareSetup`, and avoid defaulting `targetRoleId` into that plan unless explicitly provided.
 - Updated dependencies [c172c01]
   - @swig-wallet/lib@2.1.0
 

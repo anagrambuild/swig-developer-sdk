@@ -11,7 +11,7 @@ JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
 JsonObject: TypeAlias = dict[str, JsonValue]
 WalletAuthority: TypeAlias = Mapping[str, Mapping[str, object]]
 
-DEFAULT_BACKEND_URL = "https://backend.prod.infra.onswig.com"
+DEFAULT_BACKEND_URL = "https://api.onswig.com"
 
 
 @dataclass(frozen=True, slots=True)
