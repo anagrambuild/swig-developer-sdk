@@ -55,6 +55,15 @@ export interface SwigUsdBalanceWire {
   usdValue?: number;
 }
 
+export type SwigAssetKind = 'unspecified' | 'token' | 'native-sol';
+
+export type SwigAssetKindWire =
+  | SwigAssetKind
+  | 'ASSET_KIND_UNSPECIFIED'
+  | 'ASSET_KIND_TOKEN'
+  | 'ASSET_KIND_NATIVE_SOL'
+  | number;
+
 export interface SwigTokenBalance {
   mintAddress: string;
   tokenProgram: number;
@@ -65,6 +74,7 @@ export interface SwigTokenBalance {
   uiAmount: number;
   usdPrice: number;
   usdValue: number;
+  assetKind?: SwigAssetKind;
 }
 
 export interface SwigTokenBalanceWire {
@@ -85,6 +95,8 @@ export interface SwigTokenBalanceWire {
   usdPrice?: number;
   usd_value?: number;
   usdValue?: number;
+  asset_kind?: SwigAssetKindWire;
+  assetKind?: SwigAssetKindWire;
 }
 
 export interface ListSwigTokenBalancesResult {
@@ -130,6 +142,7 @@ export interface SwigTokenTransaction {
   usdValue: number;
   tokenSymbol: string;
   tokenName: string;
+  assetKind?: SwigAssetKind;
 }
 
 export interface SwigTokenTransactionWire {
@@ -164,6 +177,8 @@ export interface SwigTokenTransactionWire {
   tokenSymbol?: string;
   token_name?: string;
   tokenName?: string;
+  asset_kind?: SwigAssetKindWire;
+  assetKind?: SwigAssetKindWire;
 }
 
 export interface ListSwigTokenTransactionsResult {
@@ -178,4 +193,50 @@ export interface ListSwigTokenTransactionsWire {
   wallet_address?: string;
   walletAddress?: string;
   transactions?: SwigTokenTransactionWire[];
+}
+
+export interface SwigRoleAction {
+  actionIndex: number;
+  actionCode: number;
+  actionData: Record<string, unknown>;
+}
+
+export interface SwigRoleActionWire {
+  action_index?: number;
+  actionIndex?: number;
+  action_code?: number;
+  actionCode?: number;
+  action_data?: Record<string, unknown>;
+  actionData?: Record<string, unknown>;
+}
+
+export interface SwigRole {
+  roleId: number;
+  authorityType: number;
+  authorityValue: string;
+  actions: SwigRoleAction[];
+}
+
+export interface SwigRoleWire {
+  role_id?: number;
+  roleId?: number;
+  authority_type?: number;
+  authorityType?: number;
+  authority_value?: string;
+  authorityValue?: string;
+  actions?: SwigRoleActionWire[];
+}
+
+export interface ListSwigRolesResult {
+  swigConfigAddress: string;
+  walletAddress: string;
+  roles: SwigRole[];
+}
+
+export interface ListSwigRolesWire {
+  swig_config_address?: string;
+  swigConfigAddress?: string;
+  wallet_address?: string;
+  walletAddress?: string;
+  roles?: SwigRoleWire[];
 }

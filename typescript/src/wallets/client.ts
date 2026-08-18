@@ -9,6 +9,8 @@ import type {
   CreateWalletResult,
   ExecuteRecoveryArgs,
   IdpWalletSession,
+  ListSwigRolesResult,
+  ListSwigRolesWire,
   ListSwigTokenBalancesResult,
   ListSwigTokenBalancesWire,
   ListSwigTokenTransactionsArgs,
@@ -39,6 +41,7 @@ import {
   normalizeCreateWalletResponse,
   normalizePreparedTransaction,
   normalizePrepareTransactionsResponse,
+  normalizeSwigRoles,
   normalizeSwigTokenBalances,
   normalizeSwigTokenTransactions,
   normalizeSwigUsdBalance,
@@ -131,6 +134,18 @@ export class WalletsClient {
       }),
     );
     return normalizeSwigTokenTransactions(response);
+  };
+
+  listRoles = async (
+    wallet: WalletHandle,
+    args: WalletReadArgs = {},
+  ): Promise<ListSwigRolesResult> => {
+    const response = await this.http.get<ListSwigRolesWire>(
+      walletReadPath(wallet, 'roles', {
+        network: args.network ?? wallet.network ?? this.defaultNetwork,
+      }),
+    );
+    return normalizeSwigRoles(response);
   };
 
   use = (
@@ -315,7 +330,7 @@ export class WalletsClient {
 
 function walletReadPath(
   wallet: WalletHandle,
-  route: 'balance/usd' | 'token-balances' | 'token-transactions',
+  route: 'balance/usd' | 'token-balances' | 'token-transactions' | 'roles',
   query: { network?: Network; limit?: number },
 ): string {
   const params = new URLSearchParams();

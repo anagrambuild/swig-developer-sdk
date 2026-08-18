@@ -199,21 +199,10 @@ describe('createSwigNestHandler', () => {
       fetch: jsonFetch((request) => {
         calls.push(request);
         return {
-          transactions: [
-            {
-              transaction_id: 'txn_123',
-              wallet_id: 'wallet_123',
-              direction: 'RAMP_DIRECTION_ONRAMP',
-              transaction_type: 'RAMP_TRANSACTION_TYPE_CRYPTO_PURCHASE',
-              status: 'RAMP_TRANSACTION_STATUS_PENDING',
-              service_provider: 'RAMP_SERVICE_PROVIDER_OTHER',
-              source_amount: '100.00',
-              source_currency_code: 'USD',
-              destination_currency_code: 'USDC_SOLANA',
-              created_at: '2026-06-06T00:00:00Z',
-              updated_at: '2026-06-06T00:01:00Z',
-            },
-          ],
+          session_id: 'session_123',
+          status: 'ONRAMP_SESSION_STATUS_PENDING',
+          created_at: '2026-06-06T00:00:00Z',
+          updated_at: '2026-06-06T00:01:00Z',
         };
       }),
     });
@@ -226,7 +215,7 @@ describe('createSwigNestHandler', () => {
         },
         method: 'GET',
         originalUrl:
-          '/swig/ramp/wallets/wallet_123/transactions?network=devnet&direction=onramp',
+          '/swig/ramp/onramp/session/session_123?environment=sandbox',
         protocol: 'https',
       },
       response,
@@ -234,15 +223,11 @@ describe('createSwigNestHandler', () => {
 
     expect(response.statusCode).toBe(200);
     expect(JSON.parse(response.body ?? '{}')).toMatchObject({
-      transactions: [
-        {
-          transactionId: 'txn_123',
-          status: 'pending',
-        },
-      ],
+      sessionId: 'session_123',
+      status: 'pending',
     });
     expect(calls[0]).toMatchObject({
-      url: 'http://localhost:8080/wallet/api/ramp/wallets/wallet_123/transactions?network=NETWORK_DEVNET&direction=RAMP_DIRECTION_ONRAMP',
+      url: 'http://localhost:8080/wallet/api/ramp/onramp/session/session_123?environment=MELD_ENVIRONMENT_SANDBOX',
       method: 'GET',
     });
   });

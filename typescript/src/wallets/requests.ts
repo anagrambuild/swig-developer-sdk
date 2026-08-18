@@ -13,6 +13,7 @@ import type {
   TransferArgs,
   TransferSolArgs,
   TransferTokenArgs,
+  WalletAuthorityKind,
 } from '../types/index.js';
 import type { WalletHandle } from './handle.js';
 import {
@@ -118,14 +119,24 @@ export function startRecoveryRequest(
   args: StartRecoveryArgs,
   defaultNetwork?: Network,
 ) {
+  validateGuardianSource(args);
   return {
     network: toProtoNetwork(
       resolveNetwork(args.network, wallet.network, defaultNetwork),
     ),
     feePayer: args.feePayer,
     swigAddress: wallet.swigConfigAddress,
-    guardianPubkey: args.guardianPubkey,
+    ...('guardianPubkey' in args
+      ? { guardianPubkey: args.guardianPubkey }
+      : {}),
     newAuthority: args.newAuthority,
+    newAuthorityKind: toProtoWalletAuthorityKind(args.newAuthorityKind),
+    ...('guardianSwigAddress' in args
+      ? {
+          guardianSwigAddress: args.guardianSwigAddress,
+          guardianRequesterAuthority: args.guardianRequesterAuthority,
+        }
+      : {}),
   };
 }
 
@@ -181,6 +192,14 @@ export function executeRecoveryRequest(
   args: ExecuteRecoveryArgs,
   defaultNetwork?: Network,
 ) {
+  if (
+    (args.guardianSwigAddress === undefined) !==
+    (args.guardianRequesterAuthority === undefined)
+  ) {
+    throw new Error(
+      'guardianSwigAddress and guardianRequesterAuthority must be provided together',
+    );
+  }
   return {
     network: toProtoNetwork(
       resolveNetwork(args.network, wallet.network, defaultNetwork),
@@ -188,6 +207,13 @@ export function executeRecoveryRequest(
     feePayer: args.feePayer,
     swigAddress: wallet.swigConfigAddress,
     newAuthority: args.newAuthority,
+    newAuthorityKind: toProtoWalletAuthorityKind(args.newAuthorityKind),
+    ...(args.guardianSwigAddress
+      ? {
+          guardianSwigAddress: args.guardianSwigAddress,
+          guardianRequesterAuthority: args.guardianRequesterAuthority,
+        }
+      : {}),
   };
 }
 
@@ -240,6 +266,33 @@ function resolveNetwork(...networks: Array<Network | undefined>): Network {
     throw new Error('network is required');
   }
   return network;
+}
+
+function toProtoWalletAuthorityKind(kind: WalletAuthorityKind): string {
+  switch (kind) {
+    case 'ed25519':
+      return 'WALLET_AUTHORITY_KIND_ED25519';
+    case 'secp256k1':
+      return 'WALLET_AUTHORITY_KIND_SECP256K1';
+    case 'secp256r1':
+      return 'WALLET_AUTHORITY_KIND_SECP256R1';
+  }
+}
+
+function validateGuardianSource(args: StartRecoveryArgs): void {
+  const hasDirectGuardian = args.guardianPubkey !== undefined;
+  const hasSwigAddress = args.guardianSwigAddress !== undefined;
+  const hasSwigAuthority = args.guardianRequesterAuthority !== undefined;
+  if (hasSwigAddress !== hasSwigAuthority) {
+    throw new Error(
+      'guardianSwigAddress and guardianRequesterAuthority must be provided together',
+    );
+  }
+  if (hasDirectGuardian === hasSwigAddress) {
+    throw new Error(
+      'provide exactly one guardian source: guardianPubkey or guardianSwigAddress',
+    );
+  }
 }
 
 function resolveRequesterAuthority(

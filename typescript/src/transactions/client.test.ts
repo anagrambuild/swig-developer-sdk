@@ -6,12 +6,20 @@ import { TransactionsClient } from './client.js';
 describe('TransactionsClient', () => {
   test('sponsors base64 transactions through the deployed paymaster endpoint', async () => {
     const transactionBytes = Uint8Array.from([1, 2, 3, 4, 5]);
-    const calls: Array<{ path: string; body: unknown }> = [];
+    const calls: Array<{
+      path: string;
+      body: unknown;
+      options: unknown;
+    }> = [];
     const transactions = new TransactionsClient(
       {
-        post: async (path: string, body: unknown) => {
-          calls.push({ path, body });
-          return { signature: 'sponsored_signature_123' };
+        post: async (path: string, body: unknown, options: unknown) => {
+          calls.push({ path, body, options });
+          return {
+            request_id: 'request_123',
+            signature: 'sponsored_signature_123',
+            spent_by_paymaster: '5000',
+          };
         },
       } as never,
       'devnet',
@@ -23,7 +31,9 @@ describe('TransactionsClient', () => {
         idempotencyKey: 'sponsor-request-123',
       }),
     ).resolves.toEqual({
+      requestId: 'request_123',
       signature: 'sponsored_signature_123',
+      spentByPaymaster: '5000',
     });
 
     expect(calls).toEqual([
@@ -34,6 +44,51 @@ describe('TransactionsClient', () => {
           network: 'devnet',
           idempotencyKey: 'sponsor-request-123',
         },
+        options: { retry: true },
+      },
+    ]);
+  });
+
+  test('sponsors a mainnet bundle and reports the bundle response', async () => {
+    const calls: Array<{ path: string; body: unknown; options: unknown }> = [];
+    const transactions = new TransactionsClient(
+      {
+        post: async (path: string, body: unknown, options: unknown) => {
+          calls.push({ path, body, options });
+          return {
+            request_id: 'request_bundle',
+            bundle_id: 'bundle_123',
+            signatures: ['signature_1'],
+            estimated_spent_by_paymaster: '9000',
+          };
+        },
+      } as never,
+      'mainnet',
+    );
+    const transaction = bytesToBase64(Uint8Array.from([1, 2, 3]));
+
+    await expect(
+      transactions.sponsorBundle({
+        transactions: [transaction],
+        idempotencyKey: 'bundle-request-123',
+      }),
+    ).resolves.toEqual({
+      requestId: 'request_bundle',
+      bundleId: 'bundle_123',
+      signatures: ['signature_1'],
+      estimatedSpentByPaymaster: '9000',
+    });
+    expect(calls).toEqual([
+      {
+        path: '/paymaster/sponsor/bundle',
+        body: {
+          base58_encoded_transactions: [
+            bs58.encode(Uint8Array.from([1, 2, 3])),
+          ],
+          network: 'mainnet',
+          idempotencyKey: 'bundle-request-123',
+        },
+        options: { retry: true },
       },
     ]);
   });

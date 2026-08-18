@@ -25,11 +25,9 @@ const SECP256K1_SIGNATURE_OFFSET = 12;
 const U16_MAX = 65535;
 
 export type Secp256r1SigningFns =
-  | PasskeySigningFn
-  | Record<string, PasskeySigningFn>;
+  PasskeySigningFn | Record<string, PasskeySigningFn>;
 export type Secp256k1SigningFns =
-  | Secp256k1SigningFn
-  | Record<string, Secp256k1SigningFn>;
+  Secp256k1SigningFn | Record<string, Secp256k1SigningFn>;
 
 export interface SignPreparedSwigTransactionOptions {
   secp256r1?: Secp256r1SigningFns;

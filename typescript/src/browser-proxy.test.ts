@@ -378,7 +378,7 @@ describe('SwigBrowserClient', () => {
     });
   });
 
-  test('quotes ramp options through the local proxy without an API key', async () => {
+  test('quotes onramp through the local proxy without an API key', async () => {
     const calls: CapturedRequest[] = [];
     const swig = new SwigBrowserClient({
       network: 'devnet',
@@ -387,118 +387,86 @@ describe('SwigBrowserClient', () => {
         return {
           quotes: [
             {
-              quote_id: 'quote_123',
-              direction: 'RAMP_DIRECTION_ONRAMP',
-              service_provider: 'RAMP_SERVICE_PROVIDER_OTHER',
-              service_provider_code: 'TRANSAK',
-              payment_method_type: 'RAMP_PAYMENT_METHOD_TYPE_CREDIT_DEBIT_CARD',
-              source_amount: '100.00',
-              source_currency_code: 'USD',
-              destination_amount: '99.00',
-              destination_currency_code: 'USDC_SOLANA',
-              exchange_rate: '0.99',
-              total_fee: '1.00',
-              network_fee: '0.10',
-              transaction_fee: '0.70',
-              partner_fee: '0.20',
+              quoteId: 'quote_123',
+              serviceProvider: 'TRANSAK',
+              paymentMethodType: 'CARD',
+              sourceAmount: '100.00',
+              sourceCurrencyCode: 'USD',
+              destinationAmount: '99.00',
+              destinationCurrencyCode: 'USDC_SOLANA',
+              exchangeRate: '0.99',
+              totalFee: '1.00',
             },
           ],
         };
       }),
     });
 
-    const result = await swig.ramp.quote({
-      customer: {
-        swigUserId: 'user_123',
-        customerType: 'individual',
-      },
-      wallet: {
-        walletId: 'wallet_123',
-        walletAddress: 'wallet_address_123',
-        network: 'devnet',
-      },
-      direction: 'onramp',
+    const result = await swig.ramp.onramp.quote({
+      organizationMeldConfigurationId: 'config_123',
+      environment: 'sandbox',
+      externalCustomerId: 'customer_123',
+      swigConfigAddress: 'swig_123',
       sourceAmount: '100.00',
       sourceCurrencyCode: 'USD',
       destinationCurrencyCode: 'USDC_SOLANA',
       countryCode: 'US',
-      paymentMethodType: 'credit-debit-card',
+      paymentMethodType: 'CARD',
     });
 
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({
-      url: 'https://app.example/api/swig/ramp/quote',
+      url: 'https://app.example/api/swig/ramp/onramp/quote',
       method: 'POST',
       body: {
-        customer: {
-          swigUserId: 'user_123',
-          customerType: 'individual',
-        },
-        wallet: {
-          walletId: 'wallet_123',
-          walletAddress: 'wallet_address_123',
-          network: 'devnet',
-        },
-        direction: 'onramp',
+        organizationMeldConfigurationId: 'config_123',
+        environment: 'sandbox',
+        externalCustomerId: 'customer_123',
+        swigConfigAddress: 'swig_123',
+        network: 'devnet',
         sourceAmount: '100.00',
         sourceCurrencyCode: 'USD',
         destinationCurrencyCode: 'USDC_SOLANA',
         countryCode: 'US',
-        paymentMethodType: 'credit-debit-card',
+        paymentMethodType: 'CARD',
       },
     });
     expect(calls[0]?.headers.has('authorization')).toBe(false);
     expect(result.quotes[0]).toMatchObject({
       quoteId: 'quote_123',
-      direction: 'onramp',
-      paymentMethodType: 'credit-debit-card',
+      paymentMethodType: 'CARD',
     });
   });
 
-  test('lists ramp transactions through the local proxy without an API key', async () => {
+  test('reads an onramp session through the local proxy without an API key', async () => {
     const calls: CapturedRequest[] = [];
     const swig = new SwigBrowserClient({
       network: 'devnet',
       fetch: jsonFetch((request) => {
         calls.push(request);
         return {
-          transactions: [
-            {
-              transaction_id: 'txn_123',
-              wallet_id: 'wallet_123',
-              direction: 'RAMP_DIRECTION_ONRAMP',
-              transaction_type: 'RAMP_TRANSACTION_TYPE_CRYPTO_PURCHASE',
-              status: 'RAMP_TRANSACTION_STATUS_SETTLED',
-              service_provider: 'RAMP_SERVICE_PROVIDER_OTHER',
-              source_amount: '100.00',
-              source_currency_code: 'USD',
-              destination_amount: '99.00',
-              destination_currency_code: 'USDC_SOLANA',
-              created_at: '2026-06-06T00:00:00Z',
-              updated_at: '2026-06-06T00:01:00Z',
-            },
-          ],
+          sessionId: 'session_123',
+          status: 'settled',
+          createdAt: '2026-06-06T00:00:00Z',
+          updatedAt: '2026-06-06T00:01:00Z',
         };
       }),
     });
 
-    const result = await swig.ramp.listTransactions({
-      walletId: 'wallet_123',
-      direction: 'onramp',
-      status: 'settled',
-      limit: 10,
+    const result = await swig.ramp.onramp.getSession({
+      sessionId: 'session_123',
+      environment: 'sandbox',
     });
 
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({
-      url: 'https://app.example/api/swig/ramp/wallets/wallet_123/transactions?network=devnet&direction=onramp&status=settled&limit=10',
+      url: 'https://app.example/api/swig/ramp/onramp/session/session_123?environment=sandbox',
       method: 'GET',
       body: undefined,
     });
     expect(calls[0]?.headers.has('authorization')).toBe(false);
-    expect(result.transactions[0]).toMatchObject({
-      transactionId: 'txn_123',
-      transactionType: 'crypto-purchase',
+    expect(result).toMatchObject({
+      sessionId: 'session_123',
       status: 'settled',
     });
   });

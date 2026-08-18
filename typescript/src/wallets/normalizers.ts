@@ -4,6 +4,8 @@ import type {
   ClientSignatureRequestWire,
   CreateWalletResponseWire,
   CreateWalletResult,
+  ListSwigRolesResult,
+  ListSwigRolesWire,
   ListSwigTokenBalancesResult,
   ListSwigTokenBalancesWire,
   ListSwigTokenTransactionsResult,
@@ -20,6 +22,10 @@ import type {
   SolanaInstructionInput,
   SubmittedTransaction,
   SubmittedTransactionWire,
+  SwigAssetKind,
+  SwigAssetKindWire,
+  SwigRole,
+  SwigRoleAction,
   SwigTokenBalance,
   SwigTokenBalanceWire,
   SwigTokenTransaction,
@@ -148,8 +154,14 @@ export function normalizeSubmittedTransaction(
   }
 
   return {
+    requestId: readString(
+      response.requestId ?? response.request_id,
+      'requestId',
+    ),
     signature: response.signature,
-    status: response.status,
+    spentByPaymaster: String(
+      response.spentByPaymaster ?? response.spent_by_paymaster ?? '0',
+    ),
   };
 }
 
@@ -207,9 +219,63 @@ export function normalizeSwigTokenTransactions(
   };
 }
 
+export function normalizeSwigRoles(
+  response: ListSwigRolesWire,
+): ListSwigRolesResult {
+  return {
+    swigConfigAddress: readString(
+      response.swigConfigAddress ?? response.swig_config_address,
+      'swigConfigAddress',
+    ),
+    walletAddress: readString(
+      response.walletAddress ?? response.wallet_address,
+      'walletAddress',
+    ),
+    roles: (response.roles ?? []).map(normalizeSwigRole),
+  };
+}
+
+function normalizeSwigRole(
+  response: NonNullable<ListSwigRolesWire['roles']>[number],
+): SwigRole {
+  return {
+    roleId: readNumber(response.roleId ?? response.role_id, 'roleId'),
+    authorityType: readNumber(
+      response.authorityType ?? response.authority_type,
+      'authorityType',
+    ),
+    authorityValue: readString(
+      response.authorityValue ?? response.authority_value,
+      'authorityValue',
+    ),
+    actions: (response.actions ?? []).map(normalizeSwigRoleAction),
+  };
+}
+
+function normalizeSwigRoleAction(
+  response: NonNullable<
+    NonNullable<ListSwigRolesWire['roles']>[number]['actions']
+  >[number],
+): SwigRoleAction {
+  return {
+    actionIndex: readNumber(
+      response.actionIndex ?? response.action_index,
+      'actionIndex',
+    ),
+    actionCode: readNumber(
+      response.actionCode ?? response.action_code,
+      'actionCode',
+    ),
+    actionData: response.actionData ?? response.action_data ?? {},
+  };
+}
+
 function normalizeSwigTokenBalance(
   response: SwigTokenBalanceWire,
 ): SwigTokenBalance {
+  const assetKind = normalizeSwigAssetKind(
+    response.assetKind ?? response.asset_kind,
+  );
   return {
     mintAddress: readString(
       response.mintAddress ?? response.mint_address,
@@ -235,6 +301,7 @@ function normalizeSwigTokenBalance(
     uiAmount: readNumber(response.uiAmount ?? response.ui_amount, 'uiAmount'),
     usdPrice: readNumber(response.usdPrice ?? response.usd_price, 'usdPrice'),
     usdValue: readNumber(response.usdValue ?? response.usd_value, 'usdValue'),
+    ...(assetKind ? { assetKind } : {}),
   };
 }
 
@@ -242,6 +309,9 @@ function normalizeSwigTokenTransaction(
   response: SwigTokenTransactionWire,
 ): SwigTokenTransaction {
   const blockTime = response.blockTime ?? response.block_time;
+  const assetKind = normalizeSwigAssetKind(
+    response.assetKind ?? response.asset_kind,
+  );
   return {
     transactionSignature: readString(
       response.transactionSignature ?? response.transaction_signature,
@@ -290,7 +360,31 @@ function normalizeSwigTokenTransaction(
       response.tokenName ?? response.token_name ?? '',
       'tokenName',
     ),
+    ...(assetKind ? { assetKind } : {}),
   };
+}
+
+function normalizeSwigAssetKind(
+  assetKind?: SwigAssetKindWire,
+): SwigAssetKind | undefined {
+  switch (assetKind) {
+    case undefined:
+      return undefined;
+    case 'unspecified':
+    case 'ASSET_KIND_UNSPECIFIED':
+    case 0:
+      return 'unspecified';
+    case 'token':
+    case 'ASSET_KIND_TOKEN':
+    case 1:
+      return 'token';
+    case 'native-sol':
+    case 'ASSET_KIND_NATIVE_SOL':
+    case 2:
+      return 'native-sol';
+    default:
+      throw new Error('Wallet response has invalid assetKind');
+  }
 }
 
 export function normalizeInstruction(

@@ -7,6 +7,8 @@ import {
   normalizePreparedTransaction,
   normalizePrepareTransactionsResponse,
   normalizeSubmittedTransaction,
+  normalizeSwigTokenBalances,
+  normalizeSwigTokenTransactions,
 } from './normalizers.js';
 
 describe('wallet normalizers', () => {
@@ -262,12 +264,66 @@ describe('wallet normalizers', () => {
   test('normalizes sponsored submission responses', () => {
     expect(
       normalizeSubmittedTransaction({
+        request_id: 'request_123',
         signature: 'signature_123',
-        status: 'submitted',
+        spent_by_paymaster: '5000',
       }),
     ).toEqual({
+      requestId: 'request_123',
       signature: 'signature_123',
-      status: 'submitted',
+      spentByPaymaster: '5000',
     });
+  });
+
+  test('preserves asset kinds on wallet balances and transactions', () => {
+    expect(
+      normalizeSwigTokenBalances({
+        swig_config_address: 'swig_123',
+        wallet_address: 'wallet_123',
+        total_usd_value: 1,
+        balances: [
+          {
+            mint_address: 'mint_123',
+            token_program: 1,
+            token_symbol: 'USDC',
+            token_name: 'USD Coin',
+            decimals: 6,
+            amount_raw: '1000000',
+            ui_amount: 1,
+            usd_price: 1,
+            usd_value: 1,
+            asset_kind: 'ASSET_KIND_TOKEN',
+          },
+        ],
+      }).balances[0]?.assetKind,
+    ).toBe('token');
+
+    expect(
+      normalizeSwigTokenTransactions({
+        swig_config_address: 'swig_123',
+        wallet_address: 'wallet_123',
+        transactions: [
+          {
+            transaction_signature: 'signature_123',
+            slot: '42',
+            owner_address: 'owner_123',
+            wallet_address: 'wallet_123',
+            is_subaccount: false,
+            token_account_address: 'wallet_123',
+            mint_address: '11111111111111111111111111111111',
+            token_program: 0,
+            direction: 1,
+            amount_raw: '1000000000',
+            decimals: 9,
+            ui_amount: 1,
+            usd_price: 100,
+            usd_value: 100,
+            token_symbol: 'SOL',
+            token_name: 'Solana',
+            asset_kind: 2,
+          },
+        ],
+      }).transactions[0]?.assetKind,
+    ).toBe('native-sol');
   });
 });

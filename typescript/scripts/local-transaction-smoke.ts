@@ -450,6 +450,7 @@ async function runRecoverySmoke(connection: Connection) {
     feePayer: recoveryFeePayer.publicKey.toBase58(),
     guardianPubkey: guardian.publicKey.toBase58(),
     newAuthority: newAuthority.publicKeyHex,
+    newAuthorityKind: 'secp256r1',
   });
   const startForCancelSignature = await signAndSendPreparedTransaction(
     connection,
@@ -475,6 +476,7 @@ async function runRecoverySmoke(connection: Connection) {
     feePayer: recoveryFeePayer.publicKey.toBase58(),
     guardianPubkey: guardian.publicKey.toBase58(),
     newAuthority: newAuthority.publicKeyHex,
+    newAuthorityKind: 'secp256r1',
   });
   const startSignature = await signAndSendPreparedTransaction(
     connection,
@@ -488,6 +490,7 @@ async function runRecoverySmoke(connection: Connection) {
   const execute = await wallet.recovery.execute({
     feePayer: recoveryFeePayer.publicKey.toBase58(),
     newAuthority: newAuthority.publicKeyHex,
+    newAuthorityKind: 'secp256r1',
   });
   const executeSignature = await signAndSendPreparedTransaction(
     connection,

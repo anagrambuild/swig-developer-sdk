@@ -1,29 +1,80 @@
 # Developer SDK parity
 
-Python mirrors the TypeScript SDK by behavior and client hierarchy. Python
-uses snake_case names while TypeScript uses camelCase.
+Python mirrors the TypeScript SDK by behavior and client hierarchy. Python uses
+snake_case names and keyword arguments; TypeScript uses camelCase and options
+objects. Both packages are version `0.8.0` and default to
+`https://api.onswig.com`.
 
-| Surface             | TypeScript                                       | Python                                              | Parity target                                           |
-| ------------------- | ------------------------------------------------ | --------------------------------------------------- | ------------------------------------------------------- |
-| API client          | `SwigClient`                                     | `SwigClient`                                        | same auth, retry, network, and error behavior           |
-| Wallet creation     | `swig.wallets.create`                            | `swig.wallets.create`                               | same request and normalized transaction groups          |
-| Wallet handle       | `wallets.use`, `fromIdpSession`                  | `wallets.use`, `from_idp_session`                   | same inherited wallet, network, and requester authority |
-| Grouped preparation | `wallet.prepare`                                 | `wallet.prepare`                                    | same operation wire shape and normalized response       |
-| Transfers           | `wallet.transfer.sol/token/splToken`             | `wallet.transfer.sol/token/spl_token`               | same endpoints and prepared transaction output          |
-| Jupiter swap        | `wallet.swap.jupiter`                            | `wallet.swap.jupiter`                               | same optional swap controls                             |
-| Recovery            | `wallet.recovery.*`                              | `wallet.recovery.*`                                 | same prepare, start, cancel, and execute behavior       |
-| Custom transaction  | `wallet.buildTransaction`                        | `wallet.build_transaction`                          | same custom preparation request and instruction shape   |
-| Wallet reads        | balance, token balances, transactions            | balance, token balances, transactions               | same required-field validation                          |
-| Paymaster           | balance and IDP balance                          | balance and IDP balance                             | same query and normalization                            |
-| Sponsorship         | `transactions.sponsor`                           | `transactions.sponsor`                              | same base58 conversion and idempotency-key forwarding   |
-| Ramp                | options, quote, session, transaction reads       | same                                                | same enum conversion and required-field validation      |
-| One Business        | grant URL, redirect, and callback parsing        | same                                                | same query contract and errors                          |
-| Generic signing     | callback and signer object                       | callback and signer protocol                        | same metadata preservation                              |
-| Swig r1 signing     | passkey callback and local transaction patching  | WebAuthn callback and `solders` patching            | byte-for-byte transaction semantics                     |
-| Swig k1 signing     | EIP-1193 callback and local transaction patching | EIP-1193-compatible callback and `solders` patching | byte-for-byte transaction semantics                     |
-| App proxy           | Fetch/Next/Nest adapters                         | framework-neutral proxy handler                     | same routes, validation, and resolver boundaries        |
+## Client surface
 
-Framework-specific TypeScript wrappers remain in the TypeScript package. The
+| Surface | TypeScript | Python | Parity target |
+| --- | --- | --- | --- |
+| API client | `SwigClient` | `SwigClient` | same auth, retry, network, and error behavior |
+| Wallet creation | `swig.wallets.create` | `swig.wallets.create` | same request and normalized transaction groups |
+| Wallet handle | `wallets.use`, `wallets.fromIdpSession` | `wallets.use`, `wallets.from_idp_session` | same inherited wallet, network, and requester authority |
+| Grouped preparation | `wallet.prepare` | `wallet.prepare` | same operation wire shape and normalized response |
+| Transfers | `wallet.transfer.sol/token/splToken` | `wallet.transfer.sol/token/spl_token` | same endpoints and prepared transaction output |
+| Jupiter swap | `wallet.swap.jupiter` | `wallet.swap.jupiter` | same optional swap controls |
+| Custom transaction | `wallet.buildTransaction` | `wallet.build_transaction` | same custom preparation request and instruction shape |
+| Policy read | `swig.wallets.getPolicy` | `swig.wallets.get_policy` | same raw policy metadata |
+
+## Wallet reads
+
+| Surface | TypeScript | Python | Parity target |
+| --- | --- | --- | --- |
+| USD balance | `wallet.getUsdBalance` | `wallet.get_usd_balance` | same required-field validation |
+| Token balances | `wallet.listTokenBalances` | `wallet.list_token_balances` | same normalization, totals, and `assetKind` discriminator |
+| Token transactions | `wallet.listTokenTransactions` | `wallet.list_token_transactions` | same `limit`, direction, and `assetKind` normalization |
+| Roles | `wallet.listRoles` | `wallet.list_roles` | same role, authority, and action normalization |
+
+## Paymaster and submission
+
+| Surface | TypeScript | Python | Parity target |
+| --- | --- | --- | --- |
+| Paymaster balance | `swig.paymaster.getBalance` | `swig.paymaster.get_balance` | same query and normalization |
+| IDP paymaster balance | `swig.paymaster.getIdpBalance` | `swig.paymaster.get_idp_balance` | same `kind` mapping |
+| Sponsorship | `swig.transactions.sponsor` | `swig.transactions.sponsor` | same base58 conversion and idempotency-key forwarding |
+| Bundle sponsorship | `swig.transactions.sponsorBundle` | `swig.transactions.sponsor_bundle` | same mainnet-only and 1–5 transaction validation |
+
+Sponsor responses report submission acceptance, not confirmation or finality.
+
+## Ramp
+
+Both SDKs expose direction-specific clients. There is no generic ramp client.
+
+| Surface | TypeScript | Python | Parity target |
+| --- | --- | --- | --- |
+| Onramp options | `swig.ramp.onramp.getOptions` | `swig.ramp.onramp.get_options` | same query and normalization |
+| Onramp quote | `swig.ramp.onramp.quote` | `swig.ramp.onramp.quote` | same required fields and MELD environment encoding |
+| Onramp session | `swig.ramp.onramp.createSession`, `getSession` | `create_session`, `get_session` | same session id, launch URL, and status enum mapping |
+| Offramp options | `swig.ramp.offramp.getOptions` | `swig.ramp.offramp.get_options` | same crypto-currency normalization |
+| Offramp quote | `swig.ramp.offramp.quote` | `swig.ramp.offramp.quote` | same required fields and MELD environment encoding |
+| Offramp session | `swig.ramp.offramp.createSession`, `getSession` | `create_session`, `get_session` | same session fields and status enum mapping |
+| Offramp authorization | `swig.ramp.offramp.prepareAuthorization`, `submitAuthorization` | `prepare_authorization`, `submit_authorization` | same prepared transfer, display fields, and Solana signature |
+
+## Signing
+
+| Surface | TypeScript | Python | Parity target |
+| --- | --- | --- | --- |
+| Generic signing | `signPreparedTransaction`, signer object | `sign_prepared_transaction`, signer protocol | same metadata preservation |
+| Swig r1 signing | passkey callback and local transaction patching | WebAuthn callback and `solders` patching | byte-for-byte transaction semantics |
+| Swig k1 signing | EIP-1193 callback and local transaction patching | EIP-1193-compatible callback and `solders` patching | byte-for-byte transaction semantics |
+
+## Integration helpers
+
+| Surface | TypeScript | Python | Parity target |
+| --- | --- | --- | --- |
+| App proxy | Fetch/Next/Nest adapters | `create_swig_proxy_handler` | same routes, validation, and resolver boundaries |
+| Browser client | `SwigBrowserClient` | not applicable | TypeScript-only; Python apps expose the proxy and use their own frontend |
+| One Business | grant URL, redirect, and callback parsing | same | same query contract and errors |
+
+Framework-specific TypeScript wrappers ship in the TypeScript package. The
 Python package exposes the underlying proxy handler so FastAPI, Flask, Django,
 or another framework can adapt it without making one framework a core
 dependency.
+
+## Not documented
+
+Recovery types exist in both packages but the hosted recovery flow is not
+currently supported. It is intentionally absent from both package READMEs and
+from the published documentation.

@@ -52,8 +52,9 @@ class SignedPreparedTransaction:
 
 @dataclass(frozen=True, slots=True)
 class SubmittedTransaction:
+    request_id: str
     signature: str
-    status: Literal["submitted", "confirmed"] | None = None
+    spent_by_paymaster: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +63,21 @@ class SponsorSignedTransactionArgs:
     transaction_encoding: TransactionEncoding | None = None
     network: Network | None = None
     idempotency_key: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SponsorSignedTransactionBundleArgs:
+    transactions: tuple[str, ...]
+    network: Network | None = None
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SubmittedTransactionBundle:
+    request_id: str
+    bundle_id: str
+    signatures: tuple[str, ...]
+    estimated_spent_by_paymaster: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,8 +112,54 @@ class TransactionsClient:
                 "network": args.network or self._default_network,
                 "idempotencyKey": args.idempotency_key,
             },
+            retry=args.idempotency_key is not None,
         )
         return normalize_submitted_transaction(response)
+
+    async def sponsor_bundle(
+        self,
+        args: SponsorSignedTransactionBundleArgs,
+    ) -> SubmittedTransactionBundle:
+        if not 1 <= len(args.transactions) <= 5:
+            raise ValueError("transactions must contain between 1 and 5 items")
+        network = args.network or self._default_network
+        if network != "mainnet":
+            raise ValueError("sponsor_bundle only supports mainnet")
+        response = await self._http.post(
+            "/paymaster/sponsor/bundle",
+            {
+                "base58_encoded_transactions": [
+                    base58.b58encode(base64.b64decode(transaction)).decode("ascii")
+                    for transaction in args.transactions
+                ],
+                "network": network,
+                "idempotencyKey": args.idempotency_key,
+            },
+            retry=args.idempotency_key is not None,
+        )
+        body = _mapping(response, "Sponsor bundle response")
+        signatures = body.get("signatures", [])
+        if not isinstance(signatures, Sequence) or isinstance(signatures, (str, bytes)):
+            raise ValueError("Sponsor bundle response has invalid signatures")
+        return SubmittedTransactionBundle(
+            request_id=_required_string(
+                _pick(body, "requestId", "request_id"), "requestId"
+            ),
+            bundle_id=_required_string(
+                _pick(body, "bundleId", "bundle_id"), "bundleId"
+            ),
+            signatures=tuple(
+                _required_string(signature, "signature") for signature in signatures
+            ),
+            estimated_spent_by_paymaster=str(
+                _pick(
+                    body,
+                    "estimatedSpentByPaymaster",
+                    "estimated_spent_by_paymaster",
+                )
+                or 0
+            ),
+        )
 
 
 def normalize_prepared_transaction(response: object) -> PreparedTransaction:
@@ -182,10 +244,15 @@ def normalize_submitted_transaction(response: object) -> SubmittedTransaction:
     signature = body.get("signature")
     if not isinstance(signature, str) or not signature:
         raise ValueError("Sponsor response is missing signature")
-    status = body.get("status")
-    if status not in (None, "submitted", "confirmed"):
-        raise ValueError("Sponsor response has invalid status")
-    return SubmittedTransaction(signature=signature, status=status)
+    return SubmittedTransaction(
+        request_id=_required_string(
+            _pick(body, "requestId", "request_id"), "requestId"
+        ),
+        signature=signature,
+        spent_by_paymaster=str(
+            _pick(body, "spentByPaymaster", "spent_by_paymaster") or 0
+        ),
+    )
 
 
 def _normalize_signature_requests(value: object) -> tuple[ClientSignatureRequest, ...]:
@@ -264,6 +331,12 @@ def _mapping(value: object, label: str) -> Mapping[str, object]:
     if isinstance(value, Mapping):
         return value
     raise ValueError(f"{label} must be an object")
+
+
+def _required_string(value: object, field: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"Response is missing {field}")
+    return value
 
 
 def _pick(value: Mapping[str, object], *keys: str) -> object:

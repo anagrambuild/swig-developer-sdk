@@ -3,12 +3,15 @@ import type {
   CreateRampSessionArgs,
   CreateWalletArgs,
   GetRampOptionsArgs,
+  GetRampSessionArgs,
+  MeldEnvironment,
   Network,
   PaymasterBalanceKind,
   PrepareArgs,
+  PrepareOfframpAuthorizationArgs,
   PrepareOperation,
   QuoteRampArgs,
-  RampCustomerContext,
+  SubmitOfframpAuthorizationArgs,
   SwapArgs,
   TransferTokenArgs,
   WalletAuthority,
@@ -22,17 +25,23 @@ export type SwigPostProxyRoute =
   | 'transfer/sol'
   | 'transfer/spl-token'
   | 'swap/jupiter'
-  | 'ramp/quote'
-  | 'ramp/sessions';
+  | 'ramp/onramp/quote'
+  | 'ramp/onramp/session'
+  | 'ramp/offramp/quote'
+  | 'ramp/offramp/session'
+  | 'ramp/offramp/prepare'
+  | 'ramp/offramp/submit';
 
 export type SwigReadProxyRoute =
   | 'wallet/balance/usd'
   | 'wallet/token-balances'
   | 'wallet/token-transactions'
+  | 'wallet/roles'
   | 'paymaster/balance'
-  | 'ramp/options'
-  | 'ramp/transaction'
-  | 'ramp/wallet-transactions';
+  | 'ramp/onramp/options'
+  | 'ramp/onramp/session'
+  | 'ramp/offramp/options'
+  | 'ramp/offramp/session';
 
 export type SwigProxyRoute = SwigPostProxyRoute | SwigReadProxyRoute;
 
@@ -58,17 +67,13 @@ export interface CreateSwigFetchHandlerConfig {
   baseUrl?: string;
   network?: Network;
   feePayer?:
-    | string
-    | ((context: SwigRouteContext) => MaybePromise<string | undefined>);
+    string | ((context: SwigRouteContext) => MaybePromise<string | undefined>);
   resolveRequesterAuthority?: (
     context: SwigRouteContext,
   ) => MaybePromise<WalletAuthority | undefined>;
   resolveRequesterPubkey?: (
     context: SwigRouteContext,
   ) => MaybePromise<string | undefined>;
-  resolveRampCustomer?: (
-    context: SwigRouteContext,
-  ) => MaybePromise<RampCustomerContext | undefined>;
   fetch?: typeof fetch;
 }
 
@@ -89,8 +94,10 @@ const swigPostProxyRoutes: SwigPostProxyRoute[] = [
   'transfer/sol',
   'transfer/spl-token',
   'swap/jupiter',
-  'ramp/quote',
-  'ramp/sessions',
+  'ramp/onramp/quote',
+  'ramp/onramp/session',
+  'ramp/offramp/quote',
+  'ramp/offramp/session',
 ];
 
 export type SwigFetchHandler = (request: Request) => Promise<Response>;
@@ -112,7 +119,8 @@ async function handlePost(
   config: CreateSwigFetchHandlerConfig,
 ): Promise<Response> {
   try {
-    const route = resolvePostRoute(request);
+    const resolvedRoute = resolvePostRoute(request);
+    const route = resolvedRoute.route;
     const body = await readJsonObject(request);
     const network = readNetwork(body.network) ?? config.network;
     const wallet = route.startsWith('ramp/')
@@ -155,25 +163,39 @@ async function handlePost(
         return json({
           prepared: await prepareJupiterSwap(swig, body, context, config),
         });
-      case 'ramp/quote':
+      case 'ramp/onramp/quote':
         return json(
-          await swig.ramp.quote(
-            (await bodyWithResolvedRampCustomer(
-              body,
-              context,
-              config,
-            )) as unknown as QuoteRampArgs,
+          await swig.ramp.onramp.quote(body as unknown as QuoteRampArgs),
+        );
+      case 'ramp/onramp/session':
+        return json(
+          await swig.ramp.onramp.createSession(
+            body as unknown as CreateRampSessionArgs,
           ),
         );
-      case 'ramp/sessions':
+      case 'ramp/offramp/quote':
         return json(
-          await swig.ramp.createSession(
-            (await bodyWithResolvedRampCustomer(
-              body,
-              context,
-              config,
-            )) as unknown as CreateRampSessionArgs,
+          await swig.ramp.offramp.quote(body as unknown as QuoteRampArgs),
+        );
+      case 'ramp/offramp/session':
+        return json(
+          await swig.ramp.offramp.createSession(
+            body as unknown as CreateRampSessionArgs,
           ),
+        );
+      case 'ramp/offramp/prepare':
+        return json(
+          await swig.ramp.offramp.prepareAuthorization({
+            ...(body as unknown as PrepareOfframpAuthorizationArgs),
+            sessionId: requireResolvedSessionId(resolvedRoute.sessionId),
+          }),
+        );
+      case 'ramp/offramp/submit':
+        return json(
+          await swig.ramp.offramp.submitAuthorization({
+            ...(body as unknown as SubmitOfframpAuthorizationArgs),
+            sessionId: requireResolvedSessionId(resolvedRoute.sessionId),
+          }),
         );
     }
   } catch (error) {
@@ -201,13 +223,6 @@ async function handleGet(
       ...(network ? { network } : {}),
       ...(config.fetch ? { fetch: config.fetch } : {}),
     });
-    const context: SwigRouteContext = {
-      request,
-      route: route.route,
-      body: {},
-      network,
-    };
-
     switch (route.route) {
       case 'wallet/balance/usd':
         return json(
@@ -232,28 +247,36 @@ async function handleGet(
             }),
         );
       }
+      case 'wallet/roles':
+        return json(
+          await swig.wallets
+            .use(route.swigConfigAddress, walletOptions(network))
+            .listRoles(walletOptions(network)),
+        );
       case 'paymaster/balance':
         return json(
           await swig.paymaster.getBalance(
             paymasterOptions(network, paymasterKind),
           ),
         );
-      case 'ramp/options':
+      case 'ramp/onramp/options':
         return json(
-          await swig.ramp.getOptions(
-            await readRampOptionsArgs(request, context, config),
+          await swig.ramp.onramp.getOptions(readRampOptionsArgs(request)),
+        );
+      case 'ramp/offramp/options':
+        return json(
+          await swig.ramp.offramp.getOptions(readRampOptionsArgs(request)),
+        );
+      case 'ramp/onramp/session':
+        return json(
+          await swig.ramp.onramp.getSession(
+            readRampSessionArgs(request, route.sessionId),
           ),
         );
-      case 'ramp/transaction':
+      case 'ramp/offramp/session':
         return json(
-          await swig.ramp.getTransaction({
-            transactionId: route.transactionId,
-          }),
-        );
-      case 'ramp/wallet-transactions':
-        return json(
-          await swig.ramp.listTransactions(
-            readListRampTransactionsArgs(request, route.walletId),
+          await swig.ramp.offramp.getSession(
+            readRampSessionArgs(request, route.sessionId),
           ),
         );
     }
@@ -299,9 +322,6 @@ async function prepareWalletCreation(
     ...(initialUser ? { initialUser } : {}),
     ...(recovery ? { recovery } : {}),
     ...(context.network ? { network: context.network } : {}),
-    ...(readOptionalString(body, 'idempotencyKey')
-      ? { idempotencyKey: readOptionalString(body, 'idempotencyKey') }
-      : {}),
   };
   const created = await swig.wallets.create(args);
 
@@ -336,9 +356,6 @@ async function prepareGroupedOperations(
     requesterAuthority,
     operations: readPrepareOperations(body.operations),
     ...(context.network ? { network: context.network } : {}),
-    ...(readOptionalString(body, 'idempotencyKey')
-      ? { idempotencyKey: readOptionalString(body, 'idempotencyKey') }
-      : {}),
   };
 
   return handle.prepare(args);
@@ -384,9 +401,6 @@ async function prepareSolTransfer(
     destination: readRequiredString(body, 'destination'),
     amount: readAmount(body),
     ...(context.network ? { network: context.network } : {}),
-    ...(readOptionalString(body, 'idempotencyKey')
-      ? { idempotencyKey: readOptionalString(body, 'idempotencyKey') }
-      : {}),
   });
 }
 
@@ -413,9 +427,6 @@ async function prepareTokenTransfer(
     destinationOwner: readRequiredString(body, 'destinationOwner'),
     amount: readAmount(body),
     ...(context.network ? { network: context.network } : {}),
-    ...(readOptionalString(body, 'idempotencyKey')
-      ? { idempotencyKey: readOptionalString(body, 'idempotencyKey') }
-      : {}),
   };
 
   return handle.transfer(args);
@@ -480,9 +491,6 @@ async function prepareJupiterSwap(
         }
       : {}),
     ...(context.network ? { network: context.network } : {}),
-    ...(readOptionalString(body, 'idempotencyKey')
-      ? { idempotencyKey: readOptionalString(body, 'idempotencyKey') }
-      : {}),
   };
 
   return handle.swap(args);
@@ -561,8 +569,25 @@ function resolveTransactionApiUrl(config: CreateSwigFetchHandlerConfig) {
   );
 }
 
-function resolvePostRoute(request: Request): SwigPostProxyRoute {
+function resolvePostRoute(request: Request): {
+  route: SwigPostProxyRoute;
+  sessionId?: string;
+} {
   const pathname = new URL(request.url).pathname.replace(/\/$/, '');
+  const offrampAction = pathname.match(
+    /\/ramp\/offramp\/session\/([^/]+)\/(prepare|submit)$/,
+  );
+  if (offrampAction) {
+    const sessionId = decodeURIComponent(offrampAction[1] ?? '');
+    if (!sessionId) throw new SwigRouteError('sessionId is required');
+    return {
+      route:
+        offrampAction[2] === 'prepare'
+          ? 'ramp/offramp/prepare'
+          : 'ramp/offramp/submit',
+      sessionId,
+    };
+  }
   const route = swigPostProxyRoutes.find(
     (candidate) =>
       pathname === `/${candidate}` || pathname.endsWith(`/${candidate}`),
@@ -572,7 +597,7 @@ function resolvePostRoute(request: Request): SwigPostProxyRoute {
     throw new SwigRouteError('Unsupported Swig route', 404);
   }
 
-  return route;
+  return { route };
 }
 
 function resolveReadRoute(
@@ -581,10 +606,12 @@ function resolveReadRoute(
   | { route: 'wallet/balance/usd'; swigConfigAddress: string }
   | { route: 'wallet/token-balances'; swigConfigAddress: string }
   | { route: 'wallet/token-transactions'; swigConfigAddress: string }
+  | { route: 'wallet/roles'; swigConfigAddress: string }
   | { route: 'paymaster/balance' }
-  | { route: 'ramp/options' }
-  | { route: 'ramp/transaction'; transactionId: string }
-  | { route: 'ramp/wallet-transactions'; walletId: string } {
+  | { route: 'ramp/onramp/options' }
+  | { route: 'ramp/offramp/options' }
+  | { route: 'ramp/onramp/session'; sessionId: string }
+  | { route: 'ramp/offramp/session'; sessionId: string } {
   const pathname = new URL(request.url).pathname.replace(/\/$/, '');
   if (
     pathname === '/paymaster/balance' ||
@@ -592,32 +619,25 @@ function resolveReadRoute(
   ) {
     return { route: 'paymaster/balance' };
   }
-  if (pathname === '/ramp/options' || pathname.endsWith('/ramp/options')) {
-    return { route: 'ramp/options' };
-  }
-
-  const rampTransactionMatch = pathname.match(/\/ramp\/transactions\/([^/]+)$/);
-  if (rampTransactionMatch) {
-    const transactionId = decodeURIComponent(rampTransactionMatch[1] ?? '');
-    if (!transactionId) {
-      throw new SwigRouteError('transactionId is required');
+  for (const direction of ['onramp', 'offramp'] as const) {
+    if (
+      pathname === `/ramp/${direction}/options` ||
+      pathname.endsWith(`/ramp/${direction}/options`)
+    ) {
+      return { route: `ramp/${direction}/options` };
     }
-    return { route: 'ramp/transaction', transactionId };
-  }
-
-  const rampWalletTransactionsMatch = pathname.match(
-    /\/ramp\/wallets\/([^/]+)\/transactions$/,
-  );
-  if (rampWalletTransactionsMatch) {
-    const walletId = decodeURIComponent(rampWalletTransactionsMatch[1] ?? '');
-    if (!walletId) {
-      throw new SwigRouteError('walletId is required');
+    const match = pathname.match(
+      new RegExp(`/ramp/${direction}/session/([^/]+)$`),
+    );
+    if (match) {
+      const sessionId = decodeURIComponent(match[1] ?? '');
+      if (!sessionId) throw new SwigRouteError('sessionId is required');
+      return { route: `ramp/${direction}/session`, sessionId };
     }
-    return { route: 'ramp/wallet-transactions', walletId };
   }
 
   const match = pathname.match(
-    /\/wallet\/([^/]+)\/(balance\/usd|token-balances|token-transactions)$/,
+    /\/wallet\/([^/]+)\/(balance\/usd|token-balances|token-transactions|roles)$/,
   );
   if (!match) {
     throw new SwigRouteError('Unsupported Swig route', 404);
@@ -635,67 +655,41 @@ function resolveReadRoute(
       return { route: 'wallet/token-balances', swigConfigAddress };
     case 'token-transactions':
       return { route: 'wallet/token-transactions', swigConfigAddress };
+    case 'roles':
+      return { route: 'wallet/roles', swigConfigAddress };
     default:
       throw new SwigRouteError('Unsupported Swig route', 404);
   }
 }
 
-async function readRampOptionsArgs(
-  request: Request,
-  context: SwigRouteContext,
-  config: CreateSwigFetchHandlerConfig,
-): Promise<GetRampOptionsArgs> {
-  const resolvedCustomer = await config.resolveRampCustomer?.(context);
+function readRampOptionsArgs(request: Request): GetRampOptionsArgs {
   return {
-    partnerApplicationId:
-      resolvedCustomer?.partnerApplicationId ??
-      readOptionalQueryString(request, 'partnerApplicationId'),
+    organizationMeldConfigurationId: readRequiredQueryString(
+      request,
+      'organizationMeldConfigurationId',
+    ),
+    environment: readMeldEnvironment(request),
     countryCode: readOptionalQueryString(request, 'countryCode'),
     fiatCurrencyCode: readOptionalQueryString(request, 'fiatCurrencyCode'),
   };
 }
 
-async function bodyWithResolvedRampCustomer(
-  body: Record<string, unknown>,
-  context: SwigRouteContext,
-  config: CreateSwigFetchHandlerConfig,
-): Promise<Record<string, unknown>> {
-  const resolvedCustomer = await config.resolveRampCustomer?.(context);
-  if (!resolvedCustomer) {
-    return body;
-  }
-
+function readRampSessionArgs(
+  request: Request,
+  sessionId: string,
+): GetRampSessionArgs {
   return {
-    ...body,
-    customer: resolvedCustomer,
+    sessionId,
+    environment: readMeldEnvironment(request),
   };
 }
 
-function readListRampTransactionsArgs(request: Request, walletId: string) {
-  const network = readNetwork(new URL(request.url).searchParams.get('network'));
-  if (!network) {
-    throw new SwigRouteError('network is required');
+function readMeldEnvironment(request: Request): MeldEnvironment {
+  const environment = readRequiredQueryString(request, 'environment');
+  if (environment !== 'sandbox' && environment !== 'production') {
+    throw new SwigRouteError('environment must be sandbox or production');
   }
-  return {
-    walletId,
-    network,
-    direction: readOptionalQueryString(request, 'direction') as
-      | 'onramp'
-      | 'offramp'
-      | 'transfer'
-      | undefined,
-    status: readOptionalQueryString(request, 'status') as
-      | 'created'
-      | 'pending'
-      | 'settling'
-      | 'settled'
-      | 'failed'
-      | 'declined'
-      | 'cancelled'
-      | 'refunded'
-      | undefined,
-    limit: readOptionalQueryNumber(request, 'limit'),
-  };
+  return environment;
 }
 
 async function readJsonObject(
@@ -917,6 +911,17 @@ function readOptionalQueryString(
 ): string | undefined {
   const value = new URL(request.url).searchParams.get(key);
   return value && value.trim() ? value.trim() : undefined;
+}
+
+function readRequiredQueryString(request: Request, key: string): string {
+  const value = readOptionalQueryString(request, key);
+  if (!value) throw new SwigRouteError(`${key} is required`);
+  return value;
+}
+
+function requireResolvedSessionId(sessionId: string | undefined): string {
+  if (!sessionId) throw new SwigRouteError('sessionId is required');
+  return sessionId;
 }
 
 function readEnv(...names: string[]): string | undefined {

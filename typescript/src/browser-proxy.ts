@@ -1,39 +1,32 @@
-import {
-  normalizeCreateRampSessionResult,
-  normalizeGetRampTransactionResult,
-  normalizeListRampTransactionsResult,
-  normalizeQuoteRampResult,
-  normalizeRampOptions,
-} from './ramp/client.js';
 import type {
   CreateRampSessionArgs,
   CreateRampSessionResult,
-  CreateRampSessionResultWire,
   GetPaymasterBalanceArgs,
   GetRampOptionsArgs,
-  GetRampOptionsResult,
-  GetRampOptionsResultWire,
-  GetRampTransactionArgs,
-  GetRampTransactionResult,
-  GetRampTransactionResultWire,
+  GetRampSessionArgs,
   IdpWalletSession,
-  ListRampTransactionsArgs,
-  ListRampTransactionsResult,
-  ListRampTransactionsResultWire,
+  ListSwigRolesResult,
   ListSwigTokenBalancesResult,
   ListSwigTokenTransactionsArgs,
   ListSwigTokenTransactionsResult,
   Network,
+  OfframpOptions,
+  OfframpSession,
+  OnrampOptions,
+  OnrampSession,
   PaymasterBalance,
   PrepareArgs,
   PreparedTransaction,
   PreparedTransactionsResult,
   PreparedTransactionWire,
+  PrepareOfframpAuthorizationArgs,
+  PrepareOfframpAuthorizationResult,
   PrepareOperation,
   PrepareTransactionsResponseWire,
   QuoteRampArgs,
   QuoteRampResult,
-  QuoteRampResultWire,
+  SubmitOfframpAuthorizationArgs,
+  SubmitOfframpAuthorizationResult,
   SwapArgs,
   SwigUsdBalance,
   TransferSolArgs,
@@ -67,8 +60,7 @@ export interface BrowserWalletReference extends WalletReference {
 export type BrowserTransferSolArgs = WithoutFeePayer<TransferSolArgs>;
 export type BrowserTransferTokenArgs = WithoutFeePayer<TransferTokenArgs>;
 export type BrowserTransferArgs =
-  | BrowserTransferSolArgs
-  | BrowserTransferTokenArgs;
+  BrowserTransferSolArgs | BrowserTransferTokenArgs;
 export type BrowserPrepareArgs = WithoutFeePayer<PrepareArgs>;
 export type BrowserSwapArgs = WithoutFeePayer<SwapArgs>;
 
@@ -92,16 +84,12 @@ type WithoutFeePayer<TArgs extends { feePayer: string }> = Omit<
 };
 
 type SwigBrowserProxyRoute =
-  | 'prepare'
-  | 'transfer/sol'
-  | 'transfer/spl-token'
-  | 'swap/jupiter';
+  'prepare' | 'transfer/sol' | 'transfer/spl-token' | 'swap/jupiter';
 
 type BrowserProxyRequestArgs = {
   feePayer?: string;
   requesterAuthority?: WalletAuthority;
   network?: Network;
-  idempotencyKey?: string;
 };
 
 export class SwigBrowserProxyError extends Error {
@@ -297,6 +285,18 @@ export class BrowserWalletsClient {
       },
     );
   };
+
+  listRoles = (
+    wallet: BrowserWalletHandle,
+    args: WalletReadArgs = {},
+  ): Promise<ListSwigRolesResult> => {
+    return this.http.get<ListSwigRolesResult>(
+      walletReadRoute(wallet, 'roles'),
+      {
+        network: args.network ?? wallet.network ?? this.defaultNetwork,
+      },
+    );
+  };
 }
 
 export class BrowserPaymasterClient {
@@ -339,72 +339,102 @@ function paymasterKindQueryValue(
 }
 
 export class BrowserRampClient {
-  private readonly http: BrowserProxyHttpClient;
-  private readonly defaultNetwork?: Network;
+  readonly onramp: BrowserOnrampClient;
+  readonly offramp: BrowserOfframpClient;
 
   constructor(config: SwigBrowserClientConfig = {}) {
-    this.http = new BrowserProxyHttpClient({
+    const http = new BrowserProxyHttpClient({
       basePath: config.basePath ?? '/api/swig',
       fetch: resolveFetch(config.fetch),
     });
-    this.defaultNetwork = config.network;
+    this.onramp = new BrowserOnrampClient(http, config.network);
+    this.offramp = new BrowserOfframpClient(http, config.network);
   }
+}
 
-  getOptions = async (
-    args: GetRampOptionsArgs,
-  ): Promise<GetRampOptionsResult> => {
-    const response = await this.http.get<GetRampOptionsResultWire>(
-      'ramp/options',
-      {
-        partnerApplicationId: args.partnerApplicationId,
-        countryCode: args.countryCode,
-        fiatCurrencyCode: args.fiatCurrencyCode,
-      },
+export class BrowserOnrampClient {
+  constructor(
+    private readonly http: BrowserProxyHttpClient,
+    private readonly defaultNetwork?: Network,
+  ) {}
+
+  getOptions = async (args: GetRampOptionsArgs): Promise<OnrampOptions> =>
+    this.http.get<OnrampOptions>('ramp/onramp/options', {
+      organizationMeldConfigurationId: args.organizationMeldConfigurationId,
+      environment: args.environment,
+      countryCode: args.countryCode,
+      fiatCurrencyCode: args.fiatCurrencyCode,
+    });
+
+  quote = (args: QuoteRampArgs): Promise<QuoteRampResult> =>
+    this.http.postResource(
+      'ramp/onramp/quote',
+      withNetwork(args, this.defaultNetwork),
     );
-    return normalizeRampOptions(response);
-  };
 
-  quote = async (args: QuoteRampArgs): Promise<QuoteRampResult> => {
-    const response = await this.http.postResource<QuoteRampResultWire>(
-      'ramp/quote',
-      args,
-    );
-    return normalizeQuoteRampResult(response);
-  };
-
-  createSession = async (
+  createSession = (
     args: CreateRampSessionArgs,
-  ): Promise<CreateRampSessionResult> => {
-    const response = await this.http.postResource<CreateRampSessionResultWire>(
-      'ramp/sessions',
+  ): Promise<CreateRampSessionResult> =>
+    this.http.postResource('ramp/onramp/session', args);
+
+  getSession = (args: GetRampSessionArgs): Promise<OnrampSession> =>
+    this.http.get(`ramp/onramp/session/${encodeURIComponent(args.sessionId)}`, {
+      environment: args.environment,
+    });
+}
+
+export class BrowserOfframpClient {
+  constructor(
+    private readonly http: BrowserProxyHttpClient,
+    private readonly defaultNetwork?: Network,
+  ) {}
+
+  getOptions = (args: GetRampOptionsArgs): Promise<OfframpOptions> =>
+    this.http.get('ramp/offramp/options', {
+      organizationMeldConfigurationId: args.organizationMeldConfigurationId,
+      environment: args.environment,
+      countryCode: args.countryCode,
+      fiatCurrencyCode: args.fiatCurrencyCode,
+    });
+
+  quote = (args: QuoteRampArgs): Promise<QuoteRampResult> =>
+    this.http.postResource(
+      'ramp/offramp/quote',
+      withNetwork(args, this.defaultNetwork),
+    );
+
+  createSession = (
+    args: CreateRampSessionArgs,
+  ): Promise<CreateRampSessionResult> =>
+    this.http.postResource('ramp/offramp/session', args);
+
+  prepareAuthorization = (
+    args: PrepareOfframpAuthorizationArgs,
+  ): Promise<PrepareOfframpAuthorizationResult> =>
+    this.http.postResource(
+      `ramp/offramp/session/${encodeURIComponent(args.sessionId)}/prepare`,
       args,
     );
-    return normalizeCreateRampSessionResult(response);
-  };
 
-  getTransaction = async (
-    args: GetRampTransactionArgs,
-  ): Promise<GetRampTransactionResult> => {
-    const response = await this.http.get<GetRampTransactionResultWire>(
-      `ramp/transactions/${encodeURIComponent(args.transactionId)}`,
+  submitAuthorization = (
+    args: SubmitOfframpAuthorizationArgs,
+  ): Promise<SubmitOfframpAuthorizationResult> =>
+    this.http.postResource(
+      `ramp/offramp/session/${encodeURIComponent(args.sessionId)}/submit`,
+      args,
     );
-    return normalizeGetRampTransactionResult(response);
-  };
 
-  listTransactions = async (
-    args: ListRampTransactionsArgs,
-  ): Promise<ListRampTransactionsResult> => {
-    const response = await this.http.get<ListRampTransactionsResultWire>(
-      `ramp/wallets/${encodeURIComponent(args.walletId)}/transactions`,
+  getSession = (args: GetRampSessionArgs): Promise<OfframpSession> =>
+    this.http.get(
+      `ramp/offramp/session/${encodeURIComponent(args.sessionId)}`,
       {
-        network: args.network ?? this.defaultNetwork,
-        direction: args.direction,
-        status: args.status,
-        limit: args.limit,
+        environment: args.environment,
       },
     );
-    return normalizeListRampTransactionsResult(response);
-  };
+}
+
+function withNetwork(args: QuoteRampArgs, network?: Network): QuoteRampArgs {
+  return { ...args, network: args.network ?? network };
 }
 
 class BrowserProxyHttpClient {
@@ -534,11 +564,14 @@ export class BrowserWalletHandle {
     args?: ListSwigTokenTransactionsArgs,
   ): Promise<ListSwigTokenTransactionsResult> =>
     this.wallets.listTokenTransactions(this, args);
+
+  listRoles = (args?: WalletReadArgs): Promise<ListSwigRolesResult> =>
+    this.wallets.listRoles(this, args);
 }
 
 function walletReadRoute(
   wallet: BrowserWalletHandle,
-  route: 'balance/usd' | 'token-balances' | 'token-transactions',
+  route: 'balance/usd' | 'token-balances' | 'token-transactions' | 'roles',
 ): string {
   return `wallet/${encodeURIComponent(wallet.swigConfigAddress)}/${route}`;
 }
@@ -591,7 +624,6 @@ function baseRequest(
     network,
     requesterAuthority,
     feePayer: args.feePayer,
-    idempotencyKey: args.idempotencyKey,
   };
 }
 

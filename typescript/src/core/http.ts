@@ -27,21 +27,32 @@ export class HttpClient {
     });
   };
 
-  post = async <TResponse>(path: string, body: unknown): Promise<TResponse> => {
-    return this.#request<TResponse>(path, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    });
+  post = async <TResponse>(
+    path: string,
+    body: unknown,
+    options: { retry?: boolean } = {},
+  ): Promise<TResponse> => {
+    return this.#request<TResponse>(
+      path,
+      {
+        method: 'POST',
+        body: JSON.stringify(body),
+      },
+      options.retry ?? false,
+    );
   };
 
   #request = async <TResponse>(
     path: string,
     init: RequestInit,
+    retry = true,
   ): Promise<TResponse> => {
     let lastError: SwigDeveloperSdkError | undefined;
     let attempt = 0;
 
-    while (attempt <= this.#retry.maxRetries) {
+    const maxRetries = retry ? this.#retry.maxRetries : 0;
+
+    while (attempt <= maxRetries) {
       try {
         const response = await this.#fetch(`${this.#baseUrl}${path}`, {
           ...init,
@@ -73,7 +84,7 @@ export class HttpClient {
 
       attempt++;
 
-      if (attempt <= this.#retry.maxRetries) {
+      if (attempt <= maxRetries) {
         await wait(
           this.#retry.retryDelay *
             Math.pow(this.#retry.backoffMultiplier, attempt - 1),
@@ -84,7 +95,7 @@ export class HttpClient {
     throw (
       lastError ??
       new SwigDeveloperSdkError(
-        `Request failed after ${this.#retry.maxRetries} retries`,
+        `Request failed after ${maxRetries} retries`,
         'RETRY_EXHAUSTED',
         0,
       )

@@ -8,6 +8,8 @@ export type WalletAuthority =
   | { secp256r1: { publicKey: string } }
   | { programExecProof: { roleId: number; zkProof: string } };
 
+export type WalletAuthorityKind = 'ed25519' | 'secp256k1' | 'secp256r1';
+
 export interface CreateWalletArgs {
   policyId?: string;
   feePayer: string;
@@ -18,7 +20,6 @@ export interface CreateWalletArgs {
     targetRoleId?: number;
   };
   network?: Network;
-  idempotencyKey?: string;
 }
 
 export type CreateWalletResponse = CreateWalletResult;
@@ -28,7 +29,6 @@ export interface BaseTransferArgs {
   requesterAuthority?: WalletAuthority;
   amount: Amount;
   network?: Network;
-  idempotencyKey?: string;
 }
 
 export interface TransferSolArgs extends BaseTransferArgs {
@@ -61,7 +61,6 @@ export interface PrepareArgs {
   requesterAuthority?: WalletAuthority;
   operations: PrepareOperation[];
   network?: Network;
-  idempotencyKey?: string;
 }
 
 export interface SwapArgs {
@@ -79,13 +78,11 @@ export interface SwapArgs {
   mode?: string;
   blockhashSlotsToExpiry?: number;
   network?: Network;
-  idempotencyKey?: string;
 }
 
 export interface BaseRecoveryArgs {
   feePayer: string;
   network?: Network;
-  idempotencyKey?: string;
 }
 
 export interface AddRecoveryAuthorityArgs extends BaseRecoveryArgs {
@@ -101,18 +98,39 @@ export interface ConfigureRecoveryArgs extends BaseRecoveryArgs {
 export interface PrepareRecoverySetupArgs
   extends AddRecoveryAuthorityArgs, ConfigureRecoveryArgs {}
 
-export interface StartRecoveryArgs extends BaseRecoveryArgs {
-  guardianPubkey: string;
+export type StartRecoveryArgs = BaseRecoveryArgs & {
   newAuthority: string;
-}
+  newAuthorityKind: WalletAuthorityKind;
+} & (
+    | {
+        guardianPubkey: string;
+        guardianSwigAddress?: never;
+        guardianRequesterAuthority?: never;
+      }
+    | {
+        guardianPubkey?: never;
+        guardianSwigAddress: string;
+        guardianRequesterAuthority: WalletAuthority;
+      }
+  );
 
 export interface CancelRecoveryArgs extends BaseRecoveryArgs {
   requesterAuthority?: WalletAuthority;
 }
 
-export interface ExecuteRecoveryArgs extends BaseRecoveryArgs {
+export type ExecuteRecoveryArgs = BaseRecoveryArgs & {
   newAuthority: string;
-}
+  newAuthorityKind: WalletAuthorityKind;
+} & (
+    | {
+        guardianSwigAddress?: never;
+        guardianRequesterAuthority?: never;
+      }
+    | {
+        guardianSwigAddress: string;
+        guardianRequesterAuthority: WalletAuthority;
+      }
+  );
 
 export interface BuildTransactionArgs {
   feePayer: string;

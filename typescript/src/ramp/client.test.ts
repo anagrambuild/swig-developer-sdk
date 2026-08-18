@@ -2,12 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { SwigClient } from '../server/typescript/index.js';
 
-type CapturedRequest = {
-  url: string;
-  method?: string;
-  headers: Headers;
-  body: unknown;
-};
+type CapturedRequest = { url: string; method: string; body?: unknown };
 
 function jsonFetch(
   handler: (request: CapturedRequest) => unknown,
@@ -15,26 +10,33 @@ function jsonFetch(
   return (async (input, init) => {
     const request = new Request(input, init);
     const text = await request.text();
-
-    return new Response(
-      JSON.stringify(
-        handler({
-          url: request.url,
-          method: request.method,
-          headers: request.headers,
-          body: text ? JSON.parse(text) : undefined,
-        }),
-      ),
-      {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      },
+    return Response.json(
+      handler({
+        url: request.url,
+        method: request.method,
+        ...(text ? { body: JSON.parse(text) } : {}),
+      }),
     );
   }) as typeof fetch;
 }
 
 describe('RampClient', () => {
-  test('normalizes ramp country subdivision options', async () => {
+  test('rejects an invalid environment at runtime', async () => {
+    const swig = new SwigClient({
+      apiKey: 'sk_test',
+      baseUrl: 'http://localhost:8080',
+      fetch: jsonFetch(() => ({})),
+    });
+
+    await expect(
+      swig.ramp.onramp.getOptions({
+        organizationMeldConfigurationId: '018f-config',
+        environment: 'staging' as never,
+      }),
+    ).rejects.toThrow('environment must be "sandbox" or "production"');
+  });
+
+  test('uses the onramp options, quote, session, and status contracts', async () => {
     const calls: CapturedRequest[] = [];
     const swig = new SwigClient({
       apiKey: 'sk_test',
@@ -42,428 +44,211 @@ describe('RampClient', () => {
       network: 'devnet',
       fetch: jsonFetch((request) => {
         calls.push(request);
+        if (request.url.includes('/options')) {
+          return {
+            countries: [
+              {
+                country_code: 'US',
+                country_name: 'United States',
+                subdivisions: [
+                  {
+                    subdivision_code: 'US-CA',
+                    subdivision_name: 'California',
+                  },
+                ],
+              },
+            ],
+            fiat_currency_codes: ['USD'],
+            payment_method_types: ['CARD'],
+            crypto_currency_codes: ['USDC_SOLANA'],
+          };
+        }
+        if (request.url.endsWith('/quote')) {
+          return {
+            quotes: [
+              {
+                quote_id: 'quote_123',
+                service_provider: 'TRANSAK',
+                payment_method_type: 'CARD',
+                source_amount: '100',
+                source_currency_code: 'USD',
+                destination_amount: '99',
+                destination_currency_code: 'USDC_SOLANA',
+                exchange_rate: '0.99',
+                total_fee: '1',
+              },
+            ],
+          };
+        }
+        if (request.method === 'POST') {
+          return { session_id: 'session_123', launch_url: 'https://launch' };
+        }
         return {
-          country_codes: ['GB', 'US'],
-          countries: [
-            {
-              country_code: 'GB',
-              country_name: 'United Kingdom',
-              subdivisions: [],
-            },
-            {
-              country_code: 'US',
-              country_name: 'United States',
-              subdivisions: [
-                {
-                  subdivision_code: 'US-CA',
-                  subdivision_name: 'California',
-                },
-                {
-                  subdivision_code: 'US-NY',
-                  subdivision_name: 'New York',
-                },
-              ],
-            },
-          ],
-          fiat_currency_codes: ['USD'],
-          payment_method_types: ['RAMP_PAYMENT_METHOD_TYPE_CREDIT_DEBIT_CARD'],
-          crypto_currency_codes: ['USDC_SOLANA'],
+          session_id: 'session_123',
+          status: 'ONRAMP_SESSION_STATUS_PENDING',
+          created_at: '2026-08-18T00:00:00Z',
+          updated_at: '2026-08-18T00:01:00Z',
         };
       }),
     });
+    const configuration = {
+      organizationMeldConfigurationId: '018f-config',
+      environment: 'sandbox' as const,
+    };
 
-    const result = await swig.ramp.getOptions({
-      countryCode: 'US',
-      fiatCurrencyCode: 'USD',
-    });
-
-    expect(calls[0]).toMatchObject({
-      url: 'http://localhost:8080/wallet/api/ramp/options?countryCode=US&fiatCurrencyCode=USD',
-      method: 'GET',
-    });
-    expect(result).toMatchObject({
-      countryCodes: ['GB', 'US'],
-      countries: [
-        {
-          countryCode: 'GB',
-          countryName: 'United Kingdom',
-          subdivisions: [],
-        },
-        {
-          countryCode: 'US',
-          countryName: 'United States',
-          subdivisions: [
-            {
-              subdivisionCode: 'US-CA',
-              subdivisionName: 'California',
-            },
-            {
-              subdivisionCode: 'US-NY',
-              subdivisionName: 'New York',
-            },
-          ],
-        },
-      ],
-      fiatCurrencyCodes: ['USD'],
-      paymentMethodTypes: ['credit-debit-card'],
+    await expect(
+      swig.ramp.onramp.getOptions({
+        ...configuration,
+        countryCode: 'US',
+      }),
+    ).resolves.toMatchObject({
+      countries: [{ countryCode: 'US' }],
       cryptoCurrencyCodes: ['USDC_SOLANA'],
     });
-  });
-
-  test('falls back to country codes when country options are absent', async () => {
-    const swig = new SwigClient({
-      apiKey: 'sk_test',
-      baseUrl: 'http://localhost:8080',
-      network: 'devnet',
-      fetch: jsonFetch(() => ({
-        country_codes: ['US'],
-        fiat_currency_codes: ['USD'],
-        payment_method_types: ['RAMP_PAYMENT_METHOD_TYPE_CREDIT_DEBIT_CARD'],
-        crypto_currency_codes: ['USDC_SOLANA'],
-      })),
-    });
-
-    await expect(swig.ramp.getOptions({})).resolves.toMatchObject({
-      countryCodes: ['US'],
-      countries: [
-        {
-          countryCode: 'US',
-          countryName: 'US',
-          subdivisions: [],
-        },
-      ],
-    });
-  });
-
-  test('falls back to country codes when country options are empty', async () => {
-    const swig = new SwigClient({
-      apiKey: 'sk_test',
-      baseUrl: 'http://localhost:8080',
-      network: 'devnet',
-      fetch: jsonFetch(() => ({
-        country_codes: ['BR'],
-        countries: [],
-        fiat_currency_codes: ['BRL'],
-        payment_method_types: ['RAMP_PAYMENT_METHOD_TYPE_PIX'],
-        crypto_currency_codes: ['USDC_SOLANA'],
-      })),
-    });
-
-    await expect(swig.ramp.getOptions({})).resolves.toMatchObject({
-      countryCodes: ['BR'],
-      countries: [
-        {
-          countryCode: 'BR',
-          countryName: 'BR',
-          subdivisions: [],
-        },
-      ],
-    });
-  });
-
-  test('rejects malformed country subdivision options', async () => {
-    const cases: [string, unknown, string][] = [
-      [
-        'country code',
-        [{ country_name: 'United States', subdivisions: [] }],
-        'countryCode',
-      ],
-      [
-        'country name',
-        [{ country_code: 'US', subdivisions: [] }],
-        'countryName',
-      ],
-      [
-        'subdivisions',
-        [{ country_code: 'US', country_name: 'United States' }],
-        'subdivisions',
-      ],
-      [
-        'subdivision code',
-        [
-          {
-            country_code: 'US',
-            country_name: 'United States',
-            subdivisions: [{ subdivision_name: 'California' }],
-          },
-        ],
-        'subdivisionCode',
-      ],
-      [
-        'subdivision name',
-        [
-          {
-            country_code: 'US',
-            country_name: 'United States',
-            subdivisions: [{ subdivision_code: 'US-CA' }],
-          },
-        ],
-        'subdivisionName',
-      ],
-      ['countries', null, 'countries'],
-    ];
-
-    for (const [label, countries, message] of cases) {
-      const swig = new SwigClient({
-        apiKey: 'sk_test',
-        baseUrl: 'http://localhost:8080',
-        network: 'devnet',
-        fetch: jsonFetch(() => ({
-          country_codes: ['US'],
-          countries,
-          fiat_currency_codes: ['USD'],
-          payment_method_types: ['RAMP_PAYMENT_METHOD_TYPE_CREDIT_DEBIT_CARD'],
-          crypto_currency_codes: ['USDC_SOLANA'],
-        })),
-      });
-
-      await expect(swig.ramp.getOptions({}), label).rejects.toThrow(message);
-    }
-  });
-
-  test('quotes ramp options through the backend API with proto wire enums', async () => {
-    const calls: CapturedRequest[] = [];
-    const swig = new SwigClient({
-      apiKey: 'sk_test',
-      baseUrl: 'http://localhost:8080',
-      network: 'devnet',
-      fetch: jsonFetch((request) => {
-        calls.push(request);
-        return {
-          quotes: [
-            {
-              quote_id: 'quote_123',
-              direction: 'RAMP_DIRECTION_ONRAMP',
-              service_provider: 'RAMP_SERVICE_PROVIDER_OTHER',
-              payment_method_type: 'RAMP_PAYMENT_METHOD_TYPE_CREDIT_DEBIT_CARD',
-              source_amount: '100.00',
-              source_currency_code: 'USD',
-              destination_amount: '99.00',
-              destination_currency_code: 'USDC_SOLANA',
-              exchange_rate: '0.99',
-              total_fee: '1.00',
-              network_fee: '0.10',
-              transaction_fee: '0.70',
-              partner_fee: '0.20',
-              ramp_score: '92.5',
-              low_kyc: true,
-              service_provider_code: 'TRANSAK',
-            },
-          ],
-        };
-      }),
-    });
-
-    const result = await swig.ramp.quote({
-      customer: {
-        partnerApplicationId: 'app_123',
-        swigUserId: 'user_123',
-        customerType: 'individual',
-      },
-      wallet: {
-        walletId: 'wallet_123',
-        walletAddress: 'wallet_address_123',
-        network: 'devnet',
-      },
-      direction: 'onramp',
-      sourceAmount: '100.00',
-      sourceCurrencyCode: 'USD',
-      destinationCurrencyCode: 'USDC_SOLANA',
-      countryCode: 'US',
-      paymentMethodType: 'credit-debit-card',
-      serviceProviders: ['other'],
-    });
-
-    expect(calls[0]).toMatchObject({
-      url: 'http://localhost:8080/wallet/api/ramp/quote',
-      method: 'POST',
-      body: {
-        customer: {
-          partnerApplicationId: 'app_123',
-          swigUserId: 'user_123',
-          customerType: 'RAMP_CUSTOMER_TYPE_INDIVIDUAL',
-        },
-        wallet: {
-          walletId: 'wallet_123',
-          walletAddress: 'wallet_address_123',
-          network: 'NETWORK_DEVNET',
-        },
-        direction: 'RAMP_DIRECTION_ONRAMP',
-        sourceAmount: '100.00',
+    await expect(
+      swig.ramp.onramp.quote({
+        ...configuration,
+        externalCustomerId: 'customer_123',
+        swigConfigAddress: 'swig_123',
+        sourceAmount: '100',
         sourceCurrencyCode: 'USD',
         destinationCurrencyCode: 'USDC_SOLANA',
         countryCode: 'US',
-        paymentMethodType: 'RAMP_PAYMENT_METHOD_TYPE_CREDIT_DEBIT_CARD',
-        serviceProviders: ['RAMP_SERVICE_PROVIDER_OTHER'],
+      }),
+    ).resolves.toMatchObject({ quotes: [{ serviceProvider: 'TRANSAK' }] });
+    await expect(
+      swig.ramp.onramp.createSession({
+        ...configuration,
+        quoteId: 'quote_123',
+      }),
+    ).resolves.toEqual({
+      sessionId: 'session_123',
+      launchUrl: 'https://launch',
+    });
+    await expect(
+      swig.ramp.onramp.getSession({
+        sessionId: 'session_123',
+        environment: 'sandbox',
+      }),
+    ).resolves.toMatchObject({ status: 'pending' });
+
+    expect(calls[0]?.url).toContain(
+      '/wallet/api/ramp/onramp/options?organizationMeldConfigurationId=018f-config&environment=MELD_ENVIRONMENT_SANDBOX&countryCode=US',
+    );
+    expect(calls[1]).toMatchObject({
+      url: 'http://localhost:8080/wallet/api/ramp/onramp/quote',
+      body: {
+        organizationMeldConfigurationId: '018f-config',
+        externalCustomerId: 'customer_123',
+        swigConfigAddress: 'swig_123',
+        network: 'NETWORK_DEVNET',
+        sourceAmount: '100',
+        sourceCurrencyCode: 'USD',
+        destinationCurrencyCode: 'USDC_SOLANA',
+        countryCode: 'US',
+        environment: 'MELD_ENVIRONMENT_SANDBOX',
       },
     });
-    expect(calls[0]?.headers.get('authorization')).toBe('Bearer sk_test');
-    expect(result.quotes[0]).toMatchObject({
-      quoteId: 'quote_123',
-      direction: 'onramp',
-      serviceProvider: 'other',
-      paymentMethodType: 'credit-debit-card',
-      rampScore: '92.5',
-      lowKyc: true,
-      serviceProviderCode: 'TRANSAK',
-    });
   });
 
-  test('requires non-empty string provider code on ramp quotes', async () => {
-    const cases: [string, unknown][] = [
-      ['missing', undefined],
-      ['empty', ''],
-      ['number', 123],
-      ['boolean', true],
-    ];
-
-    for (const [label, providerCode] of cases) {
-      const quote = {
-        quote_id: 'quote_123',
-        direction: 'RAMP_DIRECTION_ONRAMP',
-        service_provider: 'RAMP_SERVICE_PROVIDER_OTHER',
-        payment_method_type: 'RAMP_PAYMENT_METHOD_TYPE_CREDIT_DEBIT_CARD',
-        source_amount: '100.00',
-        source_currency_code: 'USD',
-        destination_amount: '99.00',
-        destination_currency_code: 'USDC_SOLANA',
-        exchange_rate: '0.99',
-        total_fee: '1.00',
-        network_fee: '0.10',
-        transaction_fee: '0.70',
-        partner_fee: '0.20',
-        ...(providerCode === undefined
-          ? {}
-          : { service_provider_code: providerCode }),
-      };
-
-      const swig = new SwigClient({
-        apiKey: 'sk_test',
-        baseUrl: 'http://localhost:8080',
-        network: 'devnet',
-        fetch: jsonFetch(() => ({
-          quotes: [quote],
-        })),
-      });
-
-      await expect(
-        swig.ramp.quote({
-          customer: {
-            partnerApplicationId: 'app_123',
-            swigUserId: 'user_123',
-            customerType: 'individual',
-          },
-          wallet: {
-            walletId: 'wallet_123',
-            walletAddress: 'wallet_address_123',
-            network: 'devnet',
-          },
-          direction: 'onramp',
-          sourceAmount: '100.00',
-          sourceCurrencyCode: 'USD',
-          destinationCurrencyCode: 'USDC_SOLANA',
-          countryCode: 'US',
-        }),
-        label,
-      ).rejects.toThrow('Ramp response is missing serviceProviderCode');
-    }
-  });
-
-  test('creates sessions and lists ramp transaction history', async () => {
+  test('uses the offramp options and authorization contracts', async () => {
     const calls: CapturedRequest[] = [];
     const swig = new SwigClient({
       apiKey: 'sk_test',
       baseUrl: 'http://localhost:8080',
-      network: 'devnet',
+      network: 'mainnet',
       fetch: jsonFetch((request) => {
         calls.push(request);
-        if (request.method === 'POST') {
+        if (request.url.includes('/options')) {
           return {
-            local_session_id: 'session_local_123',
-            meld_session_id: 'meld_session_123',
-            external_customer_id: 'customer_123',
-            external_session_id: 'swig:ramp:on:wallet_123:session_123',
-            launch_url: 'https://provider.example/launch',
-            fallback_launch_url: 'https://meld.example/widget',
+            countries: [],
+            fiat_currency_codes: ['USD'],
+            payment_method_types: ['ACH'],
+            crypto_currencies: [
+              {
+                currency_code: 'USDC_SOLANA',
+                currency_name: 'USD Coin',
+                icon_url: 'https://icon',
+                contract_address: 'mint_123',
+              },
+            ],
           };
         }
-        return {
-          transactions: [
-            {
-              transaction_id: 'txn_123',
-              meld_transaction_id: 'meld_txn_123',
-              meld_session_id: 'meld_session_123',
-              wallet_id: 'wallet_123',
-              direction: 'RAMP_DIRECTION_ONRAMP',
-              transaction_type: 'RAMP_TRANSACTION_TYPE_CRYPTO_PURCHASE',
-              status: 'RAMP_TRANSACTION_STATUS_PENDING',
-              service_provider: 'RAMP_SERVICE_PROVIDER_OTHER',
-              payment_method_type: 'RAMP_PAYMENT_METHOD_TYPE_ACH',
-              source_amount: '100.00',
-              source_currency_code: 'USD',
-              destination_amount: '99.00',
-              destination_currency_code: 'USDC_SOLANA',
-              created_at: '2026-06-06T00:00:00Z',
-              updated_at: '2026-06-06T00:01:00Z',
+        if (request.url.endsWith('/prepare')) {
+          return {
+            authorization_id: 'authorization_123',
+            prepared_transaction: {
+              transaction: 'base64_transaction',
+              transaction_encoding: 'TRANSACTION_ENCODING_BASE64',
+              signature_requests: [],
             },
-          ],
+            display: {
+              source_wallet_address: 'wallet_123',
+              destination_wallet_address: 'provider_123',
+              source_amount: '10',
+              source_currency_code: 'USDC_SOLANA',
+              destination_amount: '9.90',
+              destination_currency_code: 'USD',
+              service_provider: 'TRANSAK',
+            },
+          };
+        }
+        if (request.url.endsWith('/submit')) {
+          return { solana_signature: 'signature_123' };
+        }
+        return {
+          session_id: 'session_123',
+          status: 'OFFRAMP_SESSION_STATUS_TRANSFER_REQUIRED',
+          source_amount: '10',
+          source_currency_code: 'USDC_SOLANA',
+          destination_amount: '9.90',
+          destination_currency_code: 'USD',
+          service_provider: 'TRANSAK',
+          created_at: '2026-08-18T00:00:00Z',
+          updated_at: '2026-08-18T00:01:00Z',
         };
       }),
     });
+    const configuration = {
+      organizationMeldConfigurationId: '018f-config',
+      environment: 'production' as const,
+    };
 
-    const session = await swig.ramp.createSession({
-      customer: {
-        swigUserId: 'user_123',
-        customerType: 'individual',
-      },
-      wallet: {
-        walletId: 'wallet_123',
-        walletAddress: 'wallet_address_123',
-        network: 'devnet',
-      },
-      direction: 'onramp',
-      selectedQuoteId: 'quote_123',
-      sourceAmount: '100.00',
-      sourceCurrencyCode: 'USD',
-      destinationCurrencyCode: 'USDC_SOLANA',
-      countryCode: 'US',
-      serviceProvider: 'other',
-      paymentMethodType: 'ach',
-      redirectUrl: 'https://app.example/ramp/return',
+    await expect(
+      swig.ramp.offramp.getOptions(configuration),
+    ).resolves.toMatchObject({
+      cryptoCurrencies: [{ contractAddress: 'mint_123' }],
     });
-    const history = await swig.ramp.listTransactions({
-      walletId: 'wallet_123',
-      direction: 'onramp',
-      status: 'pending',
-      limit: 25,
+    const prepared = await swig.ramp.offramp.prepareAuthorization({
+      sessionId: 'session_123',
+      environment: 'production',
+      requesterAuthority: { ed25519: { publicKey: 'requester_123' } },
+      feePayer: 'payer_123',
     });
+    expect(prepared.authorizationId).toBe('authorization_123');
+    expect(prepared.preparedTransaction.transaction).toBe('base64_transaction');
+    await expect(
+      swig.ramp.offramp.submitAuthorization({
+        sessionId: 'session_123',
+        authorizationId: 'authorization_123',
+        signedTransaction: 'base64_signed_transaction',
+        environment: 'production',
+      }),
+    ).resolves.toEqual({ solanaSignature: 'signature_123' });
+    await expect(
+      swig.ramp.offramp.getSession({
+        sessionId: 'session_123',
+        environment: 'production',
+      }),
+    ).resolves.toMatchObject({ status: 'transfer-required' });
 
-    expect(calls[0]).toMatchObject({
-      url: 'http://localhost:8080/wallet/api/ramp/sessions',
-      method: 'POST',
-      body: {
-        direction: 'RAMP_DIRECTION_ONRAMP',
-        selectedQuoteId: 'quote_123',
-        serviceProvider: 'RAMP_SERVICE_PROVIDER_OTHER',
-        paymentMethodType: 'RAMP_PAYMENT_METHOD_TYPE_ACH',
-        redirectUrl: 'https://app.example/ramp/return',
-      },
-    });
-    expect(session).toMatchObject({
-      localSessionId: 'session_local_123',
-      meldSessionId: 'meld_session_123',
-      launchUrl: 'https://provider.example/launch',
-      fallbackLaunchUrl: 'https://meld.example/widget',
-    });
     expect(calls[1]).toMatchObject({
-      url: 'http://localhost:8080/wallet/api/ramp/wallets/wallet_123/transactions?network=NETWORK_DEVNET&direction=RAMP_DIRECTION_ONRAMP&status=RAMP_TRANSACTION_STATUS_PENDING&limit=25',
-      method: 'GET',
-    });
-    expect(history.transactions[0]).toMatchObject({
-      transactionId: 'txn_123',
-      transactionType: 'crypto-purchase',
-      status: 'pending',
-      paymentMethodType: 'ach',
+      url: 'http://localhost:8080/wallet/api/ramp/offramp/session/session_123/prepare',
+      body: {
+        requesterAuthority: { ed25519: { publicKey: 'requester_123' } },
+        environment: 'MELD_ENVIRONMENT_PRODUCTION',
+        feePayer: 'payer_123',
+      },
     });
   });
 });

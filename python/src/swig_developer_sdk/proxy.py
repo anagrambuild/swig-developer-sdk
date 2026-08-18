@@ -14,14 +14,8 @@ from .client import SwigClient
 from .common import DEFAULT_BACKEND_URL, Network, WalletAuthority, normalize_network
 from .paymaster import PaymasterBalanceKind
 from .ramp import (
-    ActiveRampDirection,
-    ActiveRampTransactionStatus,
-    CreateRampSessionArgs,
+    MeldEnvironment,
     QuoteRampArgs,
-    RampCustomerContext,
-    RampPaymentMethodType,
-    RampServiceProvider,
-    RampWalletContext,
 )
 from .wallets import (
     RecoveryOptions,
@@ -36,17 +30,23 @@ PostProxyRoute: TypeAlias = Literal[
     "transfer/sol",
     "transfer/spl-token",
     "swap/jupiter",
-    "ramp/quote",
-    "ramp/sessions",
+    "ramp/onramp/quote",
+    "ramp/onramp/session",
+    "ramp/offramp/quote",
+    "ramp/offramp/session",
+    "ramp/offramp/prepare",
+    "ramp/offramp/submit",
 ]
 ReadProxyRoute: TypeAlias = Literal[
     "wallet/balance/usd",
     "wallet/token-balances",
     "wallet/token-transactions",
+    "wallet/roles",
     "paymaster/balance",
-    "ramp/options",
-    "ramp/transaction",
-    "ramp/wallet-transactions",
+    "ramp/onramp/options",
+    "ramp/onramp/session",
+    "ramp/offramp/options",
+    "ramp/offramp/session",
 ]
 ProxyRoute: TypeAlias = PostProxyRoute | ReadProxyRoute
 T = TypeVar("T")
@@ -84,9 +84,6 @@ class SwigProxyConfig:
     ) = None
     resolve_requester_pubkey: (
         Callable[[SwigRouteContext], MaybeAwaitable[str | None]] | None
-    ) = None
-    resolve_ramp_customer: (
-        Callable[[SwigRouteContext], MaybeAwaitable[RampCustomerContext | None]] | None
     ) = None
     transport: httpx.AsyncBaseTransport | None = None
 
@@ -137,7 +134,7 @@ class SwigProxyHandler:
         body: Mapping[str, object],
         query: Mapping[str, str],
     ) -> Mapping[str, object]:
-        route = _resolve_post_route(path)
+        route, session_id = _resolve_post_route(path)
         network = _read_network(body.get("network")) or self._config.network
         wallet = None if route.startswith("ramp/") else _read_wallet(body.get("wallet"))
         context = SwigRouteContext(
@@ -162,24 +159,91 @@ class SwigProxyHandler:
                 initial_user=initial_user,
                 recovery=_read_recovery_options(body.get("recovery")),
                 network=network,
-                idempotency_key=_optional_string(body.get("idempotencyKey")),
             )
             if not created.transactions:
                 raise SwigProxyRouteError(
                     "Wallet creation response is missing transaction", 502
                 )
             return {"prepared": created}
-        if route == "ramp/quote":
-            customer = await self._ramp_customer(context)
-            return cast(
-                Mapping[str, object],
-                _to_wire(await swig.ramp.quote(_quote_args(body, customer))),
+        if route in ("ramp/onramp/quote", "ramp/offramp/quote"):
+            client = (
+                swig.ramp.onramp if route == "ramp/onramp/quote" else swig.ramp.offramp
             )
-        if route == "ramp/sessions":
-            customer = await self._ramp_customer(context)
             return cast(
                 Mapping[str, object],
-                _to_wire(await swig.ramp.create_session(_session_args(body, customer))),
+                _to_wire(
+                    await client.quote(
+                        QuoteRampArgs(
+                            organization_meld_configuration_id=_required_string(
+                                body, "organizationMeldConfigurationId"
+                            ),
+                            environment=_read_meld_environment(body.get("environment")),
+                            external_customer_id=_required_string(
+                                body, "externalCustomerId"
+                            ),
+                            swig_config_address=_required_string(
+                                body, "swigConfigAddress"
+                            ),
+                            network=network,
+                            source_amount=_required_string(body, "sourceAmount"),
+                            source_currency_code=_required_string(
+                                body, "sourceCurrencyCode"
+                            ),
+                            destination_currency_code=_required_string(
+                                body, "destinationCurrencyCode"
+                            ),
+                            country_code=_required_string(body, "countryCode"),
+                            subdivision=_optional_string(body.get("subdivision")),
+                            payment_method_type=_optional_string(
+                                body.get("paymentMethodType")
+                            ),
+                        )
+                    )
+                ),
+            )
+        if route in ("ramp/onramp/session", "ramp/offramp/session"):
+            client = (
+                swig.ramp.onramp
+                if route == "ramp/onramp/session"
+                else swig.ramp.offramp
+            )
+            return cast(
+                Mapping[str, object],
+                _to_wire(
+                    await client.create_session(
+                        organization_meld_configuration_id=_required_string(
+                            body, "organizationMeldConfigurationId"
+                        ),
+                        quote_id=_required_string(body, "quoteId"),
+                        environment=_read_meld_environment(body.get("environment")),
+                    )
+                ),
+            )
+        if route == "ramp/offramp/prepare":
+            return cast(
+                Mapping[str, object],
+                _to_wire(
+                    await swig.ramp.offramp.prepare_authorization(
+                        session_id=_require_session_id(session_id),
+                        requester_authority=_require_authority(
+                            _read_authority(body.get("requesterAuthority"))
+                        ),
+                        environment=_read_meld_environment(body.get("environment")),
+                        fee_payer=_required_string(body, "feePayer"),
+                    )
+                ),
+            )
+        if route == "ramp/offramp/submit":
+            return cast(
+                Mapping[str, object],
+                _to_wire(
+                    await swig.ramp.offramp.submit_authorization(
+                        session_id=_require_session_id(session_id),
+                        authorization_id=_required_string(body, "authorizationId"),
+                        signed_transaction=_required_string(body, "signedTransaction"),
+                        environment=_read_meld_environment(body.get("environment")),
+                    )
+                ),
             )
 
         required_wallet = _require_wallet(wallet)
@@ -190,14 +254,12 @@ class SwigProxyHandler:
             network=network,
             requester_authority=requester_authority,
         )
-        idempotency_key = _optional_string(body.get("idempotencyKey"))
         prepared: object
         if route == "prepare":
             prepared = await handle.prepare(
                 fee_payer=fee_payer,
                 requester_authority=requester_authority,
                 network=network,
-                idempotency_key=idempotency_key,
                 operations=_read_operations(body.get("operations")),
             )
         elif route == "transfer/sol":
@@ -205,7 +267,6 @@ class SwigProxyHandler:
                 fee_payer=fee_payer,
                 requester_authority=requester_authority,
                 network=network,
-                idempotency_key=idempotency_key,
                 destination=_required_string(body, "destination"),
                 amount=_read_amount(body),
             )
@@ -214,7 +275,6 @@ class SwigProxyHandler:
                 fee_payer=fee_payer,
                 requester_authority=requester_authority,
                 network=network,
-                idempotency_key=idempotency_key,
                 mint=_required_string(body, "mint"),
                 destination_owner=_required_string(body, "destinationOwner"),
                 amount=_read_amount(body),
@@ -224,7 +284,6 @@ class SwigProxyHandler:
                 fee_payer=fee_payer,
                 requester_authority=requester_authority,
                 network=network,
-                idempotency_key=idempotency_key,
                 input_mint=_required_string(body, "inputMint"),
                 output_mint=_required_string(body, "outputMint"),
                 amount=_read_amount(body),
@@ -250,14 +309,6 @@ class SwigProxyHandler:
     ) -> Mapping[str, object]:
         route, identifier = _resolve_read_route(path)
         network = _read_network(query.get("network")) or self._config.network
-        context = SwigRouteContext(
-            method="GET",
-            path=path,
-            route=route,
-            body={},
-            query=query,
-            network=network,
-        )
         swig = self._client(network)
         if route == "paymaster/balance":
             kind_value = query.get("kind", "").strip().upper()
@@ -274,39 +325,42 @@ class SwigProxyHandler:
                 Mapping[str, object],
                 _to_wire(await swig.paymaster.get_balance(network=network, kind=kind)),
             )
-        if route == "ramp/options":
-            customer = await self._resolved_ramp_customer(context)
+        if route in ("ramp/onramp/options", "ramp/offramp/options"):
+            client = (
+                swig.ramp.onramp
+                if route == "ramp/onramp/options"
+                else swig.ramp.offramp
+            )
             return cast(
                 Mapping[str, object],
                 _to_wire(
-                    await swig.ramp.get_options(
-                        partner_application_id=(
-                            customer.partner_application_id
-                            if customer is not None
-                            else query.get("partnerApplicationId")
+                    await client.get_options(
+                        organization_meld_configuration_id=_required_query_string(
+                            query, "organizationMeldConfigurationId"
                         ),
+                        environment=_read_meld_environment(query.get("environment")),
                         country_code=query.get("countryCode"),
                         fiat_currency_code=query.get("fiatCurrencyCode"),
                     )
                 ),
             )
-        if route == "ramp/transaction":
-            return cast(
-                Mapping[str, object],
-                _to_wire(await swig.ramp.get_transaction(transaction_id=identifier)),
-            )
-        if route == "ramp/wallet-transactions":
-            direction = _active_direction(query.get("direction"))
-            status = _active_status(query.get("status"))
+        if route == "ramp/onramp/session":
             return cast(
                 Mapping[str, object],
                 _to_wire(
-                    await swig.ramp.list_transactions(
-                        wallet_id=identifier,
-                        network=network,
-                        direction=direction,
-                        status=status,
-                        limit=_optional_int(query.get("limit")),
+                    await swig.ramp.onramp.get_session(
+                        session_id=identifier,
+                        environment=_read_meld_environment(query.get("environment")),
+                    )
+                ),
+            )
+        if route == "ramp/offramp/session":
+            return cast(
+                Mapping[str, object],
+                _to_wire(
+                    await swig.ramp.offramp.get_session(
+                        session_id=identifier,
+                        environment=_read_meld_environment(query.get("environment")),
                     )
                 ),
             )
@@ -317,11 +371,13 @@ class SwigProxyHandler:
             result = await handle.get_usd_balance(network=network)
         elif route == "wallet/token-balances":
             result = await handle.list_token_balances(network=network)
-        else:
+        elif route == "wallet/token-transactions":
             result = await handle.list_token_transactions(
                 network=network,
                 limit=_optional_int(query.get("limit")),
             )
+        else:
+            result = await handle.list_roles(network=network)
         return cast(Mapping[str, object], _to_wire(result))
 
     def _client(self, network: Network | None) -> SwigClient:
@@ -379,19 +435,6 @@ class SwigProxyHandler:
             raise SwigProxyRouteError("requesterAuthority is required")
         return authority
 
-    async def _resolved_ramp_customer(
-        self, context: SwigRouteContext
-    ) -> RampCustomerContext | None:
-        if self._config.resolve_ramp_customer is None:
-            return None
-        return await _resolve(self._config.resolve_ramp_customer(context))
-
-    async def _ramp_customer(self, context: SwigRouteContext) -> RampCustomerContext:
-        resolved = await self._resolved_ramp_customer(context)
-        if resolved is not None:
-            return resolved
-        return _read_ramp_customer(context.body.get("customer"))
-
 
 def create_swig_proxy_handler(
     config: SwigProxyConfig | None = None,
@@ -399,20 +442,30 @@ def create_swig_proxy_handler(
     return SwigProxyHandler(config)
 
 
-def _resolve_post_route(path: str) -> PostProxyRoute:
+def _resolve_post_route(path: str) -> tuple[PostProxyRoute, str | None]:
     routes: tuple[PostProxyRoute, ...] = (
         "wallet/create",
         "prepare",
         "transfer/sol",
         "transfer/spl-token",
         "swap/jupiter",
-        "ramp/quote",
-        "ramp/sessions",
+        "ramp/onramp/quote",
+        "ramp/onramp/session",
+        "ramp/offramp/quote",
+        "ramp/offramp/session",
     )
     normalized = path.rstrip("/")
+    action = re.search(r"/ramp/offramp/session/([^/]+)/(prepare|submit)$", normalized)
+    if action:
+        route: PostProxyRoute = (
+            "ramp/offramp/prepare"
+            if action.group(2) == "prepare"
+            else "ramp/offramp/submit"
+        )
+        return route, unquote(action.group(1))
     for route in routes:
         if normalized == f"/{route}" or normalized.endswith(f"/{route}"):
-            return route
+            return route, None
     raise SwigProxyRouteError("Unsupported Swig route", 404)
 
 
@@ -420,16 +473,16 @@ def _resolve_read_route(path: str) -> tuple[ReadProxyRoute, str]:
     normalized = path.rstrip("/")
     if normalized.endswith("/paymaster/balance"):
         return "paymaster/balance", ""
-    if normalized.endswith("/ramp/options"):
-        return "ramp/options", ""
-    match = re.search(r"/ramp/transactions/([^/]+)$", normalized)
-    if match:
-        return "ramp/transaction", unquote(match.group(1))
-    match = re.search(r"/ramp/wallets/([^/]+)/transactions$", normalized)
-    if match:
-        return "ramp/wallet-transactions", unquote(match.group(1))
+    for direction in ("onramp", "offramp"):
+        if normalized.endswith(f"/ramp/{direction}/options"):
+            return cast(ReadProxyRoute, f"ramp/{direction}/options"), ""
+        match = re.search(rf"/ramp/{direction}/session/([^/]+)$", normalized)
+        if match:
+            return cast(ReadProxyRoute, f"ramp/{direction}/session"), unquote(
+                match.group(1)
+            )
     match = re.search(
-        r"/wallet/([^/]+)/(balance/usd|token-balances|token-transactions)$",
+        r"/wallet/([^/]+)/(balance/usd|token-balances|token-transactions|roles)$",
         normalized,
     )
     if not match:
@@ -438,6 +491,7 @@ def _resolve_read_route(path: str) -> tuple[ReadProxyRoute, str]:
         "balance/usd": "wallet/balance/usd",
         "token-balances": "wallet/token-balances",
         "token-transactions": "wallet/token-transactions",
+        "roles": "wallet/roles",
     }
     return route_map[match.group(2)], unquote(match.group(1))
 
@@ -515,69 +569,6 @@ def _read_operations(
     return tuple(operations)
 
 
-def _quote_args(
-    body: Mapping[str, object], customer: RampCustomerContext
-) -> QuoteRampArgs:
-    return QuoteRampArgs(
-        customer=customer,
-        wallet=_read_ramp_wallet(body.get("wallet")),
-        direction=_required_active_direction(_required_string(body, "direction")),
-        source_amount=_required_string(body, "sourceAmount"),
-        source_currency_code=_required_string(body, "sourceCurrencyCode"),
-        destination_currency_code=_required_string(body, "destinationCurrencyCode"),
-        country_code=_required_string(body, "countryCode"),
-        subdivision=_optional_string(body.get("subdivision")),
-        payment_method_type=_payment_method(body.get("paymentMethodType")),
-        service_providers=_service_providers(body.get("serviceProviders")),
-    )
-
-
-def _session_args(
-    body: Mapping[str, object], customer: RampCustomerContext
-) -> CreateRampSessionArgs:
-    provider = _service_provider(body.get("serviceProvider"))
-    return CreateRampSessionArgs(
-        customer=customer,
-        wallet=_read_ramp_wallet(body.get("wallet")),
-        direction=_required_active_direction(_required_string(body, "direction")),
-        selected_quote_id=_required_string(body, "selectedQuoteId"),
-        source_amount=_required_string(body, "sourceAmount"),
-        source_currency_code=_required_string(body, "sourceCurrencyCode"),
-        destination_currency_code=_required_string(body, "destinationCurrencyCode"),
-        country_code=_required_string(body, "countryCode"),
-        subdivision=_optional_string(body.get("subdivision")),
-        service_provider=provider,
-        payment_method_type=_payment_method(body.get("paymentMethodType")),
-        redirect_url=_optional_string(body.get("redirectUrl")),
-    )
-
-
-def _read_ramp_customer(value: object) -> RampCustomerContext:
-    body = _mapping(value, "customer")
-    customer_type = body.get("customerType")
-    if customer_type not in ("individual", "business", "unspecified"):
-        raise SwigProxyRouteError("customer.customerType is required")
-    return RampCustomerContext(
-        customer_type=customer_type,
-        partner_application_id=_optional_string(body.get("partnerApplicationId")),
-        swig_user_id=_optional_string(body.get("swigUserId")),
-        external_customer_id=_optional_string(body.get("externalCustomerId")),
-        external_business_id=_optional_string(body.get("externalBusinessId")),
-    )
-
-
-def _read_ramp_wallet(value: object) -> RampWalletContext:
-    body = _mapping(value, "wallet")
-    network = _read_network(body.get("network"))
-    if network is None:
-        raise SwigProxyRouteError("wallet.network is required")
-    return RampWalletContext(
-        wallet_id=_required_string(body, "walletId"),
-        wallet_address=_required_string(body, "walletAddress"),
-        network=network,
-    )
-
-
 def _read_amount(body: Mapping[str, object]) -> str:
     amount = _required_string(body, "amount")
     if not amount.isdigit() or int(amount) <= 0:
@@ -585,69 +576,30 @@ def _read_amount(body: Mapping[str, object]) -> str:
     return amount
 
 
-def _active_direction(value: object) -> ActiveRampDirection | None:
-    if value in ("onramp", "offramp", "transfer"):
-        return value
-    return None
-
-
-def _required_active_direction(value: object) -> ActiveRampDirection:
-    direction = _active_direction(value)
-    if direction is None:
-        raise SwigProxyRouteError("direction is required")
-    return direction
-
-
-def _active_status(value: object) -> ActiveRampTransactionStatus | None:
-    statuses = (
-        "created",
-        "pending",
-        "settling",
-        "settled",
-        "failed",
-        "declined",
-        "cancelled",
-        "refunded",
-    )
-    return cast(ActiveRampTransactionStatus, value) if value in statuses else None
-
-
-def _payment_method(value: object) -> RampPaymentMethodType | None:
-    values = (
-        "other",
-        "credit-debit-card",
-        "ach",
-        "bank-transfer",
-        "apple-pay",
-        "google-pay",
-        "pix",
-        "unspecified",
-    )
-    if value is None:
-        return None
-    if value not in values:
-        raise SwigProxyRouteError("Invalid ramp payment method type")
-    return cast(RampPaymentMethodType, value)
-
-
-def _service_provider(value: object) -> RampServiceProvider:
-    if value not in ("other", "unspecified"):
-        raise SwigProxyRouteError("Invalid ramp service provider")
-    return value
-
-
-def _service_providers(value: object) -> tuple[RampServiceProvider, ...]:
-    if value is None:
-        return ()
-    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
-        raise SwigProxyRouteError("serviceProviders must be an array")
-    return tuple(_service_provider(item) for item in value)
-
-
 def _require_wallet(value: ProxyWalletReference | None) -> ProxyWalletReference:
     if value is None:
         raise SwigProxyRouteError("wallet is required")
     return value
+
+
+def _require_authority(value: WalletAuthority | None) -> WalletAuthority:
+    if value is None:
+        raise SwigProxyRouteError("requesterAuthority is required")
+    return value
+
+
+def _require_session_id(value: str | None) -> str:
+    if not value:
+        raise SwigProxyRouteError("sessionId is required")
+    return value
+
+
+def _read_meld_environment(value: object) -> MeldEnvironment:
+    if value in ("sandbox", "MELD_ENVIRONMENT_SANDBOX"):
+        return "sandbox"
+    if value in ("production", "MELD_ENVIRONMENT_PRODUCTION"):
+        return "production"
+    raise SwigProxyRouteError("environment must be sandbox or production")
 
 
 def _read_network(value: object) -> Network | None:
@@ -658,6 +610,13 @@ def _read_network(value: object) -> Network | None:
 
 def _required_string(body: Mapping[str, object], key: str) -> str:
     value = _optional_string(body.get(key))
+    if not value:
+        raise SwigProxyRouteError(f"{key} is required")
+    return value
+
+
+def _required_query_string(query: Mapping[str, str], key: str) -> str:
+    value = _optional_string(query.get(key))
     if not value:
         raise SwigProxyRouteError(f"{key} is required")
     return value

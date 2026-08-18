@@ -12,8 +12,7 @@ export class SwigDeveloperSdkError extends Error {
   static fromResponse(response: Response, body?: unknown) {
     const errorBody = body as Record<string, unknown> | undefined;
     const nestedError = errorBody?.error as
-      | { code?: string; message?: string; details?: unknown }
-      | undefined;
+      { code?: string; message?: string; details?: unknown } | undefined;
 
     if (nestedError && typeof nestedError === 'object') {
       return new SwigDeveloperSdkError(

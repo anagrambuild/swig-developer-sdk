@@ -4,11 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "swig-developer-sdk"
-version = "0.7.0"
+version = "0.8.0"
 description = "Python SDK for preparing and locally signing Swig wallet transactions"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "Apache-2.0" }
+license = { file = "LICENSE.txt" }
 authors = [{ name = "Anagram" }]
 dependencies = [
   "base58>=2.1,<3",
@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/anagrambuild/swig-ts"
+Repository = "https://github.com/anagrambuild/swig-developer-sdk"
 
 [dependency-groups]
 dev = [

@@ -101,3 +101,147 @@ async def test_proxy_rejects_non_positive_amount_before_backend() -> None:
     )
     assert response.status == 400
     assert response.body == {"error": "amount must be a positive integer string"}
+
+
+async def test_proxy_exposes_current_onramp_options_contract() -> None:
+    requests: list[httpx.Request] = []
+
+    def backend(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "countries": [],
+                    "fiat_currency_codes": ["USD"],
+                    "payment_method_types": ["CARD"],
+                    "crypto_currency_codes": ["USDC_SOLANA"],
+                }
+            },
+        )
+
+    handler = create_swig_proxy_handler(
+        SwigProxyConfig(
+            api_key="secret",
+            transaction_api_url="https://backend.test",
+            transport=httpx.MockTransport(backend),
+        )
+    )
+    response = await handler.handle(
+        method="GET",
+        path="/api/swig/ramp/onramp/options",
+        query={
+            "organizationMeldConfigurationId": "config-123",
+            "environment": "sandbox",
+            "countryCode": "US",
+        },
+    )
+
+    assert response.status == 200
+    assert response.body["cryptoCurrencyCodes"] == ["USDC_SOLANA"]
+    assert requests[0].url.path == "/wallet/api/ramp/onramp/options"
+    assert requests[0].url.params["organizationMeldConfigurationId"] == "config-123"
+    assert requests[0].url.params["environment"] == "MELD_ENVIRONMENT_SANDBOX"
+
+
+async def test_proxy_exposes_offramp_prepare_contract() -> None:
+    requests: list[httpx.Request] = []
+
+    def backend(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "authorization_id": "authorization-123",
+                    "prepared_transaction": {
+                        "transaction": "prepared",
+                        "signature_requests": [],
+                        "transaction_encoding": "TRANSACTION_ENCODING_BASE64",
+                        "network": "NETWORK_MAINNET",
+                    },
+                    "display": {
+                        "source_wallet_address": "source",
+                        "destination_wallet_address": "destination",
+                        "source_amount": "10",
+                        "source_currency_code": "USDC_SOLANA",
+                        "destination_amount": "9.75",
+                        "destination_currency_code": "USD",
+                        "service_provider": "TRANSAK",
+                    },
+                }
+            },
+        )
+
+    handler = create_swig_proxy_handler(
+        SwigProxyConfig(
+            api_key="secret",
+            transaction_api_url="https://backend.test",
+            transport=httpx.MockTransport(backend),
+        )
+    )
+    response = await handler.handle(
+        method="POST",
+        path="/api/swig/ramp/offramp/session/session-123/prepare",
+        body={
+            "requesterAuthority": {"ed25519": {"publicKey": "requester"}},
+            "environment": "production",
+            "feePayer": "payer",
+        },
+    )
+
+    assert response.status == 200
+    assert response.body["authorizationId"] == "authorization-123"
+    assert requests[0].url.path.endswith("/session/session-123/prepare")
+    assert json.loads(requests[0].content)["environment"] == (
+        "MELD_ENVIRONMENT_PRODUCTION"
+    )
+
+
+async def test_proxy_reads_wallet_roles() -> None:
+    requests: list[httpx.Request] = []
+
+    def backend(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "swig_config_address": "swig-123",
+                    "wallet_address": "wallet-123",
+                    "roles": [
+                        {
+                            "role_id": 1,
+                            "authority_type": 1,
+                            "authority_value": "authority",
+                            "actions": [],
+                        }
+                    ],
+                }
+            },
+        )
+
+    handler = create_swig_proxy_handler(
+        SwigProxyConfig(
+            api_key="secret",
+            transaction_api_url="https://backend.test",
+            network="devnet",
+            transport=httpx.MockTransport(backend),
+        )
+    )
+    response = await handler.handle(
+        method="GET",
+        path="/api/swig/wallet/swig-123/roles",
+    )
+
+    assert response.status == 200
+    assert response.body["roles"] == [
+        {
+            "roleId": 1,
+            "authorityType": 1,
+            "authorityValue": "authority",
+            "actions": [],
+        }
+    ]
+    assert requests[0].url.path == "/wallet/swig/swig-123/roles"
+    assert requests[0].url.params["network"] == "NETWORK_DEVNET"

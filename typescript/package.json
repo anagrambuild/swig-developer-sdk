@@ -1,19 +1,19 @@
 {
   "name": "@swig-wallet/developer-sdk",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/anagrambuild/swig-ts",
-    "directory": "packages/developer-sdk/typescript"
+    "url": "https://github.com/anagrambuild/swig-developer-sdk",
+    "directory": "typescript"
   },
   "type": "module",
   "scripts": {
     "build-pkg": "tsup-node",
     "build": "tsup-node",
     "dev": "tsup-node --watch",
-    "lint": "eslint --config ../../../eslint.config.mjs --ext js,ts,tsx src",
-    "lint:fix": "eslint --config ../../../eslint.config.mjs --ext js,ts,tsx src --fix",
+    "lint": "eslint --config ../eslint.config.mjs --ext js,ts,tsx src",
+    "lint:fix": "eslint --config ../eslint.config.mjs --ext js,ts,tsx src --fix",
     "smoke:local": "bun run scripts/local-transaction-smoke.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
@@ -89,10 +89,13 @@
   ],
   "dependencies": {
     "@solana/web3.js": "^1.98.0",
-    "@swig-wallet/lib": "workspace:*",
+    "@swig-wallet/lib": "^2.1.0",
     "bs58": "^6.0.0"
   },
   "devDependencies": {
+    "@noble/curves": "^1.8.2",
+    "@noble/hashes": "^1.7.0",
+    "@solana/spl-token": "^0.4.13",
     "@types/bun": "^1.2.5",
     "@typescript-eslint/eslint-plugin": "^8.26.1",
     "@typescript-eslint/parser": "^8.26.1",

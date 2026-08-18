@@ -9,7 +9,7 @@ export interface RetryOptions {
 export interface SwigClientConfig {
   apiKey: string;
   /**
-   * Backend API base URL. Defaults to https://backend.prod.infra.onswig.com.
+   * Backend API base URL. Defaults to https://api.onswig.com.
    */
   baseUrl?: string;
   /**

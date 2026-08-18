@@ -116,6 +116,8 @@ class TransferTokenOperation:
 
 
 PrepareOperation: TypeAlias = TransferSolOperation | TransferTokenOperation
+WalletAuthorityKind: TypeAlias = Literal["ed25519", "secp256k1", "secp256r1"]
+SwigAssetKind: TypeAlias = Literal["unspecified", "token", "native-sol"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +138,7 @@ class SwigTokenBalance:
     ui_amount: float
     usd_price: float
     usd_value: float
+    asset_kind: SwigAssetKind | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,6 +168,7 @@ class SwigTokenTransaction:
     token_symbol: str
     token_name: str
     block_time: str | None = None
+    asset_kind: SwigAssetKind | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +176,28 @@ class ListSwigTokenTransactionsResult:
     swig_config_address: str
     wallet_address: str
     transactions: tuple[SwigTokenTransaction, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SwigRoleAction:
+    action_index: int
+    action_code: int
+    action_data: Mapping[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class SwigRole:
+    role_id: int
+    authority_type: int
+    authority_value: str
+    actions: tuple[SwigRoleAction, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ListSwigRolesResult:
+    swig_config_address: str
+    wallet_address: str
+    roles: tuple[SwigRole, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,7 +231,6 @@ class WalletsClient:
         initial_user: WalletAuthority | None = None,
         recovery: RecoveryOptions | None = None,
         network: Network | None = None,
-        idempotency_key: str | None = None,
     ) -> CreateWalletResult:
         policy = await self.get_policy(policy_id) if policy_id else None
         response = await self._http.post(
@@ -291,7 +316,6 @@ class WalletsClient:
         operations: Sequence[PrepareOperation],
         requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
-        idempotency_key: str | None = None,
     ) -> PreparedTransactionsResult:
         authority = _requester_authority(wallet, requester_authority)
         response = await self._http.post(
@@ -315,7 +339,6 @@ class WalletsClient:
         amount: Amount,
         requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
-        idempotency_key: str | None = None,
     ) -> PreparedTransaction:
         authority = _requester_authority(wallet, requester_authority)
         return normalize_prepared_transaction(
@@ -342,7 +365,6 @@ class WalletsClient:
         amount: Amount,
         requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
-        idempotency_key: str | None = None,
     ) -> PreparedTransaction:
         authority = _requester_authority(wallet, requester_authority)
         return normalize_prepared_transaction(
@@ -378,7 +400,6 @@ class WalletsClient:
         mode: str | None = None,
         blockhash_slots_to_expiry: int | None = None,
         network: Network | None = None,
-        idempotency_key: str | None = None,
     ) -> PreparedTransaction:
         authority = _requester_authority(wallet, requester_authority)
         return normalize_prepared_transaction(
@@ -415,7 +436,6 @@ class WalletsClient:
         fee_payer: str,
         requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
-        idempotency_key: str | None = None,
     ) -> PreparedTransaction:
         authority = _requester_authority(wallet, requester_authority)
         return normalize_prepared_transaction(
@@ -439,7 +459,6 @@ class WalletsClient:
         delay_seconds: int | None = None,
         target_role_id: int | None = None,
         network: Network | None = None,
-        idempotency_key: str | None = None,
     ) -> PreparedTransaction:
         return normalize_prepared_transaction(
             await self._http.post(
@@ -465,14 +484,12 @@ class WalletsClient:
         delay_seconds: int | None = None,
         target_role_id: int | None = None,
         network: Network | None = None,
-        idempotency_key: str | None = None,
     ) -> PreparedRecoverySetupResult:
         add_authority = await self.add_recovery_authority(
             wallet,
             fee_payer=fee_payer,
             requester_authority=requester_authority,
             network=network,
-            idempotency_key=idempotency_key,
         )
         configure = await self.configure_recovery(
             wallet,
@@ -481,7 +498,6 @@ class WalletsClient:
             delay_seconds=delay_seconds,
             target_role_id=target_role_id,
             network=network,
-            idempotency_key=idempotency_key,
         )
         transactions = (add_authority, configure)
         resolved_network = network or wallet.network or self._default_network
@@ -514,11 +530,18 @@ class WalletsClient:
         wallet: WalletHandle,
         *,
         fee_payer: str,
-        guardian_pubkey: str,
         new_authority: str,
+        new_authority_kind: WalletAuthorityKind,
+        guardian_pubkey: str | None = None,
+        guardian_swig_address: str | None = None,
+        guardian_requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
-        idempotency_key: str | None = None,
     ) -> PreparedTransaction:
+        _validate_guardian_source(
+            guardian_pubkey,
+            guardian_swig_address,
+            guardian_requester_authority,
+        )
         return normalize_prepared_transaction(
             await self._http.post(
                 "/transaction/recovery/start",
@@ -528,6 +551,15 @@ class WalletsClient:
                     ),
                     "guardianPubkey": guardian_pubkey,
                     "newAuthority": new_authority,
+                    "newAuthorityKind": _wallet_authority_kind_to_wire(
+                        new_authority_kind
+                    ),
+                    "guardianSwigAddress": guardian_swig_address,
+                    "guardianRequesterAuthority": (
+                        wallet_authority_to_wire(guardian_requester_authority)
+                        if guardian_requester_authority is not None
+                        else None
+                    ),
                 },
             )
         )
@@ -539,7 +571,6 @@ class WalletsClient:
         fee_payer: str,
         requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
-        idempotency_key: str | None = None,
     ) -> PreparedTransaction:
         authority = _requester_authority(wallet, requester_authority)
         return normalize_prepared_transaction(
@@ -560,9 +591,16 @@ class WalletsClient:
         *,
         fee_payer: str,
         new_authority: str,
+        new_authority_kind: WalletAuthorityKind,
+        guardian_swig_address: str | None = None,
+        guardian_requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
-        idempotency_key: str | None = None,
     ) -> PreparedTransaction:
+        if (guardian_swig_address is None) != (guardian_requester_authority is None):
+            raise ValueError(
+                "guardian_swig_address and guardian_requester_authority "
+                "must be provided together"
+            )
         return normalize_prepared_transaction(
             await self._http.post(
                 "/transaction/recovery/execute",
@@ -571,6 +609,15 @@ class WalletsClient:
                         wallet, fee_payer, network, self._default_network
                     ),
                     "newAuthority": new_authority,
+                    "newAuthorityKind": _wallet_authority_kind_to_wire(
+                        new_authority_kind
+                    ),
+                    "guardianSwigAddress": guardian_swig_address,
+                    "guardianRequesterAuthority": (
+                        wallet_authority_to_wire(guardian_requester_authority)
+                        if guardian_requester_authority is not None
+                        else None
+                    ),
                 },
             )
         )
@@ -652,6 +699,22 @@ class WalletsClient:
             )
         )
 
+    async def list_roles(
+        self,
+        wallet: WalletHandle,
+        *,
+        network: Network | None = None,
+    ) -> ListSwigRolesResult:
+        return _normalize_roles(
+            await self._http.get(
+                _wallet_read_path(
+                    wallet,
+                    "roles",
+                    network or wallet.network or self._default_network,
+                )
+            )
+        )
+
 
 class WalletHandle:
     def __init__(self, wallets: WalletsClient, reference: WalletReference) -> None:
@@ -671,7 +734,6 @@ class WalletHandle:
         operations: Sequence[PrepareOperation],
         requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
-        idempotency_key: str | None = None,
     ) -> PreparedTransactionsResult:
         return await self._wallets.prepare(
             self,
@@ -679,7 +741,6 @@ class WalletHandle:
             operations=operations,
             requester_authority=requester_authority,
             network=network,
-            idempotency_key=idempotency_key,
         )
 
     async def build_transaction(
@@ -720,6 +781,11 @@ class WalletHandle:
             self, network=network, limit=limit
         )
 
+    async def list_roles(
+        self, *, network: Network | None = None
+    ) -> ListSwigRolesResult:
+        return await self._wallets.list_roles(self, network=network)
+
 
 class WalletTransferClient:
     def __init__(self, wallets: WalletsClient, wallet: WalletHandle) -> None:
@@ -736,7 +802,6 @@ class WalletTransferClient:
         destination_owner: str | None = None,
         requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
-        idempotency_key: str | None = None,
     ) -> PreparedTransaction:
         if mint:
             if destination_owner is None:
@@ -748,7 +813,6 @@ class WalletTransferClient:
                 amount=amount,
                 requester_authority=requester_authority,
                 network=network,
-                idempotency_key=idempotency_key,
             )
         if destination is None:
             raise ValueError("destination is required for a SOL transfer")
@@ -758,7 +822,6 @@ class WalletTransferClient:
             amount=amount,
             requester_authority=requester_authority,
             network=network,
-            idempotency_key=idempotency_key,
         )
 
     async def sol(
@@ -769,7 +832,6 @@ class WalletTransferClient:
         amount: Amount,
         requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
-        idempotency_key: str | None = None,
     ) -> PreparedTransaction:
         return await self._wallets.transfer_sol(
             self._wallet,
@@ -778,7 +840,6 @@ class WalletTransferClient:
             amount=amount,
             requester_authority=requester_authority,
             network=network,
-            idempotency_key=idempotency_key,
         )
 
     async def token(
@@ -790,7 +851,6 @@ class WalletTransferClient:
         amount: Amount,
         requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
-        idempotency_key: str | None = None,
     ) -> PreparedTransaction:
         return await self._wallets.transfer_token(
             self._wallet,
@@ -800,7 +860,6 @@ class WalletTransferClient:
             amount=amount,
             requester_authority=requester_authority,
             network=network,
-            idempotency_key=idempotency_key,
         )
 
     async def spl_token(
@@ -812,7 +871,6 @@ class WalletTransferClient:
         amount: Amount,
         requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
-        idempotency_key: str | None = None,
     ) -> PreparedTransaction:
         return await self.token(
             fee_payer=fee_payer,
@@ -821,7 +879,6 @@ class WalletTransferClient:
             amount=amount,
             requester_authority=requester_authority,
             network=network,
-            idempotency_key=idempotency_key,
         )
 
 
@@ -847,7 +904,6 @@ class WalletSwapClient:
         mode: str | None = None,
         blockhash_slots_to_expiry: int | None = None,
         network: Network | None = None,
-        idempotency_key: str | None = None,
     ) -> PreparedTransaction:
         return await self.jupiter(
             fee_payer=fee_payer,
@@ -864,7 +920,6 @@ class WalletSwapClient:
             mode=mode,
             blockhash_slots_to_expiry=blockhash_slots_to_expiry,
             network=network,
-            idempotency_key=idempotency_key,
         )
 
     async def jupiter(
@@ -884,7 +939,6 @@ class WalletSwapClient:
         mode: str | None = None,
         blockhash_slots_to_expiry: int | None = None,
         network: Network | None = None,
-        idempotency_key: str | None = None,
     ) -> PreparedTransaction:
         return await self._wallets.jupiter_swap(
             self._wallet,
@@ -902,7 +956,6 @@ class WalletSwapClient:
             mode=mode,
             blockhash_slots_to_expiry=blockhash_slots_to_expiry,
             network=network,
-            idempotency_key=idempotency_key,
         )
 
 
@@ -920,7 +973,6 @@ class WalletRecoveryClient:
         delay_seconds: int | None = None,
         target_role_id: int | None = None,
         network: Network | None = None,
-        idempotency_key: str | None = None,
     ) -> PreparedRecoverySetupResult:
         return await self._wallets.prepare_recovery_setup(
             self._wallet,
@@ -930,25 +982,28 @@ class WalletRecoveryClient:
             delay_seconds=delay_seconds,
             target_role_id=target_role_id,
             network=network,
-            idempotency_key=idempotency_key,
         )
 
     async def start(
         self,
         *,
         fee_payer: str,
-        guardian_pubkey: str,
         new_authority: str,
+        new_authority_kind: WalletAuthorityKind,
+        guardian_pubkey: str | None = None,
+        guardian_swig_address: str | None = None,
+        guardian_requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
-        idempotency_key: str | None = None,
     ) -> PreparedTransaction:
         return await self._wallets.start_recovery(
             self._wallet,
             fee_payer=fee_payer,
-            guardian_pubkey=guardian_pubkey,
             new_authority=new_authority,
+            new_authority_kind=new_authority_kind,
+            guardian_pubkey=guardian_pubkey,
+            guardian_swig_address=guardian_swig_address,
+            guardian_requester_authority=guardian_requester_authority,
             network=network,
-            idempotency_key=idempotency_key,
         )
 
     async def cancel(
@@ -957,14 +1012,12 @@ class WalletRecoveryClient:
         fee_payer: str,
         requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
-        idempotency_key: str | None = None,
     ) -> PreparedTransaction:
         return await self._wallets.cancel_recovery(
             self._wallet,
             fee_payer=fee_payer,
             requester_authority=requester_authority,
             network=network,
-            idempotency_key=idempotency_key,
         )
 
     async def execute(
@@ -972,15 +1025,19 @@ class WalletRecoveryClient:
         *,
         fee_payer: str,
         new_authority: str,
+        new_authority_kind: WalletAuthorityKind,
+        guardian_swig_address: str | None = None,
+        guardian_requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
-        idempotency_key: str | None = None,
     ) -> PreparedTransaction:
         return await self._wallets.execute_recovery(
             self._wallet,
             fee_payer=fee_payer,
             new_authority=new_authority,
+            new_authority_kind=new_authority_kind,
+            guardian_swig_address=guardian_swig_address,
+            guardian_requester_authority=guardian_requester_authority,
             network=network,
-            idempotency_key=idempotency_key,
         )
 
 
@@ -1169,6 +1226,7 @@ def _normalize_token_balance(value: object) -> SwigTokenBalance:
         ui_amount=_required_number(_pick(body, "uiAmount", "ui_amount"), "uiAmount"),
         usd_price=_required_number(_pick(body, "usdPrice", "usd_price"), "usdPrice"),
         usd_value=_required_number(_pick(body, "usdValue", "usd_value"), "usdValue"),
+        asset_kind=_normalize_asset_kind(_pick(body, "assetKind", "asset_kind")),
     )
 
 
@@ -1244,6 +1302,69 @@ def _normalize_token_transaction(value: object) -> SwigTokenTransaction:
         ),
         token_name=_required_string(
             _pick(body, "tokenName", "token_name") or "", "tokenName"
+        ),
+        asset_kind=_normalize_asset_kind(_pick(body, "assetKind", "asset_kind")),
+    )
+
+
+def _normalize_asset_kind(value: object) -> SwigAssetKind | None:
+    if value is None:
+        return None
+    if value in ("unspecified", "ASSET_KIND_UNSPECIFIED", 0):
+        return "unspecified"
+    if value in ("token", "ASSET_KIND_TOKEN", 1):
+        return "token"
+    if value in ("native-sol", "ASSET_KIND_NATIVE_SOL", 2):
+        return "native-sol"
+    raise ValueError("Wallet response has invalid assetKind")
+
+
+def _normalize_roles(value: object) -> ListSwigRolesResult:
+    body = _mapping(value, "Roles response")
+    roles = body.get("roles", [])
+    if not isinstance(roles, Sequence) or isinstance(roles, (str, bytes)):
+        raise ValueError("Roles response has invalid roles")
+    return ListSwigRolesResult(
+        swig_config_address=_required_string(
+            _pick(body, "swigConfigAddress", "swig_config_address"),
+            "swigConfigAddress",
+        ),
+        wallet_address=_required_string(
+            _pick(body, "walletAddress", "wallet_address"), "walletAddress"
+        ),
+        roles=tuple(_normalize_role(role) for role in roles),
+    )
+
+
+def _normalize_role(value: object) -> SwigRole:
+    body = _mapping(value, "Role")
+    actions = body.get("actions", [])
+    if not isinstance(actions, Sequence) or isinstance(actions, (str, bytes)):
+        raise ValueError("Role response has invalid actions")
+    return SwigRole(
+        role_id=_required_int(_pick(body, "roleId", "role_id"), "roleId"),
+        authority_type=_required_int(
+            _pick(body, "authorityType", "authority_type"), "authorityType"
+        ),
+        authority_value=_required_string(
+            _pick(body, "authorityValue", "authority_value"), "authorityValue"
+        ),
+        actions=tuple(_normalize_role_action(action) for action in actions),
+    )
+
+
+def _normalize_role_action(value: object) -> SwigRoleAction:
+    body = _mapping(value, "Role action")
+    action_data = _pick(body, "actionData", "action_data")
+    return SwigRoleAction(
+        action_index=_required_int(
+            _pick(body, "actionIndex", "action_index"), "actionIndex"
+        ),
+        action_code=_required_int(
+            _pick(body, "actionCode", "action_code"), "actionCode"
+        ),
+        action_data=(
+            _mapping(action_data, "Role action data") if action_data is not None else {}
         ),
     )
 
@@ -1355,6 +1476,33 @@ def _policy_delay(value: int | str | None) -> int:
     if isinstance(value, str) and value.isdigit():
         return int(value)
     return 86_400
+
+
+def _wallet_authority_kind_to_wire(kind: WalletAuthorityKind) -> str:
+    return {
+        "ed25519": "WALLET_AUTHORITY_KIND_ED25519",
+        "secp256k1": "WALLET_AUTHORITY_KIND_SECP256K1",
+        "secp256r1": "WALLET_AUTHORITY_KIND_SECP256R1",
+    }[kind]
+
+
+def _validate_guardian_source(
+    guardian_pubkey: str | None,
+    guardian_swig_address: str | None,
+    guardian_requester_authority: WalletAuthority | None,
+) -> None:
+    has_swig_address = guardian_swig_address is not None
+    has_swig_authority = guardian_requester_authority is not None
+    if has_swig_address != has_swig_authority:
+        raise ValueError(
+            "guardian_swig_address and guardian_requester_authority "
+            "must be provided together"
+        )
+    if (guardian_pubkey is None) == has_swig_address:
+        raise ValueError(
+            "provide exactly one guardian source: guardian_pubkey "
+            "or guardian_swig_address"
+        )
 
 
 def _mapping(value: object, label: str) -> Mapping[str, object]:
