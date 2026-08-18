@@ -82,7 +82,6 @@ The result splits the prepared transactions:
 | `transactions` | submit in this exact order |
 | `client_authority_transactions` | get a client authority signature first |
 | `fee_payer_only_transactions` | send or sponsor without a client authority signature |
-| `operator_signed_transactions` | already backend-signed; only needs fee payer or sponsor handling |
 | `creation_transaction` | the create transaction itself |
 
 A prepared transaction needs a client authority signature when
@@ -398,6 +397,9 @@ submitted = await swig.transactions.sponsor(
 
 Pass `idempotency_key` whenever your application may retry; that is the only
 case in which the SDK retries a sponsorship POST.
+
+For single-transaction sponsorship, `network` resolves from the call and then
+the client default. If neither is set, the paymaster defaults to mainnet.
 
 A returned signature means the Solana RPC accepted the transaction. It may
 still be pending and is not confirmation or finality; track it through your

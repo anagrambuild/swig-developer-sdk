@@ -36,6 +36,8 @@ own app — see [Framework proxy routes](#framework-proxy-routes).
 | `@swig-wallet/developer-sdk/browser`           | `SwigBrowserClient` and One Business helpers      |
 | `@swig-wallet/developer-sdk/next`              | Next.js route handlers                            |
 | `@swig-wallet/developer-sdk/nest`              | NestJS request handler                            |
+| `@swig-wallet/developer-sdk/server/next`       | Next.js server adapter exports                    |
+| `@swig-wallet/developer-sdk/server/nest`       | NestJS server adapter exports                     |
 | `@swig-wallet/developer-sdk/server/fetch`      | framework-neutral `Request`/`Response` handlers   |
 | `@swig-wallet/developer-sdk/core`              | `DEFAULT_BACKEND_URL` and `SwigDeveloperSdkError` |
 
@@ -110,14 +112,13 @@ can return policy-derived metadata alongside the transactions.
 The response splits the prepared transactions so your app knows what to do
 next:
 
-| Field                         | What to do                                                       |
-| ----------------------------- | ---------------------------------------------------------------- |
-| `wallet`                      | `swigConfigAddress`, `walletAddress`, and resolved `network`     |
-| `transactions`                | submit in this exact order                                       |
-| `clientAuthorityTransactions` | get a client authority signature first                           |
-| `feePayerOnlyTransactions`    | send or sponsor without a client authority signature             |
-| `operatorSignedTransactions`  | already backend-signed; only needs fee payer or sponsor handling |
-| `creationTransaction`         | the create transaction itself                                    |
+| Field                         | What to do                                                   |
+| ----------------------------- | ------------------------------------------------------------ |
+| `wallet`                      | `swigConfigAddress`, `walletAddress`, and resolved `network` |
+| `transactions`                | submit in this exact order                                   |
+| `clientAuthorityTransactions` | get a client authority signature first                       |
+| `feePayerOnlyTransactions`    | send or sponsor without a client authority signature         |
+| `creationTransaction`         | the create transaction itself                                |
 
 A prepared transaction needs a client authority signature when
 `signatureRequests.length > 0`.
@@ -475,9 +476,7 @@ const signed = await signPreparedSwigTransaction(prepared, {
 });
 ```
 
-For wallet creation, sign only `created.clientAuthorityTransactions`. Do not
-authority-sign `created.operatorSignedTransactions`; those already carry a
-backend signature and only need the final fee-payer or sponsor step.
+For wallet creation, authority-sign only `created.clientAuthorityTransactions`.
 
 ## Submit and sponsor
 
@@ -497,6 +496,9 @@ const submitted = await swig.transactions.sponsor({
 `sponsor` handles the deployed paymaster route and the base58 payload encoding
 the backend expects. Pass `idempotencyKey` whenever your application may retry;
 that is the only case in which the SDK retries a sponsorship POST.
+
+For single-transaction sponsorship, `network` resolves from the call and then
+the client default. If neither is set, the paymaster defaults to mainnet.
 
 A returned signature means the Solana RPC accepted the transaction. It may
 still be pending and is not confirmation or finality; track it through your
