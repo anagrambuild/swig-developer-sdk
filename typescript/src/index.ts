@@ -12,6 +12,7 @@ export { OfframpClient, OnrampClient, RampClient } from './ramp/index.js';
 export { SwigClient } from './server/typescript/index.js';
 export { TransactionsClient } from './transactions/index.js';
 export { WalletHandle, WalletsClient } from './wallets/index.js';
+export { createX402Payment } from './x402/index.js';
 
 export type {
   BuildOneBusinessGrantAccessUrlArgs,
@@ -58,11 +59,14 @@ export type {
   ParticipantSetApproval,
   ParticipantSetApprovalPlan,
   ParticipantSetMember,
+  PaymentPayloadV2,
+  PaymentRequiredV2,
   Policy,
   PolicyAuthority,
   PrepareOfframpAuthorizationArgs,
   PrepareOfframpAuthorizationResult,
   PrepareRecoverySetupArgs,
+  PrepareX402PaymentOptions,
   PreparedRecoverySetupResult,
   PreparedTransaction,
   PreparedTransactionWire,
@@ -96,4 +100,7 @@ export type {
   WalletAuthorityKind,
   WalletHandleOptions,
   WalletReference,
+  WalletX402Client,
+  X402PaymentSubmission,
+  X402PreparationResult,
 } from './types/index.js';
