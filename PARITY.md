@@ -21,7 +21,7 @@ TypeScript is version `0.9.0`, Python is version `0.8.0`, and both default to
 | ParticipantSet creation | `swig.participantSets.create` | `swig.participant_sets.create` | same standard authority members and prepared transaction |
 | General role creation | `wallet.roles.add` | `wallet.roles.add` | same typed authority and closed action set |
 | ParticipantSet compilation | `swig.transactions.compileParticipantSetApprovals` | `swig.transactions.compile_participant_set_approvals` | same shared nonce, detached approvals, expiration, and no submission side effect |
-| x402 payment preparation | `wallet.x402.prepareFromResponse` | pending | Python support follows in the next stacked PR |
+| x402 payment preparation | `wallet.x402.prepareFromResponse` | `wallet.x402.prepare_from_response` | same selection, preparation, and payment-header assembly |
 
 ## Wallet reads
 
