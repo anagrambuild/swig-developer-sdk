@@ -268,6 +268,8 @@ Use `signPreparedTransaction` for Ed25519 authorities. For
 Secp256r1/passkey authorities, use `signPreparedSwigTransaction` to fulfill
 the prepared transaction's signature requests.
 
+See the [complete runnable x402 example](https://github.com/anagrambuild/swig-developer-sdk/tree/main/typescript/examples/x402).
+
 ### Prepare a Jupiter swap
 
 ```typescript
