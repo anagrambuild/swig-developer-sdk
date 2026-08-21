@@ -11,10 +11,7 @@
     "baseUrl": ".",
     "paths": {
       "@swig-wallet/developer-sdk": ["src/index.ts"],
-      "@swig-wallet/developer-sdk/client": ["src/client/index.ts"],
-      "@swig-wallet/developer-sdk/server/typescript": [
-        "src/server/typescript/index.ts"
-      ]
+      "@swig-wallet/developer-sdk/signers": ["src/signers.ts"]
     },
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,

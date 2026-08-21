@@ -5,7 +5,7 @@ import {
   type PasskeySigningFn,
   type PreparedTransaction,
   type SignedPreparedTransaction,
-} from '@swig-wallet/developer-sdk/client';
+} from '@swig-wallet/developer-sdk/signers';
 
 export interface PasskeyClientConfig {
   credentialId: BufferSource;

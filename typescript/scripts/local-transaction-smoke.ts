@@ -26,12 +26,7 @@ import {
 import {
   signPreparedSwigTransaction,
   type PasskeySigningFn,
-} from '../src/client/index.js';
-import {
-  createSwigNestHandler,
-  type SwigNestHandler,
-  type SwigNestResponseLike,
-} from '../src/server/nest/index.js';
+} from '../src/signers.js';
 
 const apiBaseUrl = 'http://localhost:8080';
 const databaseUrl = 'postgres://swig:swig@localhost:55432/swig';
@@ -237,63 +232,6 @@ async function main() {
     [feePayer, requester],
   );
   console.log(`swap signature: ${swapSignature}`);
-
-  const nestHandler = createSwigNestHandler({
-    apiKey,
-    transactionApiUrl: apiBaseUrl,
-    feePayer: feePayer.publicKey.toBase58(),
-    resolveRequesterAuthority: () => ({
-      ed25519: { publicKey: requester.publicKey.toBase58() },
-    }),
-  });
-  const nestTransferDestination = Keypair.generate();
-  await airdropIfNeeded(
-    connection,
-    nestTransferDestination.publicKey,
-    await connection.getMinimumBalanceForRentExemption(0),
-  );
-  const nestTransferTransaction = await prepareWithNest(nestHandler, {
-    route: '/swig/transfer/sol',
-    body: {
-      wallet: {
-        swigConfigAddress: wallet.swigConfigAddress,
-        walletAddress: wallet.walletAddress,
-      },
-      network: 'devnet',
-      destination: nestTransferDestination.publicKey.toBase58(),
-      amount: '1000',
-    },
-  });
-  const nestTransferSignature = await signAndSendPreparedTransaction(
-    connection,
-    nestTransferTransaction,
-    [feePayer, requester],
-  );
-  console.log(`nest transfer signature: ${nestTransferSignature}`);
-
-  const nestSwapTransaction = await prepareWithNest(nestHandler, {
-    route: '/swig/swap/jupiter',
-    body: {
-      wallet: {
-        swigConfigAddress: wallet.swigConfigAddress,
-        walletAddress: wallet.walletAddress,
-      },
-      network: 'devnet',
-      inputMint: solMint,
-      outputMint: usdcMint,
-      amount: String(swapAmountLamports),
-      slippageBps: swapSlippageBps,
-      wrapAndUnwrapSol: true,
-      maxAccounts: 20,
-      mode: 'fast',
-    },
-  });
-  const nestSwapSignature = await signAndSendPreparedTransaction(
-    connection,
-    nestSwapTransaction,
-    [feePayer, requester],
-  );
-  console.log(`nest swap signature: ${nestSwapSignature}`);
 
   if (runRecoverySmokeEnabled) {
     await runRecoverySmoke(connection);
@@ -677,55 +615,6 @@ async function waitForAccount(connection: Connection, pubkey: PublicKey) {
   }
 
   throw new Error(`Timed out waiting for account ${pubkey.toBase58()}`);
-}
-
-async function prepareWithNest(
-  handler: SwigNestHandler,
-  input: { route: string; body: Record<string, unknown> },
-): Promise<PreparedTransaction> {
-  const response = new SmokeNestResponse();
-  await handler(
-    {
-      body: input.body,
-      headers: {
-        host: 'localhost:3000',
-      },
-      method: 'POST',
-      originalUrl: input.route,
-      protocol: 'http',
-    },
-    response,
-  );
-
-  if (response.statusCode < 200 || response.statusCode >= 300) {
-    throw new Error(
-      `Nest handler failed with status ${response.statusCode}: ${response.body}`,
-    );
-  }
-
-  const parsed = JSON.parse(response.body ?? '{}') as {
-    prepared?: PreparedTransaction;
-  };
-  if (!parsed.prepared) {
-    throw new Error(`Nest handler response is missing prepared transaction`);
-  }
-  return parsed.prepared;
-}
-
-class SmokeNestResponse implements SwigNestResponseLike {
-  body?: string;
-  statusCode = 200;
-
-  send(body?: string) {
-    this.body = body;
-  }
-
-  setHeader() {}
-
-  status(statusCode: number) {
-    this.statusCode = statusCode;
-    return this;
-  }
 }
 
 function requirePrepared(

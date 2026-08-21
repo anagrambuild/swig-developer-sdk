@@ -1,9 +1,9 @@
 # Developer SDK parity
 
-Python mirrors the TypeScript SDK by behavior and client hierarchy. Python uses
-snake_case names and keyword arguments; TypeScript uses camelCase and options
-objects. Both packages are version `0.8.0` and default to
-`https://api.onswig.com`.
+Python mirrors the TypeScript server SDK by behavior and client hierarchy.
+Python uses snake_case names and keyword arguments; TypeScript uses camelCase
+and options objects. TypeScript is version `0.9.0`, Python is version `0.8.0`,
+and both default to `https://api.onswig.com`.
 
 ## Client surface
 
@@ -60,18 +60,15 @@ Both SDKs expose direction-specific clients. There is no generic ramp client.
 | Swig r1 signing | passkey callback and local transaction patching | WebAuthn callback and `solders` patching | byte-for-byte transaction semantics |
 | Swig k1 signing | EIP-1193 callback and local transaction patching | EIP-1193-compatible callback and `solders` patching | byte-for-byte transaction semantics |
 
-## Integration helpers
+## Additional helpers
 
 | Surface | TypeScript | Python | Parity target |
 | --- | --- | --- | --- |
-| App proxy | Fetch/Next/Nest adapters | `create_swig_proxy_handler` | same routes, validation, and resolver boundaries |
-| Browser client | `SwigBrowserClient` | not applicable | TypeScript-only; Python apps expose the proxy and use their own frontend |
 | One Business | grant URL, redirect, and callback parsing | same | same query contract and errors |
 
-Framework-specific TypeScript wrappers ship in the TypeScript package. The
-Python package exposes the underlying proxy handler so FastAPI, Flask, Django,
-or another framework can adapt it without making one framework a core
-dependency.
+The TypeScript package does not ship browser proxy, Next.js, NestJS, or Fetch
+adapter entrypoints. Applications own their HTTP boundary between the server
+SDK and any signer environment.
 
 ## Not documented
 

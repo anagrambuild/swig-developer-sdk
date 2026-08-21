@@ -10,17 +10,20 @@ migration. It is an engineering review artifact, not a product tutorial.
   `6fc9e22`, preserved with `git subtree split`.
 - Standalone repository: `anagrambuild/swig-developer-sdk`.
 - Public API base URL: `https://api.onswig.com`.
-- TypeScript package: `@swig-wallet/developer-sdk` version `0.8.0`.
+- TypeScript package: `@swig-wallet/developer-sdk` version `0.9.0`.
 - Python package: `swig-developer-sdk` version `0.8.0`.
 
-The `0.8.0` release is breaking because the generic ramp client did not match
-the deployed API and has been replaced by direction-specific clients.
+The `0.9.0` TypeScript release removes the browser proxy and framework adapter
+entrypoints. Application-owned signing helpers now use the dedicated
+`@swig-wallet/developer-sdk/signers` entrypoint.
 
 ## Authentication and retry boundary
 
 - Server SDK requests authenticate with `Authorization: Bearer <api-key>`.
 - The API gateway also accepts `x-api-key`; SDK examples use Bearer auth.
-- API keys stay on the server. Browser clients call a local proxy.
+- API keys stay on the server. The `/signers` entrypoint accepts prepared
+  transactions and application-provided signers; it does not call the hosted
+  API.
 - GET requests use the configured retry policy.
 - POST requests do not retry by default because replay may duplicate work.
 - Sponsorship POST requests retry only when an idempotency key is present.
