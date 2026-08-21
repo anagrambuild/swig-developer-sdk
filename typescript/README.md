@@ -1,9 +1,9 @@
 # @swig-wallet/developer-sdk
 
-API-key SDK for preparing Swig wallet operations on a server and signing the
-prepared transactions on a client.
+API-key SDK for preparing Swig wallet operations on a server, with a separate
+entrypoint for application-owned signing.
 
-- Version: `0.8.0`
+- Version: `0.9.0`
 - Source: <https://github.com/anagrambuild/swig-developer-sdk>
 - Default API base URL: `https://api.onswig.com`
 
@@ -18,28 +18,21 @@ The SDK is prepare-first:
 1. Your server creates a `SwigClient` with an API key.
 2. Your server prepares a wallet operation and receives one or more unsigned
    transactions.
-3. Your client signs any transaction whose `signatureRequests` is non-empty.
+3. Your application obtains every required transaction-level and embedded
+   signature.
 4. Your app submits the transactions in order, directly or through Swig's
    paymaster sponsorship.
 
-The API key never leaves your server. Browser code calls a proxy route in your
-own app — see [Framework proxy routes](#framework-proxy-routes).
+The API key never leaves your server. The `/signers` entrypoint accepts no API
+key and does not call Swig's hosted API.
 
 ## Entrypoints
 
-| Import path                                    | Use it for                                        |
-| ---------------------------------------------- | ------------------------------------------------- |
-| `@swig-wallet/developer-sdk`                   | `SwigClient` and shared types                     |
-| `@swig-wallet/developer-sdk/server/typescript` | API-key server SDK                                |
-| `@swig-wallet/developer-sdk/server`            | server aggregate exports                          |
-| `@swig-wallet/developer-sdk/client`            | client-only signing helpers                       |
-| `@swig-wallet/developer-sdk/browser`           | `SwigBrowserClient` and One Business helpers      |
-| `@swig-wallet/developer-sdk/next`              | Next.js route handlers                            |
-| `@swig-wallet/developer-sdk/nest`              | NestJS request handler                            |
-| `@swig-wallet/developer-sdk/server/next`       | Next.js server adapter exports                    |
-| `@swig-wallet/developer-sdk/server/nest`       | NestJS server adapter exports                     |
-| `@swig-wallet/developer-sdk/server/fetch`      | framework-neutral `Request`/`Response` handlers   |
-| `@swig-wallet/developer-sdk/core`              | `DEFAULT_BACKEND_URL` and `SwigDeveloperSdkError` |
+| Import path                          | Use it for                                        |
+| ------------------------------------ | ------------------------------------------------- |
+| `@swig-wallet/developer-sdk`         | `SwigClient` and shared types                     |
+| `@swig-wallet/developer-sdk/signers` | application-owned transaction signing helpers     |
+| `@swig-wallet/developer-sdk/core`    | `DEFAULT_BACKEND_URL` and `SwigDeveloperSdkError` |
 
 ## Create a server client
 
@@ -47,7 +40,7 @@ Create an API key from the [Swig dashboard](https://dashboard.onswig.com), and
 keep it in server-side configuration.
 
 ```typescript
-import { SwigClient } from '@swig-wallet/developer-sdk/server/typescript';
+import { SwigClient } from '@swig-wallet/developer-sdk';
 
 const swig = new SwigClient({
   apiKey: process.env.SWIG_API_KEY!,
@@ -336,7 +329,7 @@ Offramp adds an on-chain authorization step: the user's wallet must sign the
 transfer to the provider before the session can settle.
 
 ```typescript
-import { signPreparedSwigTransaction } from '@swig-wallet/developer-sdk/client';
+import { signPreparedSwigTransaction } from '@swig-wallet/developer-sdk/signers';
 
 const options = await swig.ramp.offramp.getOptions({
   organizationMeldConfigurationId,
@@ -388,10 +381,11 @@ const { solanaSignature } = await swig.ramp.offramp.submitAuthorization({
 (`sourceAmount`, `destinationAmount`, `serviceProvider`, wallet addresses, and
 optional `paymentMethodType` / `providerDestinationAmount`).
 
-## Client signing
+## Signing
 
-Client code should only sign prepared transactions. It should not hold the API
-key or call the Swig API directly.
+Use the signing entrypoint with an application-owned wallet, passkey, hardware
+device, or custody service. It accepts no API key and does not call the Swig
+API.
 
 ### Ed25519
 
@@ -399,7 +393,7 @@ key or call the Swig API directly.
 import {
   signPreparedTransaction,
   type PreparedTransaction,
-} from '@swig-wallet/developer-sdk/client';
+} from '@swig-wallet/developer-sdk/signers';
 import { VersionedTransaction } from '@solana/web3.js';
 
 declare const prepared: PreparedTransaction;
@@ -427,14 +421,14 @@ import {
   signPreparedSwigTransaction,
   signPreparedSwigTransactions,
   type PreparedTransaction,
-} from '@swig-wallet/developer-sdk/client';
+} from '@swig-wallet/developer-sdk/signers';
 
 const passkeySigningFn = createSecp256r1PasskeySigningFn({
   allowCredentials: [{ id: credentialId, type: 'public-key' }],
   userVerification: 'preferred',
 });
 
-// The client SDK only signs. Your app owns fetching the prepared payload from
+// The signers entrypoint only signs. Your app owns fetching the prepared payload from
 // your own route:
 //
 // const prepared = await fetch('/your-app-prepare-route').then((r) => r.json());
@@ -461,7 +455,7 @@ import {
   createSecp256k1EvmSigningFn,
   signPreparedSwigTransaction,
   type PreparedTransaction,
-} from '@swig-wallet/developer-sdk/client';
+} from '@swig-wallet/developer-sdk/signers';
 
 declare const prepared: PreparedTransaction;
 declare const evmAddress: string;
@@ -531,34 +525,6 @@ Constraints enforced by the SDK before the request is sent:
 A returned `bundleId` means Jito accepted the bundle. It may still be pending;
 acceptance is not confirmation or finality.
 
-## Framework proxy routes
-
-If your app only needs an API-key proxy and does not need to inspect or modify
-prepared transactions, use the framework route helpers:
-
-- [Next.js](./next/README.md)
-- [NestJS](./nest/README.md)
-
-Both wrap `createSwigFetchHandler` / `createSwigGetHandler` from
-`@swig-wallet/developer-sdk/server/fetch`, which you can also mount directly in
-any `Request`/`Response` runtime.
-
-Once a proxy route exists, browser code uses `SwigBrowserClient`, which calls
-only your local routes:
-
-```typescript
-import { SwigBrowserClient } from '@swig-wallet/developer-sdk/browser';
-
-const swig = new SwigBrowserClient({
-  basePath: '/api/swig',
-  network: 'devnet',
-});
-const wallet = swig.wallets.fromIdpSession(session);
-
-const prepared = await wallet.transfer.sol({ destination, amount: 1_000_000n });
-const roles = await wallet.listRoles();
-```
-
 ## One Business grant access
 
 Use this when a local app needs an admin to grant one of the app's keys access
@@ -569,7 +535,7 @@ then reads the result on its callback page.
 import {
   buildOneBusinessGrantAccessUrl,
   completeOneBusinessGrantAccess,
-} from '@swig-wallet/developer-sdk/browser';
+} from '@swig-wallet/developer-sdk';
 
 const grantUrl = buildOneBusinessGrantAccessUrl({
   swigPubkey,

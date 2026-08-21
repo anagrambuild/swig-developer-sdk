@@ -1,5 +1,15 @@
 # @swig-wallet/developer-sdk
 
+## 0.9.0
+
+### Major Changes
+
+- Replace the `/client` and `/browser` entrypoints with the dedicated
+  `/signers` entrypoint for application-owned transaction signing.
+- Remove the browser proxy and the Next.js, NestJS, Fetch, and server aggregate
+  entrypoints. Import the API-key SDK from the package root and expose only the
+  application routes your product needs.
+
 ## 0.8.0
 
 ### Major Changes

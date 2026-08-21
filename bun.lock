@@ -20,7 +20,7 @@
     },
     "typescript": {
       "name": "@swig-wallet/developer-sdk",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "dependencies": {
         "@solana/web3.js": "^1.98.0",
         "@swig-wallet/lib": "^2.1.0",

@@ -7,8 +7,8 @@ import type {
   SubmittedTransaction,
   WalletAddressInfo,
 } from '@swig-wallet/developer-sdk';
-import type { SignedPreparedTransaction } from '@swig-wallet/developer-sdk/client';
-import { SwigClient } from '@swig-wallet/developer-sdk/server/typescript';
+import { SwigClient } from '@swig-wallet/developer-sdk';
+import type { SignedPreparedTransaction } from '@swig-wallet/developer-sdk/signers';
 
 export interface PasskeyServerConfig {
   apiKey: string;
