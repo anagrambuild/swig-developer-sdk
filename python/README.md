@@ -396,6 +396,42 @@ The generic signer helper works with an application-owned Ed25519 signer. The
 Swig signer helper patches secp256r1 or secp256k1 signatures into both legacy
 and versioned Solana transactions.
 
+ParticipantSet signers operate on one bound member request and never call the
+hosted API:
+
+```python
+from swig_developer_sdk.signers import (
+    create_participant_passkey_signer,
+    create_participant_personal_sign_signer,
+    sign_participant_set_approval,
+)
+
+passkey_signer = create_participant_passkey_signer(
+    public_key=client_public_key,
+    get_assertion=get_webauthn_assertion,
+)
+client_approval = await sign_participant_set_approval(
+    prepared.participant_set_approval_plan.members[0],
+    passkey_signer,
+)
+
+server_signer = create_participant_personal_sign_signer(
+    public_key=server_public_key,
+    # personal_sign applies EIP-191 to this exact 64-character lowercase
+    # ASCII hex challenge.
+    sign_message=personal_sign,
+)
+server_approval = await sign_participant_set_approval(
+    prepared.participant_set_approval_plan.members[1],
+    server_signer,
+)
+```
+
+The helpers copy the member index and counter from the request. The passkey
+adapter returns exact assertion bytes and a raw low-S P-256 signature; the
+personal-sign adapter validates compact k1 signatures, normalizes low-S, and
+adjusts the recovery byte.
+
 ```python
 from swig_developer_sdk.signers import (
     sign_prepared_swig_transaction,

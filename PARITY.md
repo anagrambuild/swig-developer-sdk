@@ -66,6 +66,8 @@ application-owned callbacks and make no hosted API requests.
 | Generic signing | `signPreparedTransaction`, signer object | `sign_prepared_transaction`, signer protocol | same metadata preservation |
 | Swig r1 signing | passkey callback and local transaction patching | WebAuthn callback and `solders` patching | byte-for-byte transaction semantics |
 | Swig k1 signing | EIP-1193 callback and local transaction patching | EIP-1193-compatible callback and `solders` patching | byte-for-byte transaction semantics |
+| Participant passkey approval | `createParticipantPasskeySigner`, `signParticipantSetApproval` | `create_participant_passkey_signer`, `sign_participant_set_approval` | exact challenge and assertion bytes, DER-to-raw low-S P-256 signature |
+| Participant personal-sign approval | `createParticipantPersonalSignSigner`, `signParticipantSetApproval` | `create_participant_personal_sign_signer`, `sign_participant_set_approval` | lowercase ASCII challenge, low-S k1 signature, and adjusted recovery byte |
 
 ## Additional helpers
 
