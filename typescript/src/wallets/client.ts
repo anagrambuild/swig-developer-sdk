@@ -1,5 +1,6 @@
 import type { HttpClient } from '../core/index.js';
 import type {
+  AddParticipantSetRoleArgs,
   AddRecoveryAuthorityArgs,
   BuildTransactionArgs,
   CancelRecoveryArgs,
@@ -47,6 +48,7 @@ import {
   normalizeSwigUsdBalance,
 } from './normalizers.js';
 import {
+  addParticipantSetRoleRequest,
   addRecoveryAuthorityRequest,
   buildTransactionRequest,
   cancelRecoveryRequest,
@@ -146,6 +148,22 @@ export class WalletsClient {
       }),
     );
     return normalizeSwigRoles(response);
+  };
+
+  addParticipantSetRole = async (
+    wallet: WalletHandle,
+    args: AddParticipantSetRoleArgs,
+  ): Promise<PreparedTransaction> => {
+    const response = await this.http.post<{
+      transaction?: PreparedTransactionWire;
+    }>(
+      '/transaction/wallet/role/add',
+      addParticipantSetRoleRequest(wallet, args, this.defaultNetwork),
+    );
+    if (!response.transaction) {
+      throw new Error('Add role response is missing transaction');
+    }
+    return normalizePreparedTransaction(response.transaction);
   };
 
   use = (
@@ -401,7 +419,7 @@ function walletAuthorityFromPolicy(
   ) {
     return authority;
   }
-  if ('programExecProof' in authority) {
+  if ('programExecProof' in authority || 'participantSet' in authority) {
     return undefined;
   }
 
@@ -430,7 +448,7 @@ function publicKeyFromPolicyAuthority(
   if ('secp256k1' in authority) {
     return authority.secp256k1.publicKey;
   }
-  if ('programExecProof' in authority) {
+  if ('programExecProof' in authority || 'participantSet' in authority) {
     return undefined;
   }
   return authority.secp256r1.publicKey;

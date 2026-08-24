@@ -1,4 +1,5 @@
 import type {
+  AddParticipantSetRoleArgs,
   AddRecoveryAuthorityArgs,
   BuildTransactionArgs,
   CancelRecoveryArgs,
@@ -13,6 +14,7 @@ import type {
   TransferArgs,
   TransferSolArgs,
   TransferTokenArgs,
+  WalletAuthority,
   WalletAuthorityKind,
 } from '../types/index.js';
 import type { WalletHandle } from './handle.js';
@@ -30,7 +32,9 @@ export function createWalletRequest(
     network: toProtoNetwork(resolveNetwork(args.network, defaultNetwork)),
     feePayer: args.feePayer,
     ...(args.policyId ? { policyId: args.policyId } : {}),
-    initialUser: args.initialUser,
+    initialUser: args.initialUser
+      ? walletAuthorityRequest(args.initialUser)
+      : undefined,
   };
 }
 
@@ -45,7 +49,9 @@ export function transferSolRequest(
     ),
     feePayer: args.feePayer,
     swigAddress: wallet.swigConfigAddress,
-    requesterAuthority: resolveRequesterAuthority(wallet, args),
+    requesterAuthority: walletAuthorityRequest(
+      resolveRequesterAuthority(wallet, args),
+    ),
     destination: args.destination,
     lamports: normalizeAmount(args.amount),
   };
@@ -62,7 +68,9 @@ export function transferTokenRequest(
     ),
     feePayer: args.feePayer,
     swigAddress: wallet.swigConfigAddress,
-    requesterAuthority: resolveRequesterAuthority(wallet, args),
+    requesterAuthority: walletAuthorityRequest(
+      resolveRequesterAuthority(wallet, args),
+    ),
     mint: args.mint,
     destinationOwner: args.destinationOwner,
     amount: normalizeAmount(args.amount),
@@ -80,7 +88,9 @@ export function prepareRequest(
     ),
     feePayer: args.feePayer,
     swigAddress: wallet.swigConfigAddress,
-    requesterAuthority: resolveRequesterAuthority(wallet, args),
+    requesterAuthority: walletAuthorityRequest(
+      resolveRequesterAuthority(wallet, args),
+    ),
     operations: args.operations.map(prepareOperationRequest),
   };
 }
@@ -96,7 +106,9 @@ export function swapRequest(
     ),
     feePayer: args.feePayer,
     swigAddress: wallet.swigConfigAddress,
-    requesterAuthority: resolveRequesterAuthority(wallet, args),
+    requesterAuthority: walletAuthorityRequest(
+      resolveRequesterAuthority(wallet, args),
+    ),
     inputMint: args.inputMint,
     outputMint: args.outputMint,
     amount: normalizeAmount(args.amount),
@@ -134,7 +146,9 @@ export function startRecoveryRequest(
     ...('guardianSwigAddress' in args
       ? {
           guardianSwigAddress: args.guardianSwigAddress,
-          guardianRequesterAuthority: args.guardianRequesterAuthority,
+          guardianRequesterAuthority: walletAuthorityRequest(
+            args.guardianRequesterAuthority!,
+          ),
         }
       : {}),
   };
@@ -151,7 +165,9 @@ export function addRecoveryAuthorityRequest(
     ),
     feePayer: args.feePayer,
     swigAddress: wallet.swigConfigAddress,
-    requesterAuthority: resolveRequesterAuthority(wallet, args),
+    requesterAuthority: walletAuthorityRequest(
+      resolveRequesterAuthority(wallet, args),
+    ),
   };
 }
 
@@ -183,7 +199,9 @@ export function cancelRecoveryRequest(
     ),
     feePayer: args.feePayer,
     swigAddress: wallet.swigConfigAddress,
-    requesterAuthority: resolveRequesterAuthority(wallet, args),
+    requesterAuthority: walletAuthorityRequest(
+      resolveRequesterAuthority(wallet, args),
+    ),
   };
 }
 
@@ -211,7 +229,9 @@ export function executeRecoveryRequest(
     ...(args.guardianSwigAddress
       ? {
           guardianSwigAddress: args.guardianSwigAddress,
-          guardianRequesterAuthority: args.guardianRequesterAuthority,
+          guardianRequesterAuthority: walletAuthorityRequest(
+            args.guardianRequesterAuthority,
+          ),
         }
       : {}),
   };
@@ -228,7 +248,9 @@ export function buildTransactionRequest(
     ),
     feePayer: args.feePayer,
     swigAddress: wallet.swigConfigAddress,
-    requesterAuthority: resolveRequesterAuthority(wallet, args),
+    requesterAuthority: walletAuthorityRequest(
+      resolveRequesterAuthority(wallet, args),
+    ),
     instructions: args.instructions.map(normalizeInstruction),
     addressLookupTableAccounts: args.addressLookupTableAccounts,
   };
@@ -238,6 +260,41 @@ export function isTokenTransfer(args: TransferArgs): args is TransferTokenArgs {
   return (
     'mint' in args && typeof args.mint === 'string' && args.mint.length > 0
   );
+}
+
+export function addParticipantSetRoleRequest(
+  wallet: WalletHandle,
+  args: AddParticipantSetRoleArgs,
+  defaultNetwork?: Network,
+) {
+  return {
+    network: toProtoNetwork(
+      resolveNetwork(args.network, wallet.network, defaultNetwork),
+    ),
+    feePayer: args.feePayer,
+    swigAddress: wallet.swigConfigAddress,
+    requesterAuthority: walletAuthorityRequest(
+      resolveRequesterAuthority(wallet, args),
+    ),
+    authority: {
+      participantSet: {
+        participantSetAddress: args.participantSetAddress,
+      },
+    },
+    actions: args.permissions,
+  };
+}
+
+export function walletAuthorityRequest(authority: WalletAuthority) {
+  if ('participantSet' in authority) {
+    return {
+      participantSet: {
+        participantSetAddress: authority.participantSet.address,
+        roleId: authority.participantSet.roleId,
+      },
+    };
+  }
+  return authority;
 }
 
 function prepareOperationRequest(operation: PrepareOperation) {
@@ -303,7 +360,8 @@ function resolveRequesterAuthority(
     | PrepareArgs
     | BuildTransactionArgs
     | CancelRecoveryArgs
-    | AddRecoveryAuthorityArgs,
+    | AddRecoveryAuthorityArgs
+    | AddParticipantSetRoleArgs,
 ): NonNullable<
   | TransferArgs['requesterAuthority']
   | SwapArgs['requesterAuthority']
@@ -311,6 +369,7 @@ function resolveRequesterAuthority(
   | BuildTransactionArgs['requesterAuthority']
   | CancelRecoveryArgs['requesterAuthority']
   | AddRecoveryAuthorityArgs['requesterAuthority']
+  | AddParticipantSetRoleArgs['requesterAuthority']
 > {
   const requesterAuthority =
     args.requesterAuthority ?? wallet.requesterAuthority;

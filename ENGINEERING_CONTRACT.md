@@ -43,6 +43,19 @@ Supported preparation routes:
 | POST | `/transaction/swap/jupiter` |
 | POST | `/transaction/prepare/custom` |
 
+ParticipantSet setup and stateless approval compilation use:
+
+| Method | Route |
+| --- | --- |
+| POST | `/transaction/participant-set/create` |
+| POST | `/transaction/wallet/role/add` |
+| POST | `/transaction/participant-set/compile` |
+
+Existing legacy transaction preparation routes accept a typed ParticipantSet
+requester and may return a `participantSetApprovalPlan`. Compilation verifies
+detached participant approvals and returns an upgraded prepared transaction;
+it does not sponsor, submit, or broadcast it.
+
 Wallet preparation idempotency fields were removed because the backend does
 not consume them. Prepared transactions are signed locally before submission.
 Prepared transaction responses also carry `network` and zero or more signature

@@ -116,6 +116,58 @@ describe('WalletsClient', () => {
     });
   });
 
+  test('maps ParticipantSet requesters and role permissions to typed protobuf fields', async () => {
+    const calls: Array<{ path: string; body: unknown }> = [];
+    const wallets = new WalletsClient(
+      {
+        post: async (path: string, body: unknown) => {
+          calls.push({ path, body });
+          return {
+            transaction: {
+              transaction: 'add-role-base64',
+              transactionEncoding: 'TRANSACTION_ENCODING_BASE64',
+            },
+          };
+        },
+      } as never,
+      'devnet',
+    );
+    const wallet = wallets.use('swig_123', {
+      requesterAuthority: {
+        participantSet: { address: 'participant_set_requester', roleId: 9 },
+      },
+    });
+
+    await wallet.roles.add({
+      feePayer: 'payer_123',
+      participantSetAddress: 'participant_set_new',
+      permissions: [{ all: {} }],
+    });
+
+    expect(calls).toEqual([
+      {
+        path: '/transaction/wallet/role/add',
+        body: {
+          network: 'NETWORK_DEVNET',
+          feePayer: 'payer_123',
+          swigAddress: 'swig_123',
+          requesterAuthority: {
+            participantSet: {
+              participantSetAddress: 'participant_set_requester',
+              roleId: 9,
+            },
+          },
+          authority: {
+            participantSet: {
+              participantSetAddress: 'participant_set_new',
+            },
+          },
+          actions: [{ all: {} }],
+        },
+      },
+    ]);
+  });
+
   test('builds token transfer requests for the transaction API', () => {
     const wallets = new WalletsClient(
       { post: async () => ({}) } as never,

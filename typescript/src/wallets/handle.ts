@@ -1,4 +1,5 @@
 import type {
+  AddParticipantSetRoleArgs,
   BuildTransactionArgs,
   CancelRecoveryArgs,
   ExecuteRecoveryArgs,
@@ -46,6 +47,11 @@ export type WalletRecoveryClient = {
   execute(args: ExecuteRecoveryArgs): Promise<PreparedTransaction>;
 };
 
+export type WalletRolesClient = {
+  add(args: AddParticipantSetRoleArgs): Promise<PreparedTransaction>;
+  list(args?: WalletReadArgs): Promise<ListSwigRolesResult>;
+};
+
 export class WalletHandle {
   readonly swigConfigAddress: string;
   readonly walletAddress?: string;
@@ -54,6 +60,7 @@ export class WalletHandle {
   readonly transfer: WalletTransferClient;
   readonly swap: WalletSwapClient;
   readonly recovery: WalletRecoveryClient;
+  readonly roles: WalletRolesClient;
 
   constructor(
     private readonly wallets: WalletsClient,
@@ -66,6 +73,10 @@ export class WalletHandle {
     this.transfer = createWalletTransferClient(wallets, this);
     this.swap = createWalletSwapClient(wallets, this);
     this.recovery = createWalletRecoveryClient(wallets, this);
+    this.roles = {
+      add: (args) => wallets.addParticipantSetRole(this, args),
+      list: (args) => wallets.listRoles(this, args),
+    };
   }
 
   prepare = (args: PrepareArgs): Promise<PreparedTransactionsResult> =>

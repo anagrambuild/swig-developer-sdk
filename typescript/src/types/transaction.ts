@@ -1,4 +1,8 @@
 import type { Network } from './common.js';
+import type {
+  ParticipantSetApprovalPlan,
+  ParticipantSetApprovalPlanWire,
+} from './participant-set.js';
 import type { WalletAuthority } from './wallet-actions.js';
 import type { WalletAddressInfo } from './wallet.js';
 
@@ -13,12 +17,16 @@ export type ProtoNetwork =
 export type NetworkWire = Network | ProtoNetwork | number;
 
 export type PreparedTransactionKind =
-  'create-swig-wallet' | 'add-authority' | 'configure-recovery';
+  | 'create-swig-wallet'
+  | 'add-authority'
+  | 'configure-recovery'
+  | 'create-participant-set';
 export type ProtoPreparedTransactionKind =
   | 'PREPARED_TRANSACTION_KIND_UNSPECIFIED'
   | 'PREPARED_TRANSACTION_KIND_CREATE_SWIG_WALLET'
   | 'PREPARED_TRANSACTION_KIND_ADD_AUTHORITY'
-  | 'PREPARED_TRANSACTION_KIND_CONFIGURE_RECOVERY';
+  | 'PREPARED_TRANSACTION_KIND_CONFIGURE_RECOVERY'
+  | 'PREPARED_TRANSACTION_KIND_CREATE_PARTICIPANT_SET';
 export type PreparedTransactionKindWire =
   PreparedTransactionKind | ProtoPreparedTransactionKind | number;
 
@@ -31,6 +39,7 @@ export interface PreparedTransaction {
   recentBlockhash?: string;
   kind?: PreparedTransactionKind;
   signatureRequests: ClientSignatureRequest[];
+  participantSetApprovalPlan?: ParticipantSetApprovalPlan;
 }
 
 export interface PreparedTransactionWire {
@@ -48,6 +57,8 @@ export interface PreparedTransactionWire {
   kind?: PreparedTransactionKindWire;
   signature_requests?: ClientSignatureRequestWire[];
   signatureRequests?: ClientSignatureRequestWire[];
+  participant_set_approval_plan?: ParticipantSetApprovalPlanWire;
+  participantSetApprovalPlan?: ParticipantSetApprovalPlanWire;
 }
 
 export interface ClientSignatureRequest {

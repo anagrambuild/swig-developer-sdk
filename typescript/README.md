@@ -132,6 +132,56 @@ const wallet = swig.wallets.use({
 and `swig.wallets.fromIdpSession(session)` builds the same handle from an IdP
 session.
 
+### Configure and use a ParticipantSet
+
+Create the set, submit its prepared creation transaction, then attach it to one
+Swig role with the permissions your application chooses:
+
+```typescript
+const createdSet = await swig.participantSets.create({
+  swigConfigAddress,
+  feePayer,
+  threshold: 2,
+  members: [
+    { webauthnP256: { publicKey: clientPublicKey } },
+    { secp256k1: { publicKey: serverPublicKey } },
+  ],
+});
+
+const wallet = swig.wallets.use(swigConfigAddress, {
+  requesterAuthority,
+});
+const addRole = await wallet.roles.add({
+  feePayer,
+  participantSetAddress: createdSet.participantSetAddress,
+  permissions,
+});
+```
+
+After those transactions land, use the set as the requester for an existing
+legacy transaction preparation route:
+
+```typescript
+const participantWallet = swig.wallets.use(swigConfigAddress, {
+  requesterAuthority: {
+    participantSet: { address: createdSet.participantSetAddress },
+  },
+});
+const prepared = await participantWallet.transfer.sol({
+  feePayer,
+  destination,
+  amount: 1_000_000n,
+});
+
+const compiled = await swig.transactions.compileParticipantSetApprovals({
+  preparedTransaction: prepared,
+  approvals,
+});
+```
+
+Compilation validates the original plan and returns an upgraded prepared
+transaction. Sponsorship or submission remains a separate explicit call.
+
 ### Prepare a SOL transfer
 
 ```typescript

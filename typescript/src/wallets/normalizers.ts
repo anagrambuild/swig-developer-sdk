@@ -12,6 +12,10 @@ import type {
   ListSwigTokenTransactionsWire,
   Network,
   NetworkWire,
+  ParticipantApprovalRequest,
+  ParticipantApprovalRequestWire,
+  ParticipantSetApprovalPlan,
+  ParticipantSetApprovalPlanWire,
   PreparedTransaction,
   PreparedTransactionKind,
   PreparedTransactionKindWire,
@@ -49,6 +53,11 @@ export function normalizePreparedTransaction(
     throw new Error('Prepared transaction response is missing transaction');
   }
 
+  const participantSetApprovalPlan = normalizeParticipantSetApprovalPlan(
+    response.participantSetApprovalPlan ??
+      response.participant_set_approval_plan,
+  );
+
   return {
     wallet: response.wallet,
     transaction,
@@ -62,6 +71,7 @@ export function normalizePreparedTransaction(
     signatureRequests: normalizeSignatureRequests(
       response.signatureRequests ?? response.signature_requests,
     ),
+    ...(participantSetApprovalPlan ? { participantSetApprovalPlan } : {}),
   };
 }
 
@@ -461,8 +471,80 @@ function normalizePreparedTransactionKind(
     case 'PREPARED_TRANSACTION_KIND_CONFIGURE_RECOVERY':
     case 3:
       return 'configure-recovery';
+    case 'create-participant-set':
+    case 'PREPARED_TRANSACTION_KIND_CREATE_PARTICIPANT_SET':
+    case 4:
+      return 'create-participant-set';
     default:
       return undefined;
+  }
+}
+
+function normalizeParticipantSetApprovalPlan(
+  plan?: ParticipantSetApprovalPlanWire,
+): ParticipantSetApprovalPlan | undefined {
+  if (!plan) {
+    return undefined;
+  }
+
+  const expirationSlot = plan.expirationSlot ?? plan.expiration_slot;
+  if (
+    typeof expirationSlot !== 'string' &&
+    typeof expirationSlot !== 'number'
+  ) {
+    throw new Error('ParticipantSet approval plan is missing expirationSlot');
+  }
+
+  return {
+    type: 'participantSet',
+    participantSetAddress: readString(
+      plan.participantSetAddress ?? plan.participant_set_address,
+      'participantSetAddress',
+    ),
+    roleId: readNumber(plan.roleId ?? plan.role_id, 'roleId'),
+    expirationSlot: String(expirationSlot),
+    transactionDigest: readString(
+      plan.transactionDigest ?? plan.transaction_digest,
+      'transactionDigest',
+    ),
+    compilationEnvelope: readString(
+      plan.compilationEnvelope ?? plan.compilation_envelope,
+      'compilationEnvelope',
+    ),
+    threshold: readNumber(plan.threshold, 'threshold'),
+    members: (plan.members ?? []).map(normalizeParticipantApprovalRequest),
+  };
+}
+
+function normalizeParticipantApprovalRequest(
+  request: ParticipantApprovalRequestWire,
+): ParticipantApprovalRequest {
+  return {
+    memberIndex: readNumber(
+      request.memberIndex ?? request.member_index,
+      'memberIndex',
+    ),
+    signerType: normalizeParticipantSignerType(
+      request.signerType ?? request.signer_type,
+    ),
+    publicKey: readString(request.publicKey ?? request.public_key, 'publicKey'),
+    counter: readNumber(request.counter, 'counter'),
+    challenge: readString(request.challenge, 'challenge'),
+  };
+}
+
+function normalizeParticipantSignerType(
+  value: ParticipantApprovalRequestWire['signerType'],
+): ParticipantApprovalRequest['signerType'] {
+  switch (value) {
+    case 'PARTICIPANT_SET_SIGNER_TYPE_SECP256K1':
+    case 1:
+      return 'secp256k1';
+    case 'PARTICIPANT_SET_SIGNER_TYPE_WEBAUTHN_P256':
+    case 2:
+      return 'webauthnP256';
+    default:
+      throw new Error('ParticipantSet approval plan has invalid signerType');
   }
 }
 

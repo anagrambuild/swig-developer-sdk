@@ -6,7 +6,13 @@ export type WalletAuthority =
   | { ed25519: { publicKey: string } }
   | { secp256k1: { publicKey: string } }
   | { secp256r1: { publicKey: string } }
-  | { programExecProof: { roleId: number; zkProof: string } };
+  | { programExecProof: { roleId: number; zkProof: string } }
+  | {
+      participantSet: {
+        address: string;
+        roleId?: number;
+      };
+    };
 
 export type WalletAuthorityKind = 'ed25519' | 'secp256k1' | 'secp256r1';
 
