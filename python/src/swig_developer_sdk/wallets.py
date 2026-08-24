@@ -715,6 +715,36 @@ class WalletsClient:
             )
         )
 
+    async def add_participant_set_role(
+        self,
+        wallet: WalletHandle,
+        *,
+        fee_payer: str,
+        participant_set_address: str,
+        permissions: Sequence[Mapping[str, object]],
+        requester_authority: WalletAuthority | None = None,
+        network: Network | None = None,
+    ) -> PreparedTransaction:
+        authority = _requester_authority(wallet, requester_authority)
+        response = await self._http.post(
+            "/transaction/wallet/role/add",
+            {
+                **_base_write_request(
+                    wallet, fee_payer, network, self._default_network
+                ),
+                "requesterAuthority": wallet_authority_to_wire(authority),
+                "authority": {
+                    "participantSet": {
+                        "participantSetAddress": participant_set_address,
+                    }
+                },
+                "actions": [dict(permission) for permission in permissions],
+            },
+        )
+        if not isinstance(response, Mapping) or response.get("transaction") is None:
+            raise ValueError("Add role response is missing transaction")
+        return normalize_prepared_transaction(response["transaction"])
+
 
 class WalletHandle:
     def __init__(self, wallets: WalletsClient, reference: WalletReference) -> None:
@@ -726,6 +756,7 @@ class WalletHandle:
         self.transfer = WalletTransferClient(wallets, self)
         self.swap = WalletSwapClient(wallets, self)
         self.recovery = WalletRecoveryClient(wallets, self)
+        self.roles = WalletRolesClient(wallets, self)
 
     async def prepare(
         self,
@@ -785,6 +816,33 @@ class WalletHandle:
         self, *, network: Network | None = None
     ) -> ListSwigRolesResult:
         return await self._wallets.list_roles(self, network=network)
+
+
+class WalletRolesClient:
+    def __init__(self, wallets: WalletsClient, wallet: WalletHandle) -> None:
+        self._wallets = wallets
+        self._wallet = wallet
+
+    async def add(
+        self,
+        *,
+        fee_payer: str,
+        participant_set_address: str,
+        permissions: Sequence[Mapping[str, object]],
+        requester_authority: WalletAuthority | None = None,
+        network: Network | None = None,
+    ) -> PreparedTransaction:
+        return await self._wallets.add_participant_set_role(
+            self._wallet,
+            fee_payer=fee_payer,
+            participant_set_address=participant_set_address,
+            permissions=permissions,
+            requester_authority=requester_authority,
+            network=network,
+        )
+
+    async def list(self, *, network: Network | None = None) -> ListSwigRolesResult:
+        return await self._wallets.list_roles(self._wallet, network=network)
 
 
 class WalletTransferClient:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, TypeAlias
 
 import base58
 
@@ -17,7 +17,10 @@ from .core import HttpClient
 
 TransactionEncoding = Literal["base64"]
 PreparedTransactionKind = Literal[
-    "create-swig-wallet", "add-authority", "configure-recovery"
+    "create-swig-wallet",
+    "add-authority",
+    "configure-recovery",
+    "create-participant-set",
 ]
 SignatureScheme = Literal["secp256r1", "secp256k1"]
 
@@ -31,6 +34,30 @@ class ClientSignatureRequest:
     counter: int
 
 
+ParticipantSetSignerType: TypeAlias = Literal["secp256k1", "webauthnP256"]
+
+
+@dataclass(frozen=True, slots=True)
+class ParticipantApprovalRequest:
+    member_index: int
+    signer_type: ParticipantSetSignerType
+    public_key: str
+    counter: int
+    challenge: str
+
+
+@dataclass(frozen=True, slots=True)
+class ParticipantSetApprovalPlan:
+    participant_set_address: str
+    role_id: int
+    expiration_slot: str
+    transaction_digest: str
+    compilation_envelope: str
+    threshold: int
+    members: tuple[ParticipantApprovalRequest, ...]
+    type: Literal["participantSet"] = "participantSet"
+
+
 @dataclass(frozen=True, slots=True)
 class PreparedTransaction:
     transaction: str
@@ -41,6 +68,33 @@ class PreparedTransaction:
     network: Network | None = None
     recent_blockhash: str | None = None
     kind: PreparedTransactionKind | None = None
+    participant_set_approval_plan: ParticipantSetApprovalPlan | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Secp256k1ParticipantApproval:
+    member_index: int
+    counter: int
+    signature: bytes
+
+
+@dataclass(frozen=True, slots=True)
+class WebAuthnP256ParticipantApproval:
+    member_index: int
+    counter: int
+    authenticator_data: bytes
+    client_data_json: bytes
+    signature: bytes
+
+
+ParticipantSetApproval: TypeAlias = (
+    Secp256k1ParticipantApproval | WebAuthnP256ParticipantApproval
+)
+
+
+@dataclass(frozen=True, slots=True)
+class CompileParticipantSetApprovalsResult:
+    prepared_transaction: PreparedTransaction
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +170,34 @@ class TransactionsClient:
         )
         return normalize_submitted_transaction(response)
 
+    async def compile_participant_set_approvals(
+        self,
+        *,
+        prepared_transaction: PreparedTransaction,
+        approvals: Sequence[ParticipantSetApproval],
+    ) -> CompileParticipantSetApprovalsResult:
+        response = _mapping(
+            await self._http.post(
+                "/transaction/participant-set/compile",
+                {
+                    "preparedTransaction": _prepared_transaction_to_wire(
+                        prepared_transaction
+                    ),
+                    "approvals": [
+                        _participant_approval_to_wire(approval)
+                        for approval in approvals
+                    ],
+                },
+            ),
+            "Compile ParticipantSet response",
+        )
+        transaction = response.get("transaction")
+        if transaction is None:
+            raise ValueError("Compile ParticipantSet response is missing transaction")
+        return CompileParticipantSetApprovalsResult(
+            prepared_transaction=normalize_prepared_transaction(transaction)
+        )
+
     async def sponsor_bundle(
         self,
         args: SponsorSignedTransactionBundleArgs,
@@ -189,6 +271,13 @@ def normalize_prepared_transaction(response: object) -> PreparedTransaction:
         kind=_normalize_kind(body.get("kind")),
         signature_requests=_normalize_signature_requests(
             _pick(body, "signatureRequests", "signature_requests")
+        ),
+        participant_set_approval_plan=_normalize_participant_set_approval_plan(
+            _pick(
+                body,
+                "participantSetApprovalPlan",
+                "participant_set_approval_plan",
+            )
         ),
     )
 
@@ -324,7 +413,189 @@ def _normalize_kind(value: object) -> PreparedTransactionKind | None:
         3,
     ):
         return "configure-recovery"
+    if value in (
+        "create-participant-set",
+        "PREPARED_TRANSACTION_KIND_CREATE_PARTICIPANT_SET",
+        4,
+    ):
+        return "create-participant-set"
     return None
+
+
+def _normalize_participant_set_approval_plan(
+    value: object,
+) -> ParticipantSetApprovalPlan | None:
+    if value is None:
+        return None
+    body = _mapping(value, "ParticipantSet approval plan")
+    expiration_slot = _pick(body, "expirationSlot", "expiration_slot")
+    if not isinstance(expiration_slot, (str, int)):
+        raise ValueError("ParticipantSet approval plan is missing expirationSlot")
+    members_value = body.get("members", [])
+    if not isinstance(members_value, Sequence) or isinstance(
+        members_value, (str, bytes)
+    ):
+        raise ValueError("ParticipantSet approval plan has invalid members")
+    return ParticipantSetApprovalPlan(
+        participant_set_address=_required_string(
+            _pick(body, "participantSetAddress", "participant_set_address"),
+            "participantSetAddress",
+        ),
+        role_id=_required_int(_pick(body, "roleId", "role_id"), "roleId"),
+        expiration_slot=str(expiration_slot),
+        transaction_digest=_required_string(
+            _pick(body, "transactionDigest", "transaction_digest"),
+            "transactionDigest",
+        ),
+        compilation_envelope=_required_string(
+            _pick(body, "compilationEnvelope", "compilation_envelope"),
+            "compilationEnvelope",
+        ),
+        threshold=_required_int(body.get("threshold"), "threshold"),
+        members=tuple(
+            _normalize_participant_approval_request(item) for item in members_value
+        ),
+    )
+
+
+def _normalize_participant_approval_request(
+    value: object,
+) -> ParticipantApprovalRequest:
+    body = _mapping(value, "Participant approval request")
+    return ParticipantApprovalRequest(
+        member_index=_required_int(
+            _pick(body, "memberIndex", "member_index"), "memberIndex"
+        ),
+        signer_type=_normalize_participant_signer_type(
+            _pick(body, "signerType", "signer_type")
+        ),
+        public_key=_required_string(
+            _pick(body, "publicKey", "public_key"), "publicKey"
+        ),
+        counter=_required_int(body.get("counter"), "counter"),
+        challenge=_required_string(body.get("challenge"), "challenge"),
+    )
+
+
+def _normalize_participant_signer_type(value: object) -> ParticipantSetSignerType:
+    if value in ("PARTICIPANT_SET_SIGNER_TYPE_SECP256K1", 1):
+        return "secp256k1"
+    if value in ("PARTICIPANT_SET_SIGNER_TYPE_WEBAUTHN_P256", 2):
+        return "webauthnP256"
+    raise ValueError("ParticipantSet approval plan has invalid signerType")
+
+
+def _prepared_transaction_to_wire(
+    transaction: PreparedTransaction,
+) -> dict[str, object]:
+    plan = transaction.participant_set_approval_plan
+    return {
+        "transaction": transaction.transaction,
+        "transactionEncoding": (
+            "TRANSACTION_ENCODING_BASE64"
+            if transaction.transaction_encoding is not None
+            else None
+        ),
+        "wallet": (
+            {
+                "swigConfigAddress": transaction.wallet.swig_config_address,
+                "walletAddress": transaction.wallet.wallet_address,
+            }
+            if transaction.wallet is not None
+            else None
+        ),
+        "expiresAt": transaction.expires_at,
+        "network": _network_to_wire(transaction.network),
+        "recentBlockhash": transaction.recent_blockhash,
+        "kind": _prepared_transaction_kind_to_wire(transaction.kind),
+        "signatureRequests": [
+            {
+                "scheme": (
+                    "AUTHORITY_SIGNATURE_SCHEME_SECP256R1"
+                    if request.scheme == "secp256r1"
+                    else "AUTHORITY_SIGNATURE_SCHEME_SECP256K1"
+                ),
+                "signer": request.signer,
+                "messageHash": request.message_hash,
+                "slot": str(request.slot),
+                "counter": request.counter,
+            }
+            for request in transaction.signature_requests
+        ],
+        "participantSetApprovalPlan": (
+            {
+                "participantSetAddress": plan.participant_set_address,
+                "roleId": plan.role_id,
+                "expirationSlot": plan.expiration_slot,
+                "transactionDigest": plan.transaction_digest,
+                "compilationEnvelope": plan.compilation_envelope,
+                "threshold": plan.threshold,
+                "members": [
+                    {
+                        "memberIndex": member.member_index,
+                        "signerType": (
+                            "PARTICIPANT_SET_SIGNER_TYPE_SECP256K1"
+                            if member.signer_type == "secp256k1"
+                            else "PARTICIPANT_SET_SIGNER_TYPE_WEBAUTHN_P256"
+                        ),
+                        "publicKey": member.public_key,
+                        "counter": member.counter,
+                        "challenge": member.challenge,
+                    }
+                    for member in plan.members
+                ],
+            }
+            if plan is not None
+            else None
+        ),
+    }
+
+
+def _participant_approval_to_wire(
+    approval: ParticipantSetApproval,
+) -> dict[str, object]:
+    proof: dict[str, object]
+    if isinstance(approval, Secp256k1ParticipantApproval):
+        proof = {
+            "secp256k1": {
+                "signature": base64.b64encode(approval.signature).decode("ascii")
+            }
+        }
+    else:
+        proof = {
+            "webauthnP256": {
+                "authenticatorData": base64.b64encode(
+                    approval.authenticator_data
+                ).decode("ascii"),
+                "clientDataJson": base64.b64encode(approval.client_data_json).decode(
+                    "ascii"
+                ),
+                "signature": base64.b64encode(approval.signature).decode("ascii"),
+            }
+        }
+    return {
+        "memberIndex": approval.member_index,
+        "counter": approval.counter,
+        **proof,
+    }
+
+
+def _network_to_wire(network: Network | None) -> str | None:
+    if network is None:
+        return None
+    return "NETWORK_MAINNET" if network == "mainnet" else "NETWORK_DEVNET"
+
+
+def _prepared_transaction_kind_to_wire(
+    kind: PreparedTransactionKind | None,
+) -> str | None:
+    values = {
+        "create-swig-wallet": "PREPARED_TRANSACTION_KIND_CREATE_SWIG_WALLET",
+        "add-authority": "PREPARED_TRANSACTION_KIND_ADD_AUTHORITY",
+        "configure-recovery": "PREPARED_TRANSACTION_KIND_CONFIGURE_RECOVERY",
+        "create-participant-set": "PREPARED_TRANSACTION_KIND_CREATE_PARTICIPANT_SET",
+    }
+    return values.get(kind) if kind is not None else None
 
 
 def _mapping(value: object, label: str) -> Mapping[str, object]:
@@ -337,6 +608,17 @@ def _required_string(value: object, field: str) -> str:
     if not isinstance(value, str) or not value:
         raise ValueError(f"Response is missing {field}")
     return value
+
+
+def _required_int(value: object, field: str) -> int:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value, 10)
+        except ValueError:
+            pass
+    raise ValueError(f"Response is missing {field}")
 
 
 def _pick(value: Mapping[str, object], *keys: str) -> object:

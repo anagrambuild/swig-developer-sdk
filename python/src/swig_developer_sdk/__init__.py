@@ -20,6 +20,13 @@ from .one_business import (
     complete_one_business_grant_access,
     redirect_to_one_business_grant_access,
 )
+from .participant_sets import (
+    CreateParticipantSetResult,
+    ParticipantSetMember,
+    ParticipantSetsClient,
+    Secp256k1ParticipantSetMember,
+    WebAuthnP256ParticipantSetMember,
+)
 from .passkeys import (
     WebAuthnAssertion,
     create_secp256r1_passkey_signing_fn,
@@ -69,14 +76,21 @@ from .signing import (
 )
 from .transactions import (
     ClientSignatureRequest,
+    CompileParticipantSetApprovalsResult,
+    ParticipantApprovalRequest,
+    ParticipantSetApproval,
+    ParticipantSetApprovalPlan,
+    ParticipantSetSignerType,
     PreparedTransaction,
     PreparedTransactionsResult,
+    Secp256k1ParticipantApproval,
     SignedPreparedTransaction,
     SponsorSignedTransactionArgs,
     SponsorSignedTransactionBundleArgs,
     SubmittedTransaction,
     SubmittedTransactionBundle,
     TransactionsClient,
+    WebAuthnP256ParticipantApproval,
 )
 from .wallets import (
     CreateWalletResult,
@@ -101,6 +115,7 @@ from .wallets import (
     WalletAuthorityKind,
     WalletHandle,
     WalletReference,
+    WalletRolesClient,
     WalletsClient,
 )
 
@@ -109,6 +124,8 @@ __all__ = [
     "DEFAULT_ONE_BUSINESS_URL",
     "Amount",
     "ClientSignatureRequest",
+    "CompileParticipantSetApprovalsResult",
+    "CreateParticipantSetResult",
     "CreateRampSessionResult",
     "CreateWalletResult",
     "Eip1193Provider",
@@ -132,6 +149,12 @@ __all__ = [
     "OnrampOptions",
     "OnrampSession",
     "OnrampSessionStatus",
+    "ParticipantApprovalRequest",
+    "ParticipantSetApproval",
+    "ParticipantSetApprovalPlan",
+    "ParticipantSetMember",
+    "ParticipantSetSignerType",
+    "ParticipantSetsClient",
     "PasskeySigningFn",
     "PasskeySigningResult",
     "PaymasterBalance",
@@ -154,6 +177,8 @@ __all__ = [
     "RecoveryOptions",
     "RecoverySetupPlan",
     "RetryOptions",
+    "Secp256k1ParticipantApproval",
+    "Secp256k1ParticipantSetMember",
     "Secp256k1SigningFn",
     "Secp256k1SigningResult",
     "SignedPreparedTransaction",
@@ -184,8 +209,11 @@ __all__ = [
     "WalletAuthorityKind",
     "WalletHandle",
     "WalletReference",
+    "WalletRolesClient",
     "WalletsClient",
     "WebAuthnAssertion",
+    "WebAuthnP256ParticipantApproval",
+    "WebAuthnP256ParticipantSetMember",
     "build_one_business_grant_access_url",
     "complete_one_business_grant_access",
     "create_secp256k1_evm_signing_fn",

@@ -100,6 +100,58 @@ wallet = swig.wallets.use(
 `swig.wallets.from_idp_session(session)` builds the same handle from an IdP
 session.
 
+### Configure and use a ParticipantSet
+
+```python
+from swig_developer_sdk import (
+    Secp256k1ParticipantSetMember,
+    WebAuthnP256ParticipantSetMember,
+)
+
+created_set = await swig.participant_sets.create(
+    swig_config_address=swig_config_address,
+    fee_payer=fee_payer,
+    threshold=2,
+    members=(
+        WebAuthnP256ParticipantSetMember(public_key=client_public_key),
+        Secp256k1ParticipantSetMember(public_key=server_public_key),
+    ),
+)
+
+wallet = swig.wallets.use(
+    swig_config_address,
+    requester_authority=requester_authority,
+)
+add_role = await wallet.roles.add(
+    fee_payer=fee_payer,
+    participant_set_address=created_set.participant_set_address,
+    permissions=permissions,
+)
+```
+
+After submitting the setup transactions, prepare an existing legacy action
+with a ParticipantSet requester and compile detached approvals:
+
+```python
+participant_wallet = swig.wallets.use(
+    swig_config_address,
+    requester_authority={
+        "participantSet": {"address": created_set.participant_set_address}
+    },
+)
+prepared = await participant_wallet.transfer.sol(
+    fee_payer=fee_payer,
+    destination=destination,
+    amount=1_000_000,
+)
+compiled = await swig.transactions.compile_participant_set_approvals(
+    prepared_transaction=prepared,
+    approvals=approvals,
+)
+```
+
+Compilation does not sponsor, submit, or broadcast the result.
+
 ### Prepare transfers and swaps
 
 ```python

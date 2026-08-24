@@ -17,6 +17,9 @@ and both default to `https://api.onswig.com`.
 | Jupiter swap | `wallet.swap.jupiter` | `wallet.swap.jupiter` | same optional swap controls |
 | Custom transaction | `wallet.buildTransaction` | `wallet.build_transaction` | same custom preparation request and instruction shape |
 | Policy read | `swig.wallets.getPolicy` | `swig.wallets.get_policy` | same raw policy metadata |
+| ParticipantSet creation | `swig.participantSets.create` | `swig.participant_sets.create` | same mixed-member setup and prepared transaction |
+| ParticipantSet role | `wallet.roles.add` | `wallet.roles.add` | same typed authority and caller-selected permissions |
+| ParticipantSet compilation | `swig.transactions.compileParticipantSetApprovals` | `swig.transactions.compile_participant_set_approvals` | same bound plan, detached approvals, and no submission side effect |
 
 ## Wallet reads
 
