@@ -437,6 +437,46 @@ Use the signing entrypoint with an application-owned wallet, passkey, hardware
 device, or custody service. It accepts no API key and does not call the Swig
 API.
 
+### ParticipantSet approvals
+
+Participant signers are detached from `SwigClient`. They receive one bound
+member request and return the member index and counter from that request; the
+application never supplies those values separately.
+
+```typescript
+import {
+  createParticipantPasskeySigner,
+  createParticipantPersonalSignSigner,
+  signParticipantSetApproval,
+} from '@swig-wallet/developer-sdk/signers';
+
+const passkeySigner = createParticipantPasskeySigner({
+  publicKey: clientPublicKey,
+  credentialId,
+  userVerification: 'preferred',
+});
+const clientApproval = await signParticipantSetApproval(
+  prepared.participantSetApprovalPlan!.members[0]!,
+  passkeySigner,
+);
+
+const serverSigner = createParticipantPersonalSignSigner({
+  publicKey: serverPublicKey,
+  // personalSign must apply the EIP-191 personal-sign prefix to this exact
+  // 64-character lowercase ASCII hex challenge.
+  signMessage: personalSign,
+});
+const serverApproval = await signParticipantSetApproval(
+  prepared.participantSetApprovalPlan!.members[1]!,
+  serverSigner,
+);
+```
+
+The passkey helper returns raw authenticator data, exact `clientDataJSON`, and a
+raw low-S P-256 signature. The personal-sign helper validates the compact k1
+signature, normalizes it to low-S, and adjusts the recovery byte. Neither
+helper calls the hosted API or compiles the transaction.
+
 ### Ed25519
 
 ```typescript

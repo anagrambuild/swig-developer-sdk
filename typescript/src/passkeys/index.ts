@@ -89,7 +89,9 @@ function getRawWebAuthnPrefix(
   return prefix;
 }
 
-function secp256r1DerToRawSignature(derSignature: Uint8Array): Uint8Array {
+export function secp256r1DerToRawSignature(
+  derSignature: Uint8Array,
+): Uint8Array {
   const signature = parseDerSignature(derSignature);
   const s =
     signature.s > P256_HALF_ORDER ? P256_ORDER - signature.s : signature.s;
