@@ -357,6 +357,8 @@ class WalletsClient:
         recovery: RecoveryOptions | None = None,
         network: Network | None = None,
     ) -> CreateWalletResult:
+        if initial_user is not None:
+            _reject_participant_set_authority(initial_user, "initial_user")
         policy = await self.get_policy(policy_id) if policy_id else None
         response = await self._http.post(
             "/transaction/wallet/create",
@@ -527,6 +529,7 @@ class WalletsClient:
         network: Network | None = None,
     ) -> PreparedTransaction:
         authority = _requester_authority(wallet, requester_authority)
+        _reject_participant_set_authority(authority, "requester_authority")
         return normalize_prepared_transaction(
             await self._http.post(
                 "/transaction/swap/jupiter",
@@ -563,6 +566,7 @@ class WalletsClient:
         network: Network | None = None,
     ) -> PreparedTransaction:
         authority = _requester_authority(wallet, requester_authority)
+        _reject_participant_set_authority(authority, "requester_authority")
         return normalize_prepared_transaction(
             await self._http.post(
                 "/transaction/wallet/recovery-authority/add",
@@ -667,6 +671,11 @@ class WalletsClient:
             guardian_swig_address,
             guardian_requester_authority,
         )
+        if guardian_requester_authority is not None:
+            _reject_participant_set_authority(
+                guardian_requester_authority,
+                "guardian_requester_authority",
+            )
         return normalize_prepared_transaction(
             await self._http.post(
                 "/transaction/recovery/start",
@@ -698,6 +707,7 @@ class WalletsClient:
         network: Network | None = None,
     ) -> PreparedTransaction:
         authority = _requester_authority(wallet, requester_authority)
+        _reject_participant_set_authority(authority, "requester_authority")
         return normalize_prepared_transaction(
             await self._http.post(
                 "/transaction/recovery/cancel",
@@ -725,6 +735,11 @@ class WalletsClient:
             raise ValueError(
                 "guardian_swig_address and guardian_requester_authority "
                 "must be provided together"
+            )
+        if guardian_requester_authority is not None:
+            _reject_participant_set_authority(
+                guardian_requester_authority,
+                "guardian_requester_authority",
             )
         return normalize_prepared_transaction(
             await self._http.post(
@@ -758,6 +773,11 @@ class WalletsClient:
         network: Network | None = None,
     ) -> PreparedTransaction:
         authority = _requester_authority(wallet, requester_authority)
+        if address_lookup_table_accounts and _participant_set_authority(authority):
+            raise ValueError(
+                "ParticipantSet requester_authority does not support "
+                "address_lookup_table_accounts"
+            )
         return normalize_prepared_transaction(
             await self._http.post(
                 "/transaction/prepare/custom",
@@ -859,6 +879,11 @@ class WalletsClient:
         authority_wire = wallet_authority_to_wire(authority)
         if "programExecProof" in authority_wire:
             raise ValueError("Add role authority does not support programExecProof")
+        participant_set = _participant_set_authority(authority)
+        if participant_set is not None and any(
+            key in participant_set for key in ("roleId", "role_id")
+        ):
+            raise ValueError("Add role ParticipantSet authority must omit role_id")
         if not actions:
             raise ValueError("Add role actions must not be empty")
         response = await self._http.post(
@@ -1305,6 +1330,21 @@ def _requester_authority(
     if resolved is None:
         raise ValueError("requester_authority is required")
     return resolved
+
+
+def _participant_set_authority(
+    authority: WalletAuthority,
+) -> Mapping[str, object] | None:
+    value = authority.get("participantSet", authority.get("participant_set"))
+    return value if isinstance(value, Mapping) else None
+
+
+def _reject_participant_set_authority(
+    authority: WalletAuthority,
+    field: str,
+) -> None:
+    if _participant_set_authority(authority) is not None:
+        raise ValueError(f"{field} does not support ParticipantSet authority")
 
 
 def _operation_to_wire(operation: PrepareOperation) -> dict[str, object]:
