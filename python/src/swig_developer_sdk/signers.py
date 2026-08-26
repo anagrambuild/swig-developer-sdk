@@ -39,18 +39,26 @@ from .signing import (
     sign_prepared_transaction_with_signer,
 )
 from .transactions import (
+    Ed25519ParticipantApproval,
+    ParticipantApprovalRequest,
+    ParticipantSetApproval,
     PreparedTransaction,
+    Secp256k1ParticipantApproval,
     SignedPreparedTransaction,
     TransactionEncoding,
+    WebAuthnP256ParticipantApproval,
 )
 
 __all__ = [
+    "Ed25519ParticipantApproval",
     "Eip1193Provider",
+    "ParticipantApprovalRequest",
     "ParticipantEd25519SignFn",
     "ParticipantEd25519Signer",
     "ParticipantPasskeySigner",
     "ParticipantPersonalSignFn",
     "ParticipantPersonalSignSigner",
+    "ParticipantSetApproval",
     "ParticipantSigner",
     "ParticipantSignerType",
     "PasskeySigningFn",
@@ -58,6 +66,7 @@ __all__ = [
     "PreparedTransaction",
     "PreparedTransactionSigner",
     "PreparedTransactionSigningFn",
+    "Secp256k1ParticipantApproval",
     "Secp256k1SigningFn",
     "Secp256k1SigningFns",
     "Secp256k1SigningResult",
@@ -66,6 +75,7 @@ __all__ = [
     "TransactionEncoding",
     "WebAuthnAssertion",
     "WebAuthnAssertionFn",
+    "WebAuthnP256ParticipantApproval",
     "create_participant_ed25519_signer",
     "create_participant_passkey_signer",
     "create_participant_personal_sign_signer",
