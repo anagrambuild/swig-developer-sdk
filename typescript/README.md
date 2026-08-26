@@ -445,6 +445,58 @@ Use the signing entrypoint with an application-owned wallet, passkey, hardware
 device, or custody service. It accepts no API key and does not call the Swig
 API.
 
+### ParticipantSet approvals
+
+Participant signers are detached from `SwigClient`. They receive one bound
+member request and return its member index; the shared ParticipantSet nonce is
+already committed by the challenge and never copied into an individual proof.
+
+```typescript
+import {
+  createParticipantEd25519Signer,
+  createParticipantPasskeySigner,
+  createParticipantPersonalSignSigner,
+  signParticipantSetApproval,
+} from '@swig-wallet/developer-sdk/signers';
+
+const recoverySigner = createParticipantEd25519Signer({
+  publicKey: recoveryPublicKey,
+  signMessage: signEd25519,
+});
+const recoveryApproval = await signParticipantSetApproval(
+  prepared.participantSetApprovalPlan!.members[0]!,
+  recoverySigner,
+);
+
+const passkeySigner = createParticipantPasskeySigner({
+  publicKey: clientPublicKey,
+  credentialId,
+  userVerification: 'preferred',
+});
+const clientApproval = await signParticipantSetApproval(
+  prepared.participantSetApprovalPlan!.members[1]!,
+  passkeySigner,
+);
+
+const serverSigner = createParticipantPersonalSignSigner({
+  publicKey: serverPublicKey,
+  // personalSign must apply the EIP-191 personal-sign prefix to this exact
+  // 64-character lowercase ASCII hex challenge.
+  signMessage: personalSign,
+});
+const serverApproval = await signParticipantSetApproval(
+  prepared.participantSetApprovalPlan!.members[2]!,
+  serverSigner,
+);
+```
+
+The Ed25519 callback receives the decoded 32-byte challenge. The passkey helper
+returns raw authenticator data, exact `clientDataJSON`, and converts DER to a
+raw low-S P-256 signature; compilation also defensively normalizes externally
+constructed high-S P-256 approvals. The personal-sign helper validates the
+compact k1 signature, normalizes it to low-S, and adjusts the recovery byte.
+None of these helpers calls the hosted API or compiles the transaction.
+
 ### Ed25519
 
 ```typescript
