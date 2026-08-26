@@ -289,6 +289,109 @@ async def test_wallet_roles_add_rejects_participant_set_requester() -> None:
     assert requests == []
 
 
+async def test_wallet_roles_add_rejects_participant_set_role_id() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(500)
+
+    swig = SwigClient(
+        api_key="secret",
+        base_url="https://example.test",
+        network="devnet",
+        transport=httpx.MockTransport(handler),
+    )
+    wallet = swig.wallets.use(
+        "swig-123",
+        requester_authority={"ed25519": {"publicKey": "requester-public-key"}},
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Add role ParticipantSet authority must omit role_id",
+    ):
+        await wallet.roles.add(
+            fee_payer="payer-123",
+            authority={
+                "participantSet": {
+                    "address": "participant-set-new",
+                    "roleId": 7,
+                }
+            },
+            actions=(AllAction(),),
+        )
+
+    assert requests == []
+
+
+async def test_rejects_participant_set_from_unsupported_endpoint_shapes() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(500)
+
+    swig = SwigClient(
+        api_key="secret",
+        base_url="https://example.test",
+        network="devnet",
+        transport=httpx.MockTransport(handler),
+    )
+    participant_set = {"participantSet": {"address": "participant-set-requester"}}
+
+    with pytest.raises(
+        ValueError,
+        match="initial_user does not support ParticipantSet authority",
+    ):
+        await swig.wallets.create(
+            fee_payer="payer-123",
+            initial_user=participant_set,
+        )
+
+    wallet = swig.wallets.use(
+        "swig-123",
+        requester_authority=participant_set,
+    )
+    with pytest.raises(
+        ValueError,
+        match="requester_authority does not support ParticipantSet authority",
+    ):
+        await wallet.swap.jupiter(
+            fee_payer="payer-123",
+            input_mint="input-mint",
+            output_mint="output-mint",
+            amount=1,
+        )
+    with pytest.raises(
+        ValueError,
+        match="requester_authority does not support ParticipantSet authority",
+    ):
+        await swig.wallets.add_recovery_authority(
+            wallet,
+            fee_payer="payer-123",
+        )
+    with pytest.raises(
+        ValueError,
+        match="requester_authority does not support ParticipantSet authority",
+    ):
+        await wallet.recovery.cancel(fee_payer="payer-123")
+    with pytest.raises(
+        ValueError,
+        match=(
+            "ParticipantSet requester_authority does not support "
+            "address_lookup_table_accounts"
+        ),
+    ):
+        await wallet.build_transaction(
+            fee_payer="payer-123",
+            instructions=(),
+            address_lookup_table_accounts=("lookup-table",),
+        )
+
+    assert requests == []
+
+
 async def test_compile_participant_approvals_preserves_bound_plan() -> None:
     requests: list[httpx.Request] = []
 
