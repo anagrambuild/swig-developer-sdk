@@ -21,8 +21,9 @@ export type {
   RedirectToOneBusinessGrantAccessOptions,
 } from './one-business/index.js';
 export type {
-  AddParticipantSetRoleArgs,
   AddRecoveryAuthorityArgs,
+  AddRoleAction,
+  AddRoleArgs,
   Amount,
   BuildTransactionArgs,
   CancelRecoveryArgs,
@@ -55,7 +56,6 @@ export type {
   ParticipantSetApproval,
   ParticipantSetApprovalPlan,
   ParticipantSetMember,
-  ParticipantSetSignerType,
   Policy,
   PolicyAuthority,
   PrepareOfframpAuthorizationArgs,

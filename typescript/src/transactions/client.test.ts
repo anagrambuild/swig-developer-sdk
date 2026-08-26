@@ -15,6 +15,7 @@ describe('TransactionsClient', () => {
             transactionEncoding: 'TRANSACTION_ENCODING_BASE64',
             network: 'NETWORK_DEVNET',
           },
+          authorizationExpirationSlot: '12345',
         };
       },
     } as never);
@@ -30,16 +31,24 @@ describe('TransactionsClient', () => {
           participantSetAddress: 'participant_set_123',
           roleId: 4,
           expirationSlot: '12345',
+          nonce: 7,
           transactionDigest: '11'.repeat(32),
           compilationEnvelope: 'envelope_123',
           threshold: 2,
           members: [
             {
               memberIndex: 0,
-              signerType: 'secp256k1',
-              publicKey: `02${'22'.repeat(32)}`,
-              counter: 7,
+              authority: {
+                secp256k1: { publicKey: `02${'22'.repeat(32)}` },
+              },
               challenge: '33'.repeat(32),
+            },
+            {
+              memberIndex: 1,
+              authority: {
+                ed25519: { publicKey: 'ed25519_public_key' },
+              },
+              challenge: '44'.repeat(32),
             },
           ],
         },
@@ -47,16 +56,22 @@ describe('TransactionsClient', () => {
       approvals: [
         {
           memberIndex: 0,
-          counter: 7,
           secp256k1: { signature: Uint8Array.from([1, 2, 3]) },
+        },
+        {
+          memberIndex: 1,
+          ed25519: { signature: Uint8Array.from([4, 5, 6]) },
         },
       ],
     });
 
-    expect(result.preparedTransaction.transaction).toBe('compiled-base64');
+    expect(result).toMatchObject({
+      transaction: { transaction: 'compiled-base64' },
+      authorizationExpirationSlot: '12345',
+    });
     expect(calls).toEqual([
       {
-        path: '/transaction/participant-set/compile',
+        path: '/transaction/wallet/participant-set/compile',
         body: {
           preparedTransaction: {
             transaction: 'original-base64',
@@ -71,16 +86,24 @@ describe('TransactionsClient', () => {
               participantSetAddress: 'participant_set_123',
               roleId: 4,
               expirationSlot: '12345',
+              nonce: 7,
               transactionDigest: '11'.repeat(32),
               compilationEnvelope: 'envelope_123',
               threshold: 2,
               members: [
                 {
                   memberIndex: 0,
-                  signerType: 'PARTICIPANT_SET_SIGNER_TYPE_SECP256K1',
-                  publicKey: `02${'22'.repeat(32)}`,
-                  counter: 7,
+                  authority: {
+                    secp256k1: { publicKey: `02${'22'.repeat(32)}` },
+                  },
                   challenge: '33'.repeat(32),
+                },
+                {
+                  memberIndex: 1,
+                  authority: {
+                    ed25519: { publicKey: 'ed25519_public_key' },
+                  },
+                  challenge: '44'.repeat(32),
                 },
               ],
             },
@@ -88,8 +111,11 @@ describe('TransactionsClient', () => {
           approvals: [
             {
               memberIndex: 0,
-              counter: 7,
               secp256k1: { signature: 'AQID' },
+            },
+            {
+              memberIndex: 1,
+              ed25519: { signature: 'BAUG' },
             },
           ],
         },

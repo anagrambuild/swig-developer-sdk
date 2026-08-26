@@ -1,7 +1,7 @@
 import type { HttpClient } from '../core/index.js';
 import type {
-  AddParticipantSetRoleArgs,
   AddRecoveryAuthorityArgs,
+  AddRoleArgs,
   BuildTransactionArgs,
   CancelRecoveryArgs,
   ConfigureRecoveryArgs,
@@ -48,8 +48,8 @@ import {
   normalizeSwigUsdBalance,
 } from './normalizers.js';
 import {
-  addParticipantSetRoleRequest,
   addRecoveryAuthorityRequest,
+  addRoleRequest,
   buildTransactionRequest,
   cancelRecoveryRequest,
   configureRecoveryRequest,
@@ -150,15 +150,15 @@ export class WalletsClient {
     return normalizeSwigRoles(response);
   };
 
-  addParticipantSetRole = async (
+  addRole = async (
     wallet: WalletHandle,
-    args: AddParticipantSetRoleArgs,
+    args: AddRoleArgs,
   ): Promise<PreparedTransaction> => {
     const response = await this.http.post<{
       transaction?: PreparedTransactionWire;
     }>(
       '/transaction/wallet/role/add',
-      addParticipantSetRoleRequest(wallet, args, this.defaultNetwork),
+      addRoleRequest(wallet, args, this.defaultNetwork),
     );
     if (!response.transaction) {
       throw new Error('Add role response is missing transaction');

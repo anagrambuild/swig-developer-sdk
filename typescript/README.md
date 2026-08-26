@@ -143,7 +143,8 @@ const createdSet = await swig.participantSets.create({
   feePayer,
   threshold: 2,
   members: [
-    { webauthnP256: { publicKey: clientPublicKey } },
+    { ed25519: { publicKey: recoveryPublicKey } },
+    { secp256r1: { publicKey: clientPublicKey } },
     { secp256k1: { publicKey: serverPublicKey } },
   ],
 });
@@ -153,13 +154,18 @@ const wallet = swig.wallets.use(swigConfigAddress, {
 });
 const addRole = await wallet.roles.add({
   feePayer,
-  participantSetAddress: createdSet.participantSetAddress,
-  permissions,
+  authority: {
+    participantSet: { address: createdSet.participantSetAddress },
+  },
+  actions: [
+    { type: 'solLimit', amount: 1_000_000n },
+    { type: 'program', programId },
+  ],
 });
 ```
 
-After those transactions land, use the set as the requester for an existing
-legacy transaction preparation route:
+After those transactions land, use the set as the requester for a transaction
+preparation route:
 
 ```typescript
 const participantWallet = swig.wallets.use(swigConfigAddress, {
@@ -179,8 +185,10 @@ const compiled = await swig.transactions.compileParticipantSetApprovals({
 });
 ```
 
-Compilation validates the original plan and returns an upgraded prepared
-transaction. Sponsorship or submission remains a separate explicit call.
+Each member approval signs the challenge returned for that member and the plan
+uses one shared nonce. Compilation validates the plan through the API and
+returns `compiled.transaction`, an RPC-simulated unsigned transaction.
+Sponsorship or submission remains a separate explicit call.
 
 ### Prepare a SOL transfer
 
