@@ -448,15 +448,25 @@ API.
 ### ParticipantSet approvals
 
 Participant signers are detached from `SwigClient`. They receive one bound
-member request and return the member index and counter from that request; the
-application never supplies those values separately.
+member request and return its member index; the shared ParticipantSet nonce is
+already committed by the challenge and never copied into an individual proof.
 
 ```typescript
 import {
+  createParticipantEd25519Signer,
   createParticipantPasskeySigner,
   createParticipantPersonalSignSigner,
   signParticipantSetApproval,
 } from '@swig-wallet/developer-sdk/signers';
+
+const recoverySigner = createParticipantEd25519Signer({
+  publicKey: recoveryPublicKey,
+  signMessage: signEd25519,
+});
+const recoveryApproval = await signParticipantSetApproval(
+  prepared.participantSetApprovalPlan!.members[0]!,
+  recoverySigner,
+);
 
 const passkeySigner = createParticipantPasskeySigner({
   publicKey: clientPublicKey,
@@ -464,7 +474,7 @@ const passkeySigner = createParticipantPasskeySigner({
   userVerification: 'preferred',
 });
 const clientApproval = await signParticipantSetApproval(
-  prepared.participantSetApprovalPlan!.members[0]!,
+  prepared.participantSetApprovalPlan!.members[1]!,
   passkeySigner,
 );
 
@@ -475,15 +485,17 @@ const serverSigner = createParticipantPersonalSignSigner({
   signMessage: personalSign,
 });
 const serverApproval = await signParticipantSetApproval(
-  prepared.participantSetApprovalPlan!.members[1]!,
+  prepared.participantSetApprovalPlan!.members[2]!,
   serverSigner,
 );
 ```
 
-The passkey helper returns raw authenticator data, exact `clientDataJSON`, and a
-raw low-S P-256 signature. The personal-sign helper validates the compact k1
-signature, normalizes it to low-S, and adjusts the recovery byte. Neither
-helper calls the hosted API or compiles the transaction.
+The Ed25519 callback receives the decoded 32-byte challenge. The passkey helper
+returns raw authenticator data, exact `clientDataJSON`, and a raw P-256
+signature; compilation normalizes high-S P-256 assertions for the native
+verifier. The personal-sign helper validates the compact k1 signature,
+normalizes it to low-S, and adjusts the recovery byte. None of these helpers
+calls the hosted API or compiles the transaction.
 
 ### Ed25519
 
