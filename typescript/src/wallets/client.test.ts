@@ -116,7 +116,7 @@ describe('WalletsClient', () => {
     });
   });
 
-  test('maps ParticipantSet requesters and role permissions to typed protobuf fields', async () => {
+  test('maps general role authorities and actions to typed protobuf fields', async () => {
     const calls: Array<{ path: string; body: unknown }> = [];
     const wallets = new WalletsClient(
       {
@@ -133,15 +133,15 @@ describe('WalletsClient', () => {
       'devnet',
     );
     const wallet = wallets.use('swig_123', {
-      requesterAuthority: {
-        participantSet: { address: 'participant_set_requester', roleId: 9 },
-      },
+      requesterAuthority: { ed25519: { publicKey: 'requester_123' } },
     });
 
     await wallet.roles.add({
       feePayer: 'payer_123',
-      participantSetAddress: 'participant_set_new',
-      permissions: [{ all: {} }],
+      authority: {
+        participantSet: { address: 'participant_set_new' },
+      },
+      actions: [{ type: 'all' }, { type: 'solLimit', amount: 1_000_000n }],
     });
 
     expect(calls).toEqual([
@@ -152,20 +152,42 @@ describe('WalletsClient', () => {
           feePayer: 'payer_123',
           swigAddress: 'swig_123',
           requesterAuthority: {
-            participantSet: {
-              participantSetAddress: 'participant_set_requester',
-              roleId: 9,
-            },
+            ed25519: { publicKey: 'requester_123' },
           },
           authority: {
             participantSet: {
               participantSetAddress: 'participant_set_new',
             },
           },
-          actions: [{ all: {} }],
+          actions: [{ all: {} }, { solLimit: { amount: '1000000' } }],
         },
       },
     ]);
+  });
+
+  test('rejects ParticipantSet as an add-role requester before transport', async () => {
+    const wallet = new WalletsClient(
+      {
+        post: async () => {
+          throw new Error('transport must not be called');
+        },
+      } as never,
+      'devnet',
+    ).use('swig_123', {
+      requesterAuthority: {
+        participantSet: { address: 'participant_set_requester' },
+      },
+    });
+
+    await expect(
+      wallet.roles.add({
+        feePayer: 'payer_123',
+        authority: { ed25519: { publicKey: 'role_public_key' } },
+        actions: [{ type: 'all' }],
+      }),
+    ).rejects.toThrow(
+      'Add role requesterAuthority must use ed25519 or secp256r1',
+    );
   });
 
   test('builds token transfer requests for the transaction API', () => {

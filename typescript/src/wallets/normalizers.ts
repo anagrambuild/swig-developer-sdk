@@ -16,6 +16,8 @@ import type {
   ParticipantApprovalRequestWire,
   ParticipantSetApprovalPlan,
   ParticipantSetApprovalPlanWire,
+  ParticipantSetMember,
+  ParticipantSetMemberWire,
   PreparedTransaction,
   PreparedTransactionKind,
   PreparedTransactionKindWire,
@@ -494,6 +496,9 @@ function normalizeParticipantSetApprovalPlan(
   ) {
     throw new Error('ParticipantSet approval plan is missing expirationSlot');
   }
+  if (!Array.isArray(plan.members) || plan.members.length === 0) {
+    throw new Error('ParticipantSet approval plan is missing members');
+  }
 
   return {
     type: 'participantSet',
@@ -503,6 +508,7 @@ function normalizeParticipantSetApprovalPlan(
     ),
     roleId: readNumber(plan.roleId ?? plan.role_id, 'roleId'),
     expirationSlot: String(expirationSlot),
+    nonce: readNumber(plan.nonce, 'nonce'),
     transactionDigest: readString(
       plan.transactionDigest ?? plan.transaction_digest,
       'transactionDigest',
@@ -512,7 +518,7 @@ function normalizeParticipantSetApprovalPlan(
       'compilationEnvelope',
     ),
     threshold: readNumber(plan.threshold, 'threshold'),
-    members: (plan.members ?? []).map(normalizeParticipantApprovalRequest),
+    members: plan.members.map(normalizeParticipantApprovalRequest),
   };
 }
 
@@ -524,27 +530,41 @@ function normalizeParticipantApprovalRequest(
       request.memberIndex ?? request.member_index,
       'memberIndex',
     ),
-    signerType: normalizeParticipantSignerType(
-      request.signerType ?? request.signer_type,
-    ),
-    publicKey: readString(request.publicKey ?? request.public_key, 'publicKey'),
-    counter: readNumber(request.counter, 'counter'),
+    authority: normalizeParticipantSetMember(request.authority),
     challenge: readString(request.challenge, 'challenge'),
   };
 }
 
-function normalizeParticipantSignerType(
-  value: ParticipantApprovalRequestWire['signerType'],
-): ParticipantApprovalRequest['signerType'] {
-  switch (value) {
-    case 'PARTICIPANT_SET_SIGNER_TYPE_SECP256K1':
-    case 1:
-      return 'secp256k1';
-    case 'PARTICIPANT_SET_SIGNER_TYPE_WEBAUTHN_P256':
-    case 2:
-      return 'webauthnP256';
-    default:
-      throw new Error('ParticipantSet approval plan has invalid signerType');
+function normalizeParticipantSetMember(
+  authority?: ParticipantSetMemberWire,
+): ParticipantSetMember {
+  if (!authority || typeof authority !== 'object') {
+    throw new Error('ParticipantSet approval request is missing authority');
+  }
+
+  const variants = [
+    ['ed25519', authority.ed25519],
+    ['secp256k1', authority.secp256k1],
+    ['secp256r1', authority.secp256r1],
+  ] as const;
+  const selected = variants.filter(([, value]) => value !== undefined);
+  const selectedAuthority = selected[0];
+  if (selected.length !== 1 || !selectedAuthority) {
+    throw new Error('ParticipantSet approval request has invalid authority');
+  }
+
+  const [scheme, value] = selectedAuthority;
+  const publicKey = readString(
+    value?.publicKey ?? value?.public_key,
+    'authority.publicKey',
+  );
+  switch (scheme) {
+    case 'ed25519':
+      return { ed25519: { publicKey } };
+    case 'secp256k1':
+      return { secp256k1: { publicKey } };
+    case 'secp256r1':
+      return { secp256r1: { publicKey } };
   }
 }
 

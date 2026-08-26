@@ -1,15 +1,14 @@
-import type { JsonObject, Network } from './common.js';
+import type { Network } from './common.js';
 import type {
   PreparedTransaction,
   PreparedTransactionWire,
 } from './transaction.js';
 import type { WalletAuthority } from './wallet-actions.js';
 
-export type ParticipantSetSignerType = 'secp256k1' | 'webauthnP256';
-
-export type ParticipantSetMember =
-  | { secp256k1: { publicKey: string } }
-  | { webauthnP256: { publicKey: string } };
+export type ParticipantSetMember = Extract<
+  WalletAuthority,
+  { ed25519: unknown } | { secp256k1: unknown } | { secp256r1: unknown }
+>;
 
 export interface CreateParticipantSetArgs {
   swigConfigAddress: string;
@@ -34,19 +33,9 @@ export interface CreateParticipantSetResponseWire {
   transaction?: PreparedTransactionWire;
 }
 
-export interface AddParticipantSetRoleArgs {
-  feePayer: string;
-  participantSetAddress: string;
-  permissions: JsonObject[];
-  requesterAuthority?: WalletAuthority;
-  network?: Network;
-}
-
 export interface ParticipantApprovalRequest {
   memberIndex: number;
-  signerType: ParticipantSetSignerType;
-  publicKey: string;
-  counter: number;
+  authority: ParticipantSetMember;
   challenge: string;
 }
 
@@ -55,6 +44,7 @@ export interface ParticipantSetApprovalPlan {
   participantSetAddress: string;
   roleId: number;
   expirationSlot: string;
+  nonce: number;
   transactionDigest: string;
   compilationEnvelope: string;
   threshold: number;
@@ -68,6 +58,7 @@ export interface ParticipantSetApprovalPlanWire {
   role_id?: number;
   expirationSlot?: string | number;
   expiration_slot?: string | number;
+  nonce?: number;
   transactionDigest?: string;
   transaction_digest?: string;
   compilationEnvelope?: string;
@@ -79,29 +70,27 @@ export interface ParticipantSetApprovalPlanWire {
 export interface ParticipantApprovalRequestWire {
   memberIndex?: number;
   member_index?: number;
-  signerType?:
-    | 'PARTICIPANT_SET_SIGNER_TYPE_SECP256K1'
-    | 'PARTICIPANT_SET_SIGNER_TYPE_WEBAUTHN_P256'
-    | number;
-  signer_type?:
-    | 'PARTICIPANT_SET_SIGNER_TYPE_SECP256K1'
-    | 'PARTICIPANT_SET_SIGNER_TYPE_WEBAUTHN_P256'
-    | number;
-  publicKey?: string;
-  public_key?: string;
-  counter?: number;
+  authority?: ParticipantSetMemberWire;
   challenge?: string;
+}
+
+export interface ParticipantSetMemberWire {
+  ed25519?: { publicKey?: string; public_key?: string };
+  secp256k1?: { publicKey?: string; public_key?: string };
+  secp256r1?: { publicKey?: string; public_key?: string };
 }
 
 export type ParticipantSetApproval =
   | {
       memberIndex: number;
-      counter: number;
+      ed25519: { signature: Uint8Array };
+    }
+  | {
+      memberIndex: number;
       secp256k1: { signature: Uint8Array };
     }
   | {
       memberIndex: number;
-      counter: number;
       webauthnP256: {
         authenticatorData: Uint8Array;
         clientDataJson: Uint8Array;
@@ -115,9 +104,12 @@ export interface CompileParticipantSetApprovalsArgs {
 }
 
 export interface CompileParticipantSetApprovalsResult {
-  preparedTransaction: PreparedTransaction;
+  transaction: PreparedTransaction;
+  authorizationExpirationSlot: string;
 }
 
 export interface CompileParticipantSetApprovalsResponseWire {
   transaction?: PreparedTransactionWire;
+  authorizationExpirationSlot?: string | number;
+  authorization_expiration_slot?: string | number;
 }

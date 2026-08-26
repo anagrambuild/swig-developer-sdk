@@ -47,14 +47,20 @@ ParticipantSet setup and stateless approval compilation use:
 
 | Method | Route |
 | --- | --- |
-| POST | `/transaction/participant-set/create` |
+| POST | `/transaction/wallet/participant-set/create` |
 | POST | `/transaction/wallet/role/add` |
-| POST | `/transaction/participant-set/compile` |
+| POST | `/transaction/wallet/participant-set/compile` |
 
-Existing legacy transaction preparation routes accept a typed ParticipantSet
-requester and may return a `participantSetApprovalPlan`. Compilation verifies
-detached participant approvals and returns an upgraded prepared transaction;
-it does not sponsor, submit, or broadcast it.
+The fresh ParticipantSet contract supports Ed25519, secp256k1, and secp256r1
+members and one shared nonce. Transaction preparation routes accept a typed
+ParticipantSet requester and may return a `participantSetApprovalPlan` whose
+members reuse the standard wallet-authority shape. Compilation sends detached
+approvals to the API and returns the RPC-simulated unsigned transaction plus
+its authorization expiration slot; it does not sponsor, submit, or broadcast.
+
+`/transaction/wallet/role/add` is the general role endpoint. It accepts the
+closed typed action set from `transaction/role.proto`; ParticipantSet is one
+supported role authority, not a separate role-creation operation.
 
 Wallet preparation idempotency fields were removed because the backend does
 not consume them. Prepared transactions are signed locally before submission.

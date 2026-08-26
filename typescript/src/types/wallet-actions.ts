@@ -14,7 +14,66 @@ export type WalletAuthority =
       };
     };
 
+export type AddRoleRequesterAuthority = Extract<
+  WalletAuthority,
+  { ed25519: unknown } | { secp256r1: unknown }
+>;
+
+export type RoleAuthority = Exclude<
+  WalletAuthority,
+  { programExecProof: unknown }
+>;
+
 export type WalletAuthorityKind = 'ed25519' | 'secp256k1' | 'secp256r1';
+
+export type AddRoleAction =
+  | { type: 'all' }
+  | { type: 'allButManageAuthority' }
+  | { type: 'manageAuthority' }
+  | { type: 'solLimit'; amount: Amount }
+  | { type: 'solRecurringLimit'; recurringAmount: Amount; window: Amount }
+  | { type: 'solDestinationLimit'; amount: Amount; destination: string }
+  | {
+      type: 'solRecurringDestinationLimit';
+      recurringAmount: Amount;
+      window: Amount;
+      destination: string;
+    }
+  | { type: 'tokenLimit'; mint: string; amount: Amount }
+  | {
+      type: 'tokenRecurringLimit';
+      mint: string;
+      recurringAmount: Amount;
+      window: Amount;
+    }
+  | {
+      type: 'tokenDestinationLimit';
+      mint: string;
+      amount: Amount;
+      destination: string;
+    }
+  | {
+      type: 'tokenRecurringDestinationLimit';
+      mint: string;
+      recurringAmount: Amount;
+      window: Amount;
+      destination: string;
+    }
+  | { type: 'program'; programId: string }
+  | { type: 'programAll' }
+  | { type: 'programCurated' }
+  | { type: 'stakeLimit'; amount: Amount }
+  | { type: 'stakeRecurringLimit'; recurringAmount: Amount; window: Amount }
+  | { type: 'stakeAll' }
+  | { type: 'subAccount' };
+
+export interface AddRoleArgs {
+  feePayer: string;
+  authority: RoleAuthority;
+  actions: AddRoleAction[];
+  requesterAuthority?: AddRoleRequesterAuthority;
+  network?: Network;
+}
 
 export interface CreateWalletArgs {
   policyId?: string;

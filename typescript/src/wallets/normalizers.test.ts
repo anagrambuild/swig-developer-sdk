@@ -37,15 +37,16 @@ describe('wallet normalizers', () => {
           participantSetAddress: 'participant-set-123',
           roleId: 4,
           expirationSlot: '12345',
+          nonce: 9,
           transactionDigest: '11'.repeat(32),
           compilationEnvelope: 'envelope-123',
           threshold: 2,
           members: [
             {
               memberIndex: 1,
-              signerType: 'PARTICIPANT_SET_SIGNER_TYPE_WEBAUTHN_P256',
-              publicKey: `03${'22'.repeat(32)}`,
-              counter: 9,
+              authority: {
+                secp256r1: { publicKey: `03${'22'.repeat(32)}` },
+              },
               challenge: '33'.repeat(32),
             },
           ],
@@ -57,12 +58,14 @@ describe('wallet normalizers', () => {
         participantSetAddress: 'participant-set-123',
         roleId: 4,
         expirationSlot: '12345',
+        nonce: 9,
         threshold: 2,
         members: [
           {
             memberIndex: 1,
-            signerType: 'webauthnP256',
-            counter: 9,
+            authority: {
+              secp256r1: { publicKey: `03${'22'.repeat(32)}` },
+            },
           },
         ],
       },

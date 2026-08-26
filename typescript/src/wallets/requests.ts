@@ -1,6 +1,7 @@
 import type {
-  AddParticipantSetRoleArgs,
   AddRecoveryAuthorityArgs,
+  AddRoleAction,
+  AddRoleArgs,
   BuildTransactionArgs,
   CancelRecoveryArgs,
   ConfigureRecoveryArgs,
@@ -262,27 +263,122 @@ export function isTokenTransfer(args: TransferArgs): args is TransferTokenArgs {
   );
 }
 
-export function addParticipantSetRoleRequest(
+export function addRoleRequest(
   wallet: WalletHandle,
-  args: AddParticipantSetRoleArgs,
+  args: AddRoleArgs,
   defaultNetwork?: Network,
 ) {
+  const requesterAuthority = resolveRequesterAuthority(wallet, args);
+  if (
+    !('ed25519' in requesterAuthority) &&
+    !('secp256r1' in requesterAuthority)
+  ) {
+    throw new Error(
+      'Add role requesterAuthority must use ed25519 or secp256r1',
+    );
+  }
+  if ('programExecProof' in args.authority) {
+    throw new Error('Add role authority does not support programExecProof');
+  }
+  if (args.actions.length === 0) {
+    throw new Error('Add role actions must not be empty');
+  }
   return {
     network: toProtoNetwork(
       resolveNetwork(args.network, wallet.network, defaultNetwork),
     ),
     feePayer: args.feePayer,
     swigAddress: wallet.swigConfigAddress,
-    requesterAuthority: walletAuthorityRequest(
-      resolveRequesterAuthority(wallet, args),
-    ),
-    authority: {
-      participantSet: {
-        participantSetAddress: args.participantSetAddress,
-      },
-    },
-    actions: args.permissions,
+    requesterAuthority: walletAuthorityRequest(requesterAuthority),
+    authority: walletAuthorityRequest(args.authority),
+    actions: args.actions.map(addRoleActionRequest),
   };
+}
+
+function addRoleActionRequest(action: AddRoleAction) {
+  switch (action.type) {
+    case 'all':
+      return { all: {} };
+    case 'allButManageAuthority':
+      return { allButManageAuthority: {} };
+    case 'manageAuthority':
+      return { manageAuthority: {} };
+    case 'solLimit':
+      return { solLimit: { amount: normalizeAmount(action.amount) } };
+    case 'solRecurringLimit':
+      return {
+        solRecurringLimit: {
+          recurringAmount: normalizeAmount(action.recurringAmount),
+          window: normalizeAmount(action.window),
+        },
+      };
+    case 'solDestinationLimit':
+      return {
+        solDestinationLimit: {
+          amount: normalizeAmount(action.amount),
+          destination: action.destination,
+        },
+      };
+    case 'solRecurringDestinationLimit':
+      return {
+        solRecurringDestinationLimit: {
+          recurringAmount: normalizeAmount(action.recurringAmount),
+          window: normalizeAmount(action.window),
+          destination: action.destination,
+        },
+      };
+    case 'tokenLimit':
+      return {
+        tokenLimit: {
+          mint: action.mint,
+          amount: normalizeAmount(action.amount),
+        },
+      };
+    case 'tokenRecurringLimit':
+      return {
+        tokenRecurringLimit: {
+          mint: action.mint,
+          recurringAmount: normalizeAmount(action.recurringAmount),
+          window: normalizeAmount(action.window),
+        },
+      };
+    case 'tokenDestinationLimit':
+      return {
+        tokenDestinationLimit: {
+          mint: action.mint,
+          amount: normalizeAmount(action.amount),
+          destination: action.destination,
+        },
+      };
+    case 'tokenRecurringDestinationLimit':
+      return {
+        tokenRecurringDestinationLimit: {
+          mint: action.mint,
+          recurringAmount: normalizeAmount(action.recurringAmount),
+          window: normalizeAmount(action.window),
+          destination: action.destination,
+        },
+      };
+    case 'program':
+      return { program: { programId: action.programId } };
+    case 'programAll':
+      return { programAll: {} };
+    case 'programCurated':
+      return { programCurated: {} };
+    case 'stakeLimit':
+      return { stakeLimit: { amount: normalizeAmount(action.amount) } };
+    case 'stakeRecurringLimit':
+      return {
+        stakeRecurringLimit: {
+          recurringAmount: normalizeAmount(action.recurringAmount),
+          window: normalizeAmount(action.window),
+        },
+      };
+    case 'stakeAll':
+      return { stakeAll: {} };
+    case 'subAccount':
+      return { subAccount: {} };
+  }
 }
 
 export function walletAuthorityRequest(authority: WalletAuthority) {
@@ -361,7 +457,7 @@ function resolveRequesterAuthority(
     | BuildTransactionArgs
     | CancelRecoveryArgs
     | AddRecoveryAuthorityArgs
-    | AddParticipantSetRoleArgs,
+    | AddRoleArgs,
 ): NonNullable<
   | TransferArgs['requesterAuthority']
   | SwapArgs['requesterAuthority']
@@ -369,7 +465,7 @@ function resolveRequesterAuthority(
   | BuildTransactionArgs['requesterAuthority']
   | CancelRecoveryArgs['requesterAuthority']
   | AddRecoveryAuthorityArgs['requesterAuthority']
-  | AddParticipantSetRoleArgs['requesterAuthority']
+  | AddRoleArgs['requesterAuthority']
 > {
   const requesterAuthority =
     args.requesterAuthority ?? wallet.requesterAuthority;
