@@ -2,28 +2,19 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal, TypeAlias
+from typing import TypeAlias
 
-from .common import Network, require_network, to_proto_network
+from .common import (
+    Network,
+    WalletAuthority,
+    require_network,
+    to_proto_network,
+    wallet_authority_to_wire,
+)
 from .core import HttpClient
 from .transactions import PreparedTransaction, normalize_prepared_transaction
 
-
-@dataclass(frozen=True, slots=True)
-class Secp256k1ParticipantSetMember:
-    public_key: str
-    type: Literal["secp256k1"] = "secp256k1"
-
-
-@dataclass(frozen=True, slots=True)
-class WebAuthnP256ParticipantSetMember:
-    public_key: str
-    type: Literal["webauthnP256"] = "webauthnP256"
-
-
-ParticipantSetMember: TypeAlias = (
-    Secp256k1ParticipantSetMember | WebAuthnP256ParticipantSetMember
-)
+ParticipantSetMember: TypeAlias = WalletAuthority
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,7 +45,7 @@ class ParticipantSetsClient:
     ) -> CreateParticipantSetResult:
         body = _mapping(
             await self._http.post(
-                "/transaction/participant-set/create",
+                "/transaction/wallet/participant-set/create",
                 {
                     "network": to_proto_network(
                         require_network(network, self._default_network)
@@ -81,10 +72,13 @@ class ParticipantSetsClient:
         )
 
 
-def _member_to_wire(member: ParticipantSetMember) -> dict[str, str]:
-    if isinstance(member, Secp256k1ParticipantSetMember):
-        return {"secp256k1PublicKey": member.public_key}
-    return {"webauthnP256PublicKey": member.public_key}
+def _member_to_wire(member: ParticipantSetMember) -> dict[str, object]:
+    authority = wallet_authority_to_wire(member)
+    if not any(scheme in authority for scheme in ("ed25519", "secp256k1", "secp256r1")):
+        raise ValueError(
+            "ParticipantSet members must use ed25519, secp256k1, or secp256r1"
+        )
+    return authority
 
 
 def _mapping(value: object, label: str) -> Mapping[str, object]:

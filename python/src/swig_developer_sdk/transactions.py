@@ -10,8 +10,10 @@ import base58
 from .common import (
     Network,
     WalletAddressInfo,
+    WalletAuthority,
     normalize_network,
     wallet_address_info_from_wire,
+    wallet_authority_to_wire,
 )
 from .core import HttpClient
 
@@ -34,15 +36,10 @@ class ClientSignatureRequest:
     counter: int
 
 
-ParticipantSetSignerType: TypeAlias = Literal["secp256k1", "webauthnP256"]
-
-
 @dataclass(frozen=True, slots=True)
 class ParticipantApprovalRequest:
     member_index: int
-    signer_type: ParticipantSetSignerType
-    public_key: str
-    counter: int
+    authority: WalletAuthority
     challenge: str
 
 
@@ -51,6 +48,7 @@ class ParticipantSetApprovalPlan:
     participant_set_address: str
     role_id: int
     expiration_slot: str
+    nonce: int
     transaction_digest: str
     compilation_envelope: str
     threshold: int
@@ -74,27 +72,34 @@ class PreparedTransaction:
 @dataclass(frozen=True, slots=True)
 class Secp256k1ParticipantApproval:
     member_index: int
-    counter: int
     signature: bytes
 
 
 @dataclass(frozen=True, slots=True)
 class WebAuthnP256ParticipantApproval:
     member_index: int
-    counter: int
     authenticator_data: bytes
     client_data_json: bytes
     signature: bytes
 
 
+@dataclass(frozen=True, slots=True)
+class Ed25519ParticipantApproval:
+    member_index: int
+    signature: bytes
+
+
 ParticipantSetApproval: TypeAlias = (
-    Secp256k1ParticipantApproval | WebAuthnP256ParticipantApproval
+    Ed25519ParticipantApproval
+    | Secp256k1ParticipantApproval
+    | WebAuthnP256ParticipantApproval
 )
 
 
 @dataclass(frozen=True, slots=True)
 class CompileParticipantSetApprovalsResult:
-    prepared_transaction: PreparedTransaction
+    transaction: PreparedTransaction
+    authorization_expiration_slot: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,7 +183,7 @@ class TransactionsClient:
     ) -> CompileParticipantSetApprovalsResult:
         response = _mapping(
             await self._http.post(
-                "/transaction/participant-set/compile",
+                "/transaction/wallet/participant-set/compile",
                 {
                     "preparedTransaction": _prepared_transaction_to_wire(
                         prepared_transaction
@@ -194,8 +199,18 @@ class TransactionsClient:
         transaction = response.get("transaction")
         if transaction is None:
             raise ValueError("Compile ParticipantSet response is missing transaction")
+        authorization_expiration_slot = _pick(
+            response,
+            "authorizationExpirationSlot",
+            "authorization_expiration_slot",
+        )
+        if not isinstance(authorization_expiration_slot, (str, int)):
+            raise ValueError(
+                "Compile ParticipantSet response is missing authorizationExpirationSlot"
+            )
         return CompileParticipantSetApprovalsResult(
-            prepared_transaction=normalize_prepared_transaction(transaction)
+            transaction=normalize_prepared_transaction(transaction),
+            authorization_expiration_slot=str(authorization_expiration_slot),
         )
 
     async def sponsor_bundle(
@@ -431,9 +446,11 @@ def _normalize_participant_set_approval_plan(
     expiration_slot = _pick(body, "expirationSlot", "expiration_slot")
     if not isinstance(expiration_slot, (str, int)):
         raise ValueError("ParticipantSet approval plan is missing expirationSlot")
-    members_value = body.get("members", [])
-    if not isinstance(members_value, Sequence) or isinstance(
-        members_value, (str, bytes)
+    members_value = body.get("members")
+    if (
+        not isinstance(members_value, Sequence)
+        or isinstance(members_value, (str, bytes))
+        or not members_value
     ):
         raise ValueError("ParticipantSet approval plan has invalid members")
     return ParticipantSetApprovalPlan(
@@ -443,6 +460,7 @@ def _normalize_participant_set_approval_plan(
         ),
         role_id=_required_int(_pick(body, "roleId", "role_id"), "roleId"),
         expiration_slot=str(expiration_slot),
+        nonce=_required_int(body.get("nonce"), "nonce"),
         transaction_digest=_required_string(
             _pick(body, "transactionDigest", "transaction_digest"),
             "transactionDigest",
@@ -466,23 +484,26 @@ def _normalize_participant_approval_request(
         member_index=_required_int(
             _pick(body, "memberIndex", "member_index"), "memberIndex"
         ),
-        signer_type=_normalize_participant_signer_type(
-            _pick(body, "signerType", "signer_type")
-        ),
-        public_key=_required_string(
-            _pick(body, "publicKey", "public_key"), "publicKey"
-        ),
-        counter=_required_int(body.get("counter"), "counter"),
+        authority=_normalize_participant_authority(body.get("authority")),
         challenge=_required_string(body.get("challenge"), "challenge"),
     )
 
 
-def _normalize_participant_signer_type(value: object) -> ParticipantSetSignerType:
-    if value in ("PARTICIPANT_SET_SIGNER_TYPE_SECP256K1", 1):
-        return "secp256k1"
-    if value in ("PARTICIPANT_SET_SIGNER_TYPE_WEBAUTHN_P256", 2):
-        return "webauthnP256"
-    raise ValueError("ParticipantSet approval plan has invalid signerType")
+def _normalize_participant_authority(value: object) -> WalletAuthority:
+    body = _mapping(value, "Participant approval authority")
+    selected = [
+        (scheme, body.get(scheme))
+        for scheme in ("ed25519", "secp256k1", "secp256r1")
+        if body.get(scheme) is not None
+    ]
+    if len(selected) != 1:
+        raise ValueError("Participant approval request has invalid authority")
+    scheme, authority_value = selected[0]
+    authority = _mapping(authority_value, "Participant approval authority value")
+    public_key = _required_string(
+        _pick(authority, "publicKey", "public_key"), "authority.publicKey"
+    )
+    return {scheme: {"publicKey": public_key}}
 
 
 def _prepared_transaction_to_wire(
@@ -527,19 +548,14 @@ def _prepared_transaction_to_wire(
                 "participantSetAddress": plan.participant_set_address,
                 "roleId": plan.role_id,
                 "expirationSlot": plan.expiration_slot,
+                "nonce": plan.nonce,
                 "transactionDigest": plan.transaction_digest,
                 "compilationEnvelope": plan.compilation_envelope,
                 "threshold": plan.threshold,
                 "members": [
                     {
                         "memberIndex": member.member_index,
-                        "signerType": (
-                            "PARTICIPANT_SET_SIGNER_TYPE_SECP256K1"
-                            if member.signer_type == "secp256k1"
-                            else "PARTICIPANT_SET_SIGNER_TYPE_WEBAUTHN_P256"
-                        ),
-                        "publicKey": member.public_key,
-                        "counter": member.counter,
+                        "authority": wallet_authority_to_wire(member.authority),
                         "challenge": member.challenge,
                     }
                     for member in plan.members
@@ -555,7 +571,13 @@ def _participant_approval_to_wire(
     approval: ParticipantSetApproval,
 ) -> dict[str, object]:
     proof: dict[str, object]
-    if isinstance(approval, Secp256k1ParticipantApproval):
+    if isinstance(approval, Ed25519ParticipantApproval):
+        proof = {
+            "ed25519": {
+                "signature": base64.b64encode(approval.signature).decode("ascii")
+            }
+        }
+    elif isinstance(approval, Secp256k1ParticipantApproval):
         proof = {
             "secp256k1": {
                 "signature": base64.b64encode(approval.signature).decode("ascii")
@@ -575,7 +597,6 @@ def _participant_approval_to_wire(
         }
     return {
         "memberIndex": approval.member_index,
-        "counter": approval.counter,
         **proof,
     }
 
