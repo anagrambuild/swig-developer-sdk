@@ -70,6 +70,27 @@ def wallet_authority_to_wire(authority: WalletAuthority) -> dict[str, object]:
             raise ValueError("programExecProof requires roleId and zkProof")
         return {"programExecProof": {"roleId": role_id, "zkProof": zk_proof}}
 
+    participant_set = authority.get("participantSet", authority.get("participant_set"))
+    if participant_set is not None:
+        address = participant_set.get(
+            "address",
+            participant_set.get(
+                "participantSetAddress",
+                participant_set.get("participant_set_address"),
+            ),
+        )
+        role_id = participant_set.get("roleId", participant_set.get("role_id"))
+        if not isinstance(address, str) or not address.strip():
+            raise ValueError("participantSet authority requires address")
+        if role_id is not None and not isinstance(role_id, int):
+            raise ValueError("participantSet authority roleId must be an integer")
+        return {
+            "participantSet": {
+                "participantSetAddress": address,
+                "roleId": role_id,
+            }
+        }
+
     raise ValueError("authority must include a supported authority")
 
 

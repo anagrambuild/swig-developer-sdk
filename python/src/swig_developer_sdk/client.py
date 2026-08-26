@@ -4,6 +4,7 @@ import httpx
 
 from .common import DEFAULT_BACKEND_URL, Network, RetryOptions
 from .core import HttpClient
+from .participant_sets import ParticipantSetsClient
 from .paymaster import PaymasterClient
 from .ramp import RampClient
 from .transactions import TransactionsClient
@@ -28,6 +29,7 @@ class SwigClient:
             transport=transport,
         )
         self.paymaster = PaymasterClient(http, network)
+        self.participant_sets = ParticipantSetsClient(http, network)
         self.ramp = RampClient(http, network)
         self.transactions = TransactionsClient(http, network)
         self.wallets = WalletsClient(http, network)

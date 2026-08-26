@@ -121,6 +121,131 @@ SwigAssetKind: TypeAlias = Literal["unspecified", "token", "native-sol"]
 
 
 @dataclass(frozen=True, slots=True)
+class AllAction:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class AllButManageAuthorityAction:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class ManageAuthorityAction:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class SolLimitAction:
+    amount: Amount
+
+
+@dataclass(frozen=True, slots=True)
+class SolRecurringLimitAction:
+    recurring_amount: Amount
+    window: Amount
+
+
+@dataclass(frozen=True, slots=True)
+class SolDestinationLimitAction:
+    amount: Amount
+    destination: str
+
+
+@dataclass(frozen=True, slots=True)
+class SolRecurringDestinationLimitAction:
+    recurring_amount: Amount
+    window: Amount
+    destination: str
+
+
+@dataclass(frozen=True, slots=True)
+class TokenLimitAction:
+    mint: str
+    amount: Amount
+
+
+@dataclass(frozen=True, slots=True)
+class TokenRecurringLimitAction:
+    mint: str
+    recurring_amount: Amount
+    window: Amount
+
+
+@dataclass(frozen=True, slots=True)
+class TokenDestinationLimitAction:
+    mint: str
+    amount: Amount
+    destination: str
+
+
+@dataclass(frozen=True, slots=True)
+class TokenRecurringDestinationLimitAction:
+    mint: str
+    recurring_amount: Amount
+    window: Amount
+    destination: str
+
+
+@dataclass(frozen=True, slots=True)
+class ProgramAction:
+    program_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class ProgramAllAction:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class ProgramCuratedAction:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class StakeLimitAction:
+    amount: Amount
+
+
+@dataclass(frozen=True, slots=True)
+class StakeRecurringLimitAction:
+    recurring_amount: Amount
+    window: Amount
+
+
+@dataclass(frozen=True, slots=True)
+class StakeAllAction:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class SubAccountAction:
+    pass
+
+
+AddRoleAction: TypeAlias = (
+    AllAction
+    | AllButManageAuthorityAction
+    | ManageAuthorityAction
+    | SolLimitAction
+    | SolRecurringLimitAction
+    | SolDestinationLimitAction
+    | SolRecurringDestinationLimitAction
+    | TokenLimitAction
+    | TokenRecurringLimitAction
+    | TokenDestinationLimitAction
+    | TokenRecurringDestinationLimitAction
+    | ProgramAction
+    | ProgramAllAction
+    | ProgramCuratedAction
+    | StakeLimitAction
+    | StakeRecurringLimitAction
+    | StakeAllAction
+    | SubAccountAction
+)
+
+
+@dataclass(frozen=True, slots=True)
 class SwigUsdBalance:
     swig_config_address: str
     wallet_address: str
@@ -232,6 +357,8 @@ class WalletsClient:
         recovery: RecoveryOptions | None = None,
         network: Network | None = None,
     ) -> CreateWalletResult:
+        if initial_user is not None:
+            _reject_participant_set_authority(initial_user, "initial_user")
         policy = await self.get_policy(policy_id) if policy_id else None
         response = await self._http.post(
             "/transaction/wallet/create",
@@ -402,6 +529,7 @@ class WalletsClient:
         network: Network | None = None,
     ) -> PreparedTransaction:
         authority = _requester_authority(wallet, requester_authority)
+        _reject_participant_set_authority(authority, "requester_authority")
         return normalize_prepared_transaction(
             await self._http.post(
                 "/transaction/swap/jupiter",
@@ -438,6 +566,7 @@ class WalletsClient:
         network: Network | None = None,
     ) -> PreparedTransaction:
         authority = _requester_authority(wallet, requester_authority)
+        _reject_participant_set_authority(authority, "requester_authority")
         return normalize_prepared_transaction(
             await self._http.post(
                 "/transaction/wallet/recovery-authority/add",
@@ -542,6 +671,11 @@ class WalletsClient:
             guardian_swig_address,
             guardian_requester_authority,
         )
+        if guardian_requester_authority is not None:
+            _reject_participant_set_authority(
+                guardian_requester_authority,
+                "guardian_requester_authority",
+            )
         return normalize_prepared_transaction(
             await self._http.post(
                 "/transaction/recovery/start",
@@ -573,6 +707,7 @@ class WalletsClient:
         network: Network | None = None,
     ) -> PreparedTransaction:
         authority = _requester_authority(wallet, requester_authority)
+        _reject_participant_set_authority(authority, "requester_authority")
         return normalize_prepared_transaction(
             await self._http.post(
                 "/transaction/recovery/cancel",
@@ -600,6 +735,11 @@ class WalletsClient:
             raise ValueError(
                 "guardian_swig_address and guardian_requester_authority "
                 "must be provided together"
+            )
+        if guardian_requester_authority is not None:
+            _reject_participant_set_authority(
+                guardian_requester_authority,
+                "guardian_requester_authority",
             )
         return normalize_prepared_transaction(
             await self._http.post(
@@ -633,6 +773,11 @@ class WalletsClient:
         network: Network | None = None,
     ) -> PreparedTransaction:
         authority = _requester_authority(wallet, requester_authority)
+        if address_lookup_table_accounts and _participant_set_authority(authority):
+            raise ValueError(
+                "ParticipantSet requester_authority does not support "
+                "address_lookup_table_accounts"
+            )
         return normalize_prepared_transaction(
             await self._http.post(
                 "/transaction/prepare/custom",
@@ -715,6 +860,47 @@ class WalletsClient:
             )
         )
 
+    async def add_role(
+        self,
+        wallet: WalletHandle,
+        *,
+        fee_payer: str,
+        authority: WalletAuthority,
+        actions: Sequence[AddRoleAction],
+        requester_authority: WalletAuthority | None = None,
+        network: Network | None = None,
+    ) -> PreparedTransaction:
+        requester = _requester_authority(wallet, requester_authority)
+        requester_wire = wallet_authority_to_wire(requester)
+        if not any(scheme in requester_wire for scheme in ("ed25519", "secp256r1")):
+            raise ValueError(
+                "Add role requester_authority must use ed25519 or secp256r1"
+            )
+        authority_wire = wallet_authority_to_wire(authority)
+        if "programExecProof" in authority_wire:
+            raise ValueError("Add role authority does not support programExecProof")
+        participant_set = _participant_set_authority(authority)
+        if participant_set is not None and any(
+            key in participant_set for key in ("roleId", "role_id")
+        ):
+            raise ValueError("Add role ParticipantSet authority must omit role_id")
+        if not actions:
+            raise ValueError("Add role actions must not be empty")
+        response = await self._http.post(
+            "/transaction/wallet/role/add",
+            {
+                **_base_write_request(
+                    wallet, fee_payer, network, self._default_network
+                ),
+                "requesterAuthority": requester_wire,
+                "authority": authority_wire,
+                "actions": [_add_role_action_to_wire(action) for action in actions],
+            },
+        )
+        if not isinstance(response, Mapping) or response.get("transaction") is None:
+            raise ValueError("Add role response is missing transaction")
+        return normalize_prepared_transaction(response["transaction"])
+
 
 class WalletHandle:
     def __init__(self, wallets: WalletsClient, reference: WalletReference) -> None:
@@ -726,6 +912,7 @@ class WalletHandle:
         self.transfer = WalletTransferClient(wallets, self)
         self.swap = WalletSwapClient(wallets, self)
         self.recovery = WalletRecoveryClient(wallets, self)
+        self.roles = WalletRolesClient(wallets, self)
 
     async def prepare(
         self,
@@ -785,6 +972,33 @@ class WalletHandle:
         self, *, network: Network | None = None
     ) -> ListSwigRolesResult:
         return await self._wallets.list_roles(self, network=network)
+
+
+class WalletRolesClient:
+    def __init__(self, wallets: WalletsClient, wallet: WalletHandle) -> None:
+        self._wallets = wallets
+        self._wallet = wallet
+
+    async def add(
+        self,
+        *,
+        fee_payer: str,
+        authority: WalletAuthority,
+        actions: Sequence[AddRoleAction],
+        requester_authority: WalletAuthority | None = None,
+        network: Network | None = None,
+    ) -> PreparedTransaction:
+        return await self._wallets.add_role(
+            self._wallet,
+            fee_payer=fee_payer,
+            authority=authority,
+            actions=actions,
+            requester_authority=requester_authority,
+            network=network,
+        )
+
+    async def list(self, *, network: Network | None = None) -> ListSwigRolesResult:
+        return await self._wallets.list_roles(self._wallet, network=network)
 
 
 class WalletTransferClient:
@@ -1118,6 +1332,21 @@ def _requester_authority(
     return resolved
 
 
+def _participant_set_authority(
+    authority: WalletAuthority,
+) -> Mapping[str, object] | None:
+    value = authority.get("participantSet", authority.get("participant_set"))
+    return value if isinstance(value, Mapping) else None
+
+
+def _reject_participant_set_authority(
+    authority: WalletAuthority,
+    field: str,
+) -> None:
+    if _participant_set_authority(authority) is not None:
+        raise ValueError(f"{field} does not support ParticipantSet authority")
+
+
 def _operation_to_wire(operation: PrepareOperation) -> dict[str, object]:
     if isinstance(operation, TransferSolOperation):
         return {
@@ -1317,6 +1546,91 @@ def _normalize_asset_kind(value: object) -> SwigAssetKind | None:
     if value in ("native-sol", "ASSET_KIND_NATIVE_SOL", 2):
         return "native-sol"
     raise ValueError("Wallet response has invalid assetKind")
+
+
+def _add_role_action_to_wire(action: AddRoleAction) -> dict[str, object]:
+    if isinstance(action, AllAction):
+        return {"all": {}}
+    if isinstance(action, AllButManageAuthorityAction):
+        return {"allButManageAuthority": {}}
+    if isinstance(action, ManageAuthorityAction):
+        return {"manageAuthority": {}}
+    if isinstance(action, SolLimitAction):
+        return {"solLimit": {"amount": normalize_amount(action.amount)}}
+    if isinstance(action, SolRecurringLimitAction):
+        return {
+            "solRecurringLimit": {
+                "recurringAmount": normalize_amount(action.recurring_amount),
+                "window": normalize_amount(action.window),
+            }
+        }
+    if isinstance(action, SolDestinationLimitAction):
+        return {
+            "solDestinationLimit": {
+                "amount": normalize_amount(action.amount),
+                "destination": action.destination,
+            }
+        }
+    if isinstance(action, SolRecurringDestinationLimitAction):
+        return {
+            "solRecurringDestinationLimit": {
+                "recurringAmount": normalize_amount(action.recurring_amount),
+                "window": normalize_amount(action.window),
+                "destination": action.destination,
+            }
+        }
+    if isinstance(action, TokenLimitAction):
+        return {
+            "tokenLimit": {
+                "mint": action.mint,
+                "amount": normalize_amount(action.amount),
+            }
+        }
+    if isinstance(action, TokenRecurringLimitAction):
+        return {
+            "tokenRecurringLimit": {
+                "mint": action.mint,
+                "recurringAmount": normalize_amount(action.recurring_amount),
+                "window": normalize_amount(action.window),
+            }
+        }
+    if isinstance(action, TokenDestinationLimitAction):
+        return {
+            "tokenDestinationLimit": {
+                "mint": action.mint,
+                "amount": normalize_amount(action.amount),
+                "destination": action.destination,
+            }
+        }
+    if isinstance(action, TokenRecurringDestinationLimitAction):
+        return {
+            "tokenRecurringDestinationLimit": {
+                "mint": action.mint,
+                "recurringAmount": normalize_amount(action.recurring_amount),
+                "window": normalize_amount(action.window),
+                "destination": action.destination,
+            }
+        }
+    if isinstance(action, ProgramAction):
+        return {"program": {"programId": action.program_id}}
+    if isinstance(action, ProgramAllAction):
+        return {"programAll": {}}
+    if isinstance(action, ProgramCuratedAction):
+        return {"programCurated": {}}
+    if isinstance(action, StakeLimitAction):
+        return {"stakeLimit": {"amount": normalize_amount(action.amount)}}
+    if isinstance(action, StakeRecurringLimitAction):
+        return {
+            "stakeRecurringLimit": {
+                "recurringAmount": normalize_amount(action.recurring_amount),
+                "window": normalize_amount(action.window),
+            }
+        }
+    if isinstance(action, StakeAllAction):
+        return {"stakeAll": {}}
+    if isinstance(action, SubAccountAction):
+        return {"subAccount": {}}
+    raise TypeError("Unsupported add role action")
 
 
 def _normalize_roles(value: object) -> ListSwigRolesResult:

@@ -100,6 +100,64 @@ wallet = swig.wallets.use(
 `swig.wallets.from_idp_session(session)` builds the same handle from an IdP
 session.
 
+### Configure and use a ParticipantSet
+
+```python
+from swig_developer_sdk import ProgramAction, SolLimitAction
+
+created_set = await swig.participant_sets.create(
+    swig_config_address=swig_config_address,
+    fee_payer=fee_payer,
+    threshold=2,
+    members=(
+        {"ed25519": {"publicKey": recovery_public_key}},
+        {"secp256r1": {"publicKey": client_public_key}},
+        {"secp256k1": {"publicKey": server_public_key}},
+    ),
+)
+
+wallet = swig.wallets.use(
+    swig_config_address,
+    requester_authority=requester_authority,
+)
+add_role = await wallet.roles.add(
+    fee_payer=fee_payer,
+    authority={
+        "participantSet": {"address": created_set.participant_set_address}
+    },
+    actions=(
+        SolLimitAction(amount=1_000_000),
+        ProgramAction(program_id=program_id),
+    ),
+)
+```
+
+After submitting the setup transactions, prepare an action with a ParticipantSet
+requester and compile detached approvals:
+
+```python
+participant_wallet = swig.wallets.use(
+    swig_config_address,
+    requester_authority={
+        "participantSet": {"address": created_set.participant_set_address}
+    },
+)
+prepared = await participant_wallet.transfer.sol(
+    fee_payer=fee_payer,
+    destination=destination,
+    amount=1_000_000,
+)
+compiled = await swig.transactions.compile_participant_set_approvals(
+    prepared_transaction=prepared,
+    approvals=approvals,
+)
+```
+
+The plan uses one shared nonce, and each member approval signs its returned
+challenge. Compilation returns `compiled.transaction` plus
+`compiled.authorization_expiration_slot`; it does not sponsor, submit, or
+broadcast the result.
+
 ### Prepare transfers and swaps
 
 ```python
