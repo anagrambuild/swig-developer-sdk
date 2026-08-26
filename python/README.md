@@ -402,6 +402,55 @@ The generic signer helper works with an application-owned Ed25519 signer. The
 Swig signer helper patches secp256r1 or secp256k1 signatures into both legacy
 and versioned Solana transactions.
 
+ParticipantSet signers operate on one bound member request and never call the
+hosted API:
+
+```python
+from swig_developer_sdk.signers import (
+    create_participant_ed25519_signer,
+    create_participant_passkey_signer,
+    create_participant_personal_sign_signer,
+    sign_participant_set_approval,
+)
+
+recovery_signer = create_participant_ed25519_signer(
+    public_key=recovery_public_key,
+    sign_message=sign_ed25519,
+)
+recovery_approval = await sign_participant_set_approval(
+    prepared.participant_set_approval_plan.members[0],
+    recovery_signer,
+)
+
+passkey_signer = create_participant_passkey_signer(
+    public_key=client_public_key,
+    get_assertion=get_webauthn_assertion,
+)
+client_approval = await sign_participant_set_approval(
+    prepared.participant_set_approval_plan.members[1],
+    passkey_signer,
+)
+
+server_signer = create_participant_personal_sign_signer(
+    public_key=server_public_key,
+    # personal_sign applies EIP-191 to this exact 64-character lowercase
+    # ASCII hex challenge.
+    sign_message=personal_sign,
+)
+server_approval = await sign_participant_set_approval(
+    prepared.participant_set_approval_plan.members[2],
+    server_signer,
+)
+```
+
+The Ed25519 callback receives the decoded 32-byte challenge. The shared
+ParticipantSet nonce is already committed by every challenge and is not copied
+into individual approvals. The passkey adapter returns exact assertion bytes
+and converts DER to a raw low-S P-256 signature; compilation also defensively
+normalizes externally constructed high-S P-256 approvals. The personal-sign
+adapter validates compact k1 signatures, normalizes low-S, and adjusts the
+recovery byte. None of these helpers calls the hosted API.
+
 ```python
 from swig_developer_sdk.signers import (
     sign_prepared_swig_transaction,
@@ -553,14 +602,19 @@ Keep API keys, signed transactions, and ramp launch URLs out of logs.
 `scripts/local_transaction_e2e.py` exercises wallet creation, real P-256
 signing, direct and grouped SOL transfers, an SPL-token transfer, the Python
 proxy, the live paymaster balance endpoint, and a sponsored transfer where the
-user pays no network fee. Every transaction is submitted to Surfpool and
-verified on-chain; the paymaster flow also retries with the same idempotency
-key and verifies that no balance change repeats.
+user pays no network fee. It also creates a two-member ParticipantSet, adds it
+as a general role, compiles detached Ed25519 approvals, executes the transfer,
+and proves that another approval plan using the consumed shared nonce is
+rejected. Every transaction is submitted to Surfpool and verified on-chain;
+the paymaster flow also retries with the same idempotency key and verifies that
+no balance change repeats.
 
 It requires a locally running backend stack, and defaults to
 `http://localhost:8080` for the Developer API and `http://localhost:8899` for
 Surfpool. Override with `SWIG_TRANSACTION_API_URL`, `SOLANA_RPC_URL`, or
-`SWIG_DATABASE_URL`.
+`SWIG_DATABASE_URL`. Set `SWIG_E2E_SKIP_PAYMASTER=1` when validating only the
+transaction-service and Surfpool path; the receipt explicitly records that the
+paymaster phase was skipped.
 
 Jupiter is not covered by this script, since it needs a mainnet-backed
 Surfpool.
