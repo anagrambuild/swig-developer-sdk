@@ -24,8 +24,9 @@ entrypoints. Application-owned signing helpers now use the dedicated
 - API keys stay on the server. The `/signers` entrypoint accepts prepared
   transactions and application-provided signers; it does not call the hosted
   API.
-- Python exposes the same boundary through `swig_developer_sdk.signers`; the
-  module has no API client or hosted transport dependency.
+- Python exposes the same boundary through `swig_developer_sdk.signers`; it
+  exports no API client, and its helpers construct no client and make no hosted
+  requests.
 - GET requests use the configured retry policy.
 - POST requests do not retry by default because replay may duplicate work.
 - Sponsorship POST requests retry only when an idempotency key is present.
