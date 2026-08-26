@@ -602,14 +602,19 @@ Keep API keys, signed transactions, and ramp launch URLs out of logs.
 `scripts/local_transaction_e2e.py` exercises wallet creation, real P-256
 signing, direct and grouped SOL transfers, an SPL-token transfer, the Python
 proxy, the live paymaster balance endpoint, and a sponsored transfer where the
-user pays no network fee. Every transaction is submitted to Surfpool and
-verified on-chain; the paymaster flow also retries with the same idempotency
-key and verifies that no balance change repeats.
+user pays no network fee. It also creates a two-member ParticipantSet, adds it
+as a general role, compiles detached Ed25519 approvals, executes the transfer,
+and proves that another approval plan using the consumed shared nonce is
+rejected. Every transaction is submitted to Surfpool and verified on-chain;
+the paymaster flow also retries with the same idempotency key and verifies that
+no balance change repeats.
 
 It requires a locally running backend stack, and defaults to
 `http://localhost:8080` for the Developer API and `http://localhost:8899` for
 Surfpool. Override with `SWIG_TRANSACTION_API_URL`, `SOLANA_RPC_URL`, or
-`SWIG_DATABASE_URL`.
+`SWIG_DATABASE_URL`. Set `SWIG_E2E_SKIP_PAYMASTER=1` when validating only the
+transaction-service and Surfpool path; the receipt explicitly records that the
+paymaster phase was skipped.
 
 Jupiter is not covered by this script, since it needs a mainnet-backed
 Surfpool.

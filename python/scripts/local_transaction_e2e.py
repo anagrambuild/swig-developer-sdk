@@ -36,15 +36,21 @@ from solders.token.associated import get_associated_token_address
 from solders.transaction import Transaction, VersionedTransaction
 
 from swig_developer_sdk import (
+    AllAction,
     PasskeySigningResult,
     PreparedTransaction,
     SponsorSignedTransactionArgs,
     SwigClient,
+    SwigDeveloperSdkError,
     SwigProxyConfig,
     TransferSolOperation,
     create_swig_proxy_handler,
     sign_prepared_swig_transaction,
     sign_prepared_transaction,
+)
+from swig_developer_sdk.signers import (
+    create_participant_ed25519_signer,
+    sign_participant_set_approval,
 )
 from swig_developer_sdk.transactions import normalize_prepared_transaction
 
@@ -54,7 +60,9 @@ DATABASE_URL = os.environ.get(
     "postgres://swig:swig@localhost:55432/swig",
 )
 RPC_URL = os.environ.get("SOLANA_RPC_URL", "http://localhost:8899")
+SKIP_PAYMASTER = os.environ.get("SWIG_E2E_SKIP_PAYMASTER") == "1"
 SWIG_PROGRAM_ID = "swigypWHEksbC64pWKwah1WTeh9JXwx8H1rJHLdbQMB"
+MULTI_AUTHORITY_PROGRAM_ID = "BPgkm5iN5YJfbRS1nZ7G4rgfR3a4QYPaoXF7RQ9PBew"
 LAMPORTS_PER_SOL = 1_000_000_000
 TRANSFER_LAMPORTS = 1_000
 TOKEN_TRANSFER_AMOUNT = 25
@@ -152,7 +160,7 @@ class SolanaRpc:
         )
         await self.confirm(signature)
 
-    async def send_transaction(self, transaction: str) -> None:
+    async def send_transaction(self, transaction: str) -> str:
         signature = _required_string(
             await self._call(
                 "sendTransaction",
@@ -168,6 +176,24 @@ class SolanaRpc:
             "transaction signature",
         )
         await self.confirm(signature)
+        return signature
+
+    async def simulate_transaction(self, transaction: str) -> Mapping[str, object]:
+        result = _mapping(
+            await self._call(
+                "simulateTransaction",
+                [
+                    transaction,
+                    {
+                        "encoding": "base64",
+                        "sigVerify": True,
+                        "commitment": "confirmed",
+                    },
+                ],
+            ),
+            "simulateTransaction result",
+        )
+        return _mapping(result.get("value"), "simulateTransaction value")
 
     async def confirm(self, signature: str) -> None:
         for _ in range(80):
@@ -249,7 +275,21 @@ async def main() -> None:
         async with httpx.AsyncClient(base_url=RPC_URL, timeout=30) as rpc_client:
             rpc = SolanaRpc(rpc_client)
             await rpc.health()
-            result = await run_e2e(rpc, fixture)
+            try:
+                result = await run_e2e(rpc, fixture)
+            except SwigDeveloperSdkError as error:
+                print(
+                    json.dumps(
+                        {
+                            "api_error_code": error.code,
+                            "api_error_details": error.details,
+                            "api_error_status": error.status_code,
+                        },
+                        sort_keys=True,
+                    ),
+                    file=sys.stderr,
+                )
+                raise
         print(json.dumps(result, indent=2, sort_keys=True))
     finally:
         try:
@@ -302,6 +342,14 @@ async def run_e2e(rpc: SolanaRpc, fixture: LocalFixture) -> dict[str, object]:
     await rpc.airdrop_to_balance(
         created.wallet.wallet_address,
         LAMPORTS_PER_SOL // 10,
+    )
+    participant_set_result = await run_participant_set_e2e(
+        rpc=rpc,
+        swig=swig,
+        fee_payer=fee_payer,
+        requester=requester,
+        swig_config_address=created.wallet.swig_config_address,
+        wallet_address=created.wallet.wallet_address,
     )
     wallet = swig.wallets.use(
         created.wallet.swig_config_address,
@@ -409,7 +457,11 @@ async def run_e2e(rpc: SolanaRpc, fixture: LocalFixture) -> dict[str, object]:
         str(proxy_destination.pubkey()),
         TRANSFER_LAMPORTS,
     )
-    paymaster_result = await run_paymaster_e2e(rpc, fixture)
+    paymaster_result = (
+        {"paymaster_skipped": True}
+        if SKIP_PAYMASTER
+        else await run_paymaster_e2e(rpc, fixture)
+    )
 
     return {
         "status": "ok",
@@ -426,7 +478,184 @@ async def run_e2e(rpc: SolanaRpc, fixture: LocalFixture) -> dict[str, object]:
         "token_delta": token_delta,
         "proxy_destination_delta_lamports": proxy_destination_delta,
         "proxy_wallet_delta_lamports": proxy_wallet_delta,
+        **participant_set_result,
         **paymaster_result,
+    }
+
+
+async def run_participant_set_e2e(
+    *,
+    rpc: SolanaRpc,
+    swig: SwigClient,
+    fee_payer: Keypair,
+    requester: P256Authority,
+    swig_config_address: str,
+    wallet_address: str,
+) -> dict[str, object]:
+    members = (Keypair(), Keypair())
+    member_authorities = tuple(
+        {"ed25519": {"publicKey": str(member.pubkey())}} for member in members
+    )
+    created_set = await swig.participant_sets.create(
+        swig_config_address=swig_config_address,
+        fee_payer=str(fee_payer.pubkey()),
+        threshold=2,
+        members=member_authorities,
+    )
+    create_transaction = await sign_with_keypairs(
+        created_set.transaction,
+        [fee_payer],
+    )
+    create_signature = await rpc.send_transaction(create_transaction)
+    participant_owner = await rpc.wait_for_account_owner(
+        created_set.participant_set_address
+    )
+    if participant_owner != MULTI_AUTHORITY_PROGRAM_ID:
+        raise RuntimeError("Created ParticipantSet has the wrong program owner")
+
+    requester_authority = {
+        "secp256r1": {"publicKey": requester.public_key_hex},
+    }
+    setup_wallet = swig.wallets.use(
+        swig_config_address,
+        network="devnet",
+        requester_authority=requester_authority,
+    )
+    add_role = await setup_wallet.roles.add(
+        fee_payer=str(fee_payer.pubkey()),
+        authority={"participantSet": {"address": created_set.participant_set_address}},
+        actions=(AllAction(),),
+    )
+    add_role_signature = await sign_and_send_prepared(
+        rpc,
+        add_role,
+        fee_payer,
+        requester,
+    )
+
+    participant_authority = {
+        "participantSet": {"address": created_set.participant_set_address}
+    }
+    participant_wallet = swig.wallets.use(
+        swig_config_address,
+        network="devnet",
+        requester_authority=participant_authority,
+    )
+    destinations = (Keypair(), Keypair())
+    destination_rent = await rpc.minimum_rent_balance()
+    for destination in destinations:
+        await rpc.airdrop_to_balance(str(destination.pubkey()), destination_rent)
+
+    prepared_transactions = tuple(
+        [
+            await participant_wallet.transfer.sol(
+                fee_payer=str(fee_payer.pubkey()),
+                destination=str(destination.pubkey()),
+                amount=TRANSFER_LAMPORTS,
+            )
+            for destination in destinations
+        ]
+    )
+    plans = tuple(
+        prepared.participant_set_approval_plan for prepared in prepared_transactions
+    )
+    if any(plan is None for plan in plans):
+        raise RuntimeError("ParticipantSet transfer is missing an approval plan")
+    first_plan, second_plan = plans
+    if first_plan is None or second_plan is None:
+        raise RuntimeError("ParticipantSet transfer is missing an approval plan")
+    if first_plan.nonce != second_plan.nonce:
+        raise RuntimeError("Parallel ParticipantSet plans did not share one nonce")
+    if first_plan.threshold != 2 or len(first_plan.members) != 2:
+        raise RuntimeError("ParticipantSet approval plan has the wrong threshold shape")
+
+    member_signers = {
+        str(member.pubkey()): create_participant_ed25519_signer(
+            public_key=str(member.pubkey()),
+            sign_message=lambda message, member=member: bytes(
+                member.sign_message(message)
+            ),
+        )
+        for member in members
+    }
+
+    async def compile_prepared(
+        prepared: PreparedTransaction,
+    ) -> PreparedTransaction:
+        plan = prepared.participant_set_approval_plan
+        if plan is None:
+            raise RuntimeError("ParticipantSet transfer is missing an approval plan")
+        approvals = []
+        for approval_request in plan.members:
+            authority = approval_request.authority.get("ed25519")
+            if authority is None:
+                raise RuntimeError("ParticipantSet E2E expected ed25519 members")
+            public_key = _required_string(
+                authority.get("publicKey", authority.get("public_key")),
+                "ParticipantSet member public key",
+            )
+            signer = member_signers.get(public_key)
+            if signer is None:
+                raise RuntimeError("ParticipantSet plan returned an unknown member")
+            approvals.append(
+                await sign_participant_set_approval(approval_request, signer)
+            )
+        compiled = await swig.transactions.compile_participant_set_approvals(
+            prepared_transaction=prepared,
+            approvals=approvals,
+        )
+        return compiled.transaction
+
+    compiled_transactions = tuple(
+        [await compile_prepared(prepared) for prepared in prepared_transactions]
+    )
+    signed_transactions = tuple(
+        [
+            await sign_with_keypairs(compiled, [fee_payer])
+            for compiled in compiled_transactions
+        ]
+    )
+    first_simulation = await rpc.simulate_transaction(signed_transactions[0])
+    if first_simulation.get("err") is not None:
+        raise RuntimeError("ParticipantSet compiled transaction failed simulation")
+    units_consumed = _required_int(
+        first_simulation.get("unitsConsumed"),
+        "ParticipantSet simulation unitsConsumed",
+    )
+    transaction_bytes = len(base64.b64decode(signed_transactions[0], validate=True))
+
+    destination_before = await rpc.balance(str(destinations[0].pubkey()))
+    wallet_before = await rpc.balance(wallet_address)
+    execute_signature = await rpc.send_transaction(signed_transactions[0])
+    destination_after = await rpc.balance(str(destinations[0].pubkey()))
+    wallet_after = await rpc.balance(wallet_address)
+    _require_transfer_deltas(
+        destination_after - destination_before,
+        wallet_after - wallet_before,
+        TRANSFER_LAMPORTS,
+        "ParticipantSet SOL transfer",
+    )
+
+    replay_simulation = await rpc.simulate_transaction(signed_transactions[1])
+    replay_error = replay_simulation.get("err")
+    if replay_error is None or '"Custom":7013' not in json.dumps(
+        replay_error,
+        separators=(",", ":"),
+    ):
+        raise RuntimeError("ParticipantSet shared nonce did not reject stale approval")
+
+    return {
+        "participant_set_address": created_set.participant_set_address,
+        "participant_set_owner": participant_owner,
+        "participant_set_threshold": first_plan.threshold,
+        "participant_set_member_count": len(first_plan.members),
+        "participant_set_nonce": first_plan.nonce,
+        "participant_set_create_signature": create_signature,
+        "participant_set_add_role_signature": add_role_signature,
+        "participant_set_execute_signature": execute_signature,
+        "participant_set_units_consumed": units_consumed,
+        "participant_set_transaction_bytes": transaction_bytes,
+        "participant_set_stale_nonce_rejected": True,
     }
 
 
@@ -565,7 +794,7 @@ async def sign_and_send_prepared(
     prepared: PreparedTransaction,
     fee_payer: Keypair,
     requester: P256Authority,
-) -> None:
+) -> str:
     if prepared.signature_requests:
         signature_schemes = tuple(
             request.scheme for request in prepared.signature_requests
@@ -584,7 +813,7 @@ async def sign_and_send_prepared(
             signature_requests=(),
         )
     signed = await sign_with_keypairs(prepared, [fee_payer])
-    await rpc.send_transaction(signed)
+    return await rpc.send_transaction(signed)
 
 
 async def setup_test_token(
