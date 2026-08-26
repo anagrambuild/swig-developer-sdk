@@ -31,8 +31,11 @@ ParticipantSignerType: TypeAlias = Literal["ed25519", "secp256k1", "secp256r1"]
 
 
 class ParticipantSigner(Protocol):
-    type: ParticipantSignerType
-    public_key: str
+    @property
+    def type(self) -> ParticipantSignerType: ...
+
+    @property
+    def public_key(self) -> str: ...
 
     async def sign(
         self, request: ParticipantApprovalRequest

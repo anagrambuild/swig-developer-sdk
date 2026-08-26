@@ -49,6 +49,7 @@ from swig_developer_sdk import (
     sign_prepared_transaction,
 )
 from swig_developer_sdk.signers import (
+    ParticipantEd25519Signer,
     create_participant_ed25519_signer,
     sign_participant_set_approval,
 )
@@ -569,14 +570,17 @@ async def run_participant_set_e2e(
     if first_plan.threshold != 2 or len(first_plan.members) != 2:
         raise RuntimeError("ParticipantSet approval plan has the wrong threshold shape")
 
-    member_signers = {
-        str(member.pubkey()): create_participant_ed25519_signer(
+    def create_member_signer(member: Keypair) -> ParticipantEd25519Signer:
+        def sign_message(message: bytes) -> bytes:
+            return bytes(member.sign_message(message))
+
+        return create_participant_ed25519_signer(
             public_key=str(member.pubkey()),
-            sign_message=lambda message, member=member: bytes(
-                member.sign_message(message)
-            ),
+            sign_message=sign_message,
         )
-        for member in members
+
+    member_signers = {
+        str(member.pubkey()): create_member_signer(member) for member in members
     }
 
     async def compile_prepared(
