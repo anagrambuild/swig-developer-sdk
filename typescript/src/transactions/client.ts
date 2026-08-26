@@ -18,6 +18,7 @@ import {
   normalizePreparedTransaction,
   normalizeSubmittedTransaction,
 } from '../wallets/normalizers.js';
+import { walletAuthorityRequest } from '../wallets/requests.js';
 
 export class TransactionsClient {
   constructor(
@@ -87,7 +88,7 @@ export class TransactionsClient {
   ): Promise<CompileParticipantSetApprovalsResult> => {
     const response =
       await this.http.post<CompileParticipantSetApprovalsResponseWire>(
-        '/transaction/participant-set/compile',
+        '/transaction/wallet/participant-set/compile',
         {
           preparedTransaction: preparedTransactionToWire(
             args.preparedTransaction,
@@ -98,8 +99,20 @@ export class TransactionsClient {
     if (!response.transaction) {
       throw new Error('Compile ParticipantSet response is missing transaction');
     }
+    const authorizationExpirationSlot =
+      response.authorizationExpirationSlot ??
+      response.authorization_expiration_slot;
+    if (
+      typeof authorizationExpirationSlot !== 'string' &&
+      typeof authorizationExpirationSlot !== 'number'
+    ) {
+      throw new Error(
+        'Compile ParticipantSet response is missing authorizationExpirationSlot',
+      );
+    }
     return {
-      preparedTransaction: normalizePreparedTransaction(response.transaction),
+      transaction: normalizePreparedTransaction(response.transaction),
+      authorizationExpirationSlot: String(authorizationExpirationSlot),
     };
   };
 }
@@ -135,17 +148,13 @@ function preparedTransactionToWire(transaction: PreparedTransaction) {
           participantSetAddress: plan.participantSetAddress,
           roleId: plan.roleId,
           expirationSlot: plan.expirationSlot,
+          nonce: plan.nonce,
           transactionDigest: plan.transactionDigest,
           compilationEnvelope: plan.compilationEnvelope,
           threshold: plan.threshold,
           members: plan.members.map((member) => ({
             memberIndex: member.memberIndex,
-            signerType:
-              member.signerType === 'secp256k1'
-                ? 'PARTICIPANT_SET_SIGNER_TYPE_SECP256K1'
-                : 'PARTICIPANT_SET_SIGNER_TYPE_WEBAUTHN_P256',
-            publicKey: member.publicKey,
-            counter: member.counter,
+            authority: walletAuthorityRequest(member.authority),
             challenge: member.challenge,
           })),
         }
@@ -154,25 +163,30 @@ function preparedTransactionToWire(transaction: PreparedTransaction) {
 }
 
 function participantSetApprovalToWire(approval: ParticipantSetApproval) {
-  return 'secp256k1' in approval
-    ? {
-        memberIndex: approval.memberIndex,
-        counter: approval.counter,
-        secp256k1: {
-          signature: bytesToBase64(approval.secp256k1.signature),
-        },
-      }
-    : {
-        memberIndex: approval.memberIndex,
-        counter: approval.counter,
-        webauthnP256: {
-          authenticatorData: bytesToBase64(
-            approval.webauthnP256.authenticatorData,
-          ),
-          clientDataJson: bytesToBase64(approval.webauthnP256.clientDataJson),
-          signature: bytesToBase64(approval.webauthnP256.signature),
-        },
-      };
+  if ('ed25519' in approval) {
+    return {
+      memberIndex: approval.memberIndex,
+      ed25519: {
+        signature: bytesToBase64(approval.ed25519.signature),
+      },
+    };
+  }
+  if ('secp256k1' in approval) {
+    return {
+      memberIndex: approval.memberIndex,
+      secp256k1: {
+        signature: bytesToBase64(approval.secp256k1.signature),
+      },
+    };
+  }
+  return {
+    memberIndex: approval.memberIndex,
+    webauthnP256: {
+      authenticatorData: bytesToBase64(approval.webauthnP256.authenticatorData),
+      clientDataJson: bytesToBase64(approval.webauthnP256.clientDataJson),
+      signature: bytesToBase64(approval.webauthnP256.signature),
+    },
+  };
 }
 
 function preparedTransactionKindToWire(kind: PreparedTransaction['kind']) {
