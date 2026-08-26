@@ -4,8 +4,11 @@ import { SwigClient } from '../server/typescript/index.js';
 import { WalletsClient } from './client.js';
 import {
   addRecoveryAuthorityRequest,
+  addRoleRequest,
+  buildTransactionRequest,
   cancelRecoveryRequest,
   configureRecoveryRequest,
+  createWalletRequest,
   executeRecoveryRequest,
   startRecoveryRequest,
   swapRequest,
@@ -285,6 +288,83 @@ describe('WalletsClient', () => {
       }),
     ).rejects.toThrow(
       'Add role requesterAuthority must use ed25519 or secp256r1',
+    );
+  });
+
+  test('rejects a ParticipantSet roleId before add-role transport', () => {
+    const wallet = new WalletsClient(
+      { post: async () => ({}) } as never,
+      'devnet',
+    ).use('swig_123', {
+      requesterAuthority: { ed25519: { publicKey: 'requester_123' } },
+    });
+
+    expect(() =>
+      addRoleRequest(
+        wallet,
+        {
+          feePayer: 'payer_123',
+          authority: {
+            participantSet: { address: 'participant_set_123', roleId: 7 },
+          },
+          actions: [{ type: 'all' }],
+        } as never,
+        'devnet',
+      ),
+    ).toThrow('Add role ParticipantSet authority must omit roleId');
+  });
+
+  test('rejects ParticipantSet from unsupported endpoint shapes', () => {
+    const participantSet = {
+      participantSet: { address: 'participant_set_123' },
+    } as const;
+    const wallets = new WalletsClient(
+      { post: async () => ({}) } as never,
+      'devnet',
+    );
+    const wallet = wallets.use('swig_123', {
+      requesterAuthority: participantSet,
+    });
+
+    expect(() =>
+      createWalletRequest(
+        {
+          feePayer: 'payer_123',
+          initialUser: participantSet,
+        } as never,
+        'devnet',
+      ),
+    ).toThrow('initialUser does not support ParticipantSet authority');
+    expect(() =>
+      swapRequest(
+        wallet,
+        {
+          feePayer: 'payer_123',
+          inputMint: 'input_mint',
+          outputMint: 'output_mint',
+          amount: 1,
+        },
+        'devnet',
+      ),
+    ).toThrow('requesterAuthority does not support ParticipantSet authority');
+    expect(() =>
+      addRecoveryAuthorityRequest(wallet, { feePayer: 'payer_123' }, 'devnet'),
+    ).toThrow('requesterAuthority does not support ParticipantSet authority');
+    expect(() =>
+      cancelRecoveryRequest(wallet, { feePayer: 'payer_123' }, 'devnet'),
+    ).toThrow('requesterAuthority does not support ParticipantSet authority');
+    expect(() =>
+      buildTransactionRequest(
+        wallet,
+        {
+          feePayer: 'payer_123',
+          instructions: [],
+          addressLookupTableAccounts: ['lookup_table_123'],
+        },
+        'devnet',
+      ),
+    ).toThrow(
+      'ParticipantSet requesterAuthority does not support addressLookupTableAccounts',
     );
   });
 

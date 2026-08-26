@@ -8,6 +8,7 @@ import type {
   CreateWalletArgs,
   CreateWalletResponseWire,
   CreateWalletResult,
+  DirectWalletAuthority,
   ExecuteRecoveryArgs,
   IdpWalletSession,
   ListSwigRolesResult,
@@ -32,7 +33,6 @@ import type {
   SwigUsdBalance,
   SwigUsdBalanceWire,
   TransferArgs,
-  WalletAuthority,
   WalletHandleOptions,
   WalletReadArgs,
   WalletReference,
@@ -407,7 +407,7 @@ function normalizePolicyDelaySeconds(delaySeconds: unknown): number {
 
 function walletAuthorityFromPolicy(
   authority: Policy['authority'],
-): WalletAuthority | undefined {
+): DirectWalletAuthority | undefined {
   if (!authority) {
     return undefined;
   }
