@@ -1,7 +1,14 @@
 from __future__ import annotations
 
-from swig_developer_sdk import ParticipantApprovalRequest, WebAuthnAssertion
+from swig_developer_sdk import (
+    Ed25519ParticipantApproval,
+    ParticipantApprovalRequest,
+    Secp256k1ParticipantApproval,
+    WebAuthnAssertion,
+    WebAuthnP256ParticipantApproval,
+)
 from swig_developer_sdk.signers import (
+    create_participant_ed25519_signer,
     create_participant_passkey_signer,
     create_participant_personal_sign_signer,
     sign_participant_set_approval,
@@ -30,9 +37,7 @@ async def test_personal_signer_signs_lowercase_ascii_and_normalizes_low_s() -> N
     approval = await sign_participant_set_approval(
         ParticipantApprovalRequest(
             member_index=3,
-            signer_type="secp256k1",
-            public_key=public_key.upper(),
-            counter=7,
+            authority={"secp256k1": {"publicKey": public_key.upper()}},
             challenge=challenge,
         ),
         create_participant_personal_sign_signer(
@@ -42,11 +47,39 @@ async def test_personal_signer_signs_lowercase_ascii_and_normalizes_low_s() -> N
     )
 
     assert messages == [challenge.lower()]
+    assert isinstance(approval, Secp256k1ParticipantApproval)
     assert approval.member_index == 3
-    assert approval.counter == 7
     assert approval.signature == (
         (1).to_bytes(32, "big") + (2).to_bytes(32, "big") + bytes([28])
     )
+
+
+async def test_ed25519_signer_signs_decoded_challenge_bytes() -> None:
+    public_key = "ed25519-public-key"
+    challenge = "44" * 32
+    messages: list[bytes] = []
+    signature = bytes(range(64))
+
+    def sign_message(message: bytes) -> bytes:
+        messages.append(message)
+        return signature
+
+    approval = await sign_participant_set_approval(
+        ParticipantApprovalRequest(
+            member_index=2,
+            authority={"ed25519": {"publicKey": public_key}},
+            challenge=challenge,
+        ),
+        create_participant_ed25519_signer(
+            public_key=public_key,
+            sign_message=sign_message,
+        ),
+    )
+
+    assert messages == [bytes.fromhex(challenge)]
+    assert isinstance(approval, Ed25519ParticipantApproval)
+    assert approval.member_index == 2
+    assert approval.signature == signature
 
 
 async def test_passkey_signer_returns_raw_assertion_for_bound_challenge() -> None:
@@ -68,9 +101,7 @@ async def test_passkey_signer_returns_raw_assertion_for_bound_challenge() -> Non
     approval = await sign_participant_set_approval(
         ParticipantApprovalRequest(
             member_index=1,
-            signer_type="webauthnP256",
-            public_key=public_key,
-            counter=4,
+            authority={"secp256r1": {"publicKey": public_key}},
             challenge=challenge,
         ),
         create_participant_passkey_signer(
@@ -80,6 +111,7 @@ async def test_passkey_signer_returns_raw_assertion_for_bound_challenge() -> Non
     )
 
     assert challenges == [bytes.fromhex(challenge)]
+    assert isinstance(approval, WebAuthnP256ParticipantApproval)
     assert approval.authenticator_data == authenticator_data
     assert approval.client_data_json == client_data_json
     assert approval.signature == bytes(31) + b"\x01" + bytes(31) + b"\x02"
@@ -101,9 +133,7 @@ async def test_signing_rejects_another_member_key_before_callback() -> None:
         await sign_participant_set_approval(
             ParticipantApprovalRequest(
                 member_index=0,
-                signer_type="secp256k1",
-                public_key="02" + "22" * 32,
-                counter=0,
+                authority={"secp256k1": {"publicKey": "02" + "22" * 32}},
                 challenge="33" * 32,
             ),
             signer,

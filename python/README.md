@@ -407,9 +407,19 @@ hosted API:
 
 ```python
 from swig_developer_sdk.signers import (
+    create_participant_ed25519_signer,
     create_participant_passkey_signer,
     create_participant_personal_sign_signer,
     sign_participant_set_approval,
+)
+
+recovery_signer = create_participant_ed25519_signer(
+    public_key=recovery_public_key,
+    sign_message=sign_ed25519,
+)
+recovery_approval = await sign_participant_set_approval(
+    prepared.participant_set_approval_plan.members[0],
+    recovery_signer,
 )
 
 passkey_signer = create_participant_passkey_signer(
@@ -417,7 +427,7 @@ passkey_signer = create_participant_passkey_signer(
     get_assertion=get_webauthn_assertion,
 )
 client_approval = await sign_participant_set_approval(
-    prepared.participant_set_approval_plan.members[0],
+    prepared.participant_set_approval_plan.members[1],
     passkey_signer,
 )
 
@@ -428,15 +438,18 @@ server_signer = create_participant_personal_sign_signer(
     sign_message=personal_sign,
 )
 server_approval = await sign_participant_set_approval(
-    prepared.participant_set_approval_plan.members[1],
+    prepared.participant_set_approval_plan.members[2],
     server_signer,
 )
 ```
 
-The helpers copy the member index and counter from the request. The passkey
-adapter returns exact assertion bytes and a raw low-S P-256 signature; the
-personal-sign adapter validates compact k1 signatures, normalizes low-S, and
-adjusts the recovery byte.
+The Ed25519 callback receives the decoded 32-byte challenge. The shared
+ParticipantSet nonce is already committed by every challenge and is not copied
+into individual approvals. The passkey adapter returns exact assertion bytes
+and converts DER to a raw low-S P-256 signature; compilation also defensively
+normalizes externally constructed high-S P-256 approvals. The personal-sign
+adapter validates compact k1 signatures, normalizes low-S, and adjusts the
+recovery byte. None of these helpers calls the hosted API.
 
 ```python
 from swig_developer_sdk.signers import (

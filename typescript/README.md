@@ -491,11 +491,11 @@ const serverApproval = await signParticipantSetApproval(
 ```
 
 The Ed25519 callback receives the decoded 32-byte challenge. The passkey helper
-returns raw authenticator data, exact `clientDataJSON`, and a raw P-256
-signature; compilation normalizes high-S P-256 assertions for the native
-verifier. The personal-sign helper validates the compact k1 signature,
-normalizes it to low-S, and adjusts the recovery byte. None of these helpers
-calls the hosted API or compiles the transaction.
+returns raw authenticator data, exact `clientDataJSON`, and converts DER to a
+raw low-S P-256 signature; compilation also defensively normalizes externally
+constructed high-S P-256 approvals. The personal-sign helper validates the
+compact k1 signature, normalizes it to low-S, and adjusts the recovery byte.
+None of these helpers calls the hosted API or compiles the transaction.
 
 ### Ed25519
 

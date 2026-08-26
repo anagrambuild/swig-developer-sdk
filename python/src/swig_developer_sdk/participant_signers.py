@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Literal, Protocol, TypeAlias
 
@@ -10,6 +10,7 @@ from .passkeys import (
     secp256r1_der_to_raw_signature,
 )
 from .transactions import (
+    Ed25519ParticipantApproval,
     ParticipantApprovalRequest,
     ParticipantSetApproval,
     Secp256k1ParticipantApproval,
@@ -25,10 +26,12 @@ SECP256K1_HALF_ORDER = SECP256K1_ORDER >> 1
 ParticipantPersonalSignFn: TypeAlias = Callable[
     [str], str | bytes | Awaitable[str | bytes]
 ]
+ParticipantEd25519SignFn: TypeAlias = Callable[[bytes], bytes | Awaitable[bytes]]
+ParticipantSignerType: TypeAlias = Literal["ed25519", "secp256k1", "secp256r1"]
 
 
 class ParticipantSigner(Protocol):
-    type: Literal["secp256k1", "webauthnP256"]
+    type: ParticipantSignerType
     public_key: str
 
     async def sign(
@@ -37,10 +40,31 @@ class ParticipantSigner(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class ParticipantEd25519Signer:
+    public_key: str
+    sign_message: ParticipantEd25519SignFn = field(repr=False)
+    type: Literal["ed25519"] = field(default="ed25519", init=False)
+
+    async def sign(
+        self, request: ParticipantApprovalRequest
+    ) -> Ed25519ParticipantApproval:
+        _assert_matching_request(request, self.type, self.public_key)
+        signature = self.sign_message(_challenge_bytes(request.challenge))
+        if inspect.isawaitable(signature):
+            signature = await signature
+        if len(signature) != 64:
+            raise ValueError("Participant ed25519 signature must be 64 bytes")
+        return Ed25519ParticipantApproval(
+            member_index=request.member_index,
+            signature=bytes(signature),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class ParticipantPasskeySigner:
     public_key: str
     get_assertion: WebAuthnAssertionFn = field(repr=False)
-    type: Literal["webauthnP256"] = field(default="webauthnP256", init=False)
+    type: Literal["secp256r1"] = field(default="secp256r1", init=False)
 
     async def sign(
         self, request: ParticipantApprovalRequest
@@ -52,7 +76,6 @@ class ParticipantPasskeySigner:
             assertion = await assertion
         return WebAuthnP256ParticipantApproval(
             member_index=request.member_index,
-            counter=request.counter,
             authenticator_data=assertion.authenticator_data,
             client_data_json=assertion.client_data_json,
             signature=secp256r1_der_to_raw_signature(assertion.signature),
@@ -78,9 +101,19 @@ class ParticipantPersonalSignSigner:
         signature = _signature_bytes(signed)
         return Secp256k1ParticipantApproval(
             member_index=request.member_index,
-            counter=request.counter,
             signature=_normalize_secp256k1_signature(signature),
         )
+
+
+def create_participant_ed25519_signer(
+    *,
+    public_key: str,
+    sign_message: ParticipantEd25519SignFn,
+) -> ParticipantEd25519Signer:
+    return ParticipantEd25519Signer(
+        public_key=public_key,
+        sign_message=sign_message,
+    )
 
 
 def create_participant_passkey_signer(
@@ -111,17 +144,21 @@ async def sign_participant_set_approval(
 ) -> ParticipantSetApproval:
     _assert_matching_request(request, signer.type, signer.public_key)
     approval = await signer.sign(request)
-    if (
-        approval.member_index != request.member_index
-        or approval.counter != request.counter
-    ):
+    if approval.member_index != request.member_index:
         raise ValueError("Participant signer returned approval for another request")
     if (
-        signer.type == "secp256k1"
-        and not isinstance(approval, Secp256k1ParticipantApproval)
-    ) or (
-        signer.type == "webauthnP256"
-        and not isinstance(approval, WebAuthnP256ParticipantApproval)
+        (
+            signer.type == "ed25519"
+            and not isinstance(approval, Ed25519ParticipantApproval)
+        )
+        or (
+            signer.type == "secp256k1"
+            and not isinstance(approval, Secp256k1ParticipantApproval)
+        )
+        or (
+            signer.type == "secp256r1"
+            and not isinstance(approval, WebAuthnP256ParticipantApproval)
+        )
     ):
         raise ValueError("Participant signer returned the wrong proof type")
     return approval
@@ -129,15 +166,42 @@ async def sign_participant_set_approval(
 
 def _assert_matching_request(
     request: ParticipantApprovalRequest,
-    signer_type: Literal["secp256k1", "webauthnP256"],
+    signer_type: ParticipantSignerType,
     public_key: str,
 ) -> None:
-    if request.signer_type != signer_type:
+    authority_type, authority_public_key = _participant_approval_authority(request)
+    if authority_type != signer_type:
         raise ValueError("Participant signer type does not match approval request")
-    if _normalize_hex(request.public_key) != _normalize_hex(public_key):
+    matches = (
+        authority_public_key == public_key
+        if signer_type == "ed25519"
+        else _normalize_hex(authority_public_key) == _normalize_hex(public_key)
+    )
+    if not matches:
         raise ValueError(
             "Participant signer public key does not match approval request"
         )
+
+
+def _participant_approval_authority(
+    request: ParticipantApprovalRequest,
+) -> tuple[ParticipantSignerType, str]:
+    selected: list[tuple[ParticipantSignerType, object]] = []
+    for scheme in ("ed25519", "secp256k1", "secp256r1"):
+        authority = request.authority.get(scheme)
+        if authority is not None:
+            selected.append((scheme, authority))
+    if len(selected) != 1:
+        raise ValueError("Participant approval request has invalid authority")
+    scheme, selected_authority = selected[0]
+    if not isinstance(selected_authority, Mapping):
+        raise ValueError("Participant approval request has invalid authority")
+    public_key = selected_authority.get(
+        "publicKey", selected_authority.get("public_key")
+    )
+    if not isinstance(public_key, str) or not public_key:
+        raise ValueError("Participant approval request authority is missing publicKey")
+    return scheme, public_key
 
 
 def _challenge_bytes(challenge: str) -> bytes:

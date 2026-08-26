@@ -6,10 +6,14 @@ does not construct an API client or send requests to Swig's hosted API.
 
 from .evm import Eip1193Provider, create_secp256k1_evm_signing_fn
 from .participant_signers import (
+    ParticipantEd25519Signer,
+    ParticipantEd25519SignFn,
     ParticipantPasskeySigner,
     ParticipantPersonalSignFn,
     ParticipantPersonalSignSigner,
     ParticipantSigner,
+    ParticipantSignerType,
+    create_participant_ed25519_signer,
     create_participant_passkey_signer,
     create_participant_personal_sign_signer,
     sign_participant_set_approval,
@@ -37,10 +41,13 @@ from .signing import (
 
 __all__ = [
     "Eip1193Provider",
+    "ParticipantEd25519SignFn",
+    "ParticipantEd25519Signer",
     "ParticipantPasskeySigner",
     "ParticipantPersonalSignFn",
     "ParticipantPersonalSignSigner",
     "ParticipantSigner",
+    "ParticipantSignerType",
     "PasskeySigningFn",
     "PasskeySigningResult",
     "PreparedTransactionSigner",
@@ -51,6 +58,7 @@ __all__ = [
     "Secp256r1SigningFns",
     "WebAuthnAssertion",
     "WebAuthnAssertionFn",
+    "create_participant_ed25519_signer",
     "create_participant_passkey_signer",
     "create_participant_personal_sign_signer",
     "create_secp256k1_evm_signing_fn",
