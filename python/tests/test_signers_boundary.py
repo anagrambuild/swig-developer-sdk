@@ -1,4 +1,9 @@
 from swig_developer_sdk import signers
+from swig_developer_sdk.signers import (
+    PreparedTransaction,
+    SignedPreparedTransaction,
+    TransactionEncoding,
+)
 
 
 def test_signers_module_exposes_application_owned_signing_surface() -> None:
@@ -11,6 +16,9 @@ def test_signers_module_exposes_application_owned_signing_surface() -> None:
     assert callable(signers.create_participant_passkey_signer)
     assert callable(signers.create_participant_personal_sign_signer)
     assert callable(signers.sign_participant_set_approval)
+    assert signers.PreparedTransaction is PreparedTransaction
+    assert signers.SignedPreparedTransaction is SignedPreparedTransaction
+    assert signers.TransactionEncoding is TransactionEncoding
 
 
 def test_signers_module_does_not_expose_api_clients() -> None:
