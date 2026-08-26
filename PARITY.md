@@ -54,6 +54,10 @@ Both SDKs expose direction-specific clients. There is no generic ramp client.
 
 ## Signing
 
+TypeScript uses `@swig-wallet/developer-sdk/signers`. Python uses the
+`swig_developer_sdk.signers` module. Both signer surfaces accept
+application-owned callbacks and make no hosted API requests.
+
 | Surface | TypeScript | Python | Parity target |
 | --- | --- | --- | --- |
 | Generic signing | `signPreparedTransaction`, signer object | `sign_prepared_transaction`, signer protocol | same metadata preservation |

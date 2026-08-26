@@ -1,9 +1,9 @@
 # swig-developer-sdk
 
-Python SDK for preparing Swig wallet operations on a server and signing them
-locally. The Swig API prepares wallet transactions; this SDK invokes
-application-owned signers and inserts signatures with `solders`. No signing
-material is sent to the API.
+Python SDK for preparing Swig wallet operations on a server, with a separate
+`swig_developer_sdk.signers` module for application-owned signing. The signer
+module inserts signatures with `solders` and makes no hosted API requests. No
+signing material is sent to the API.
 
 - Version: `0.8.0`
 - Source: <https://github.com/anagrambuild/swig-developer-sdk>
@@ -281,7 +281,8 @@ Offramp adds an on-chain authorization step: the user's wallet must sign the
 transfer to the provider before the session can settle.
 
 ```python
-from swig_developer_sdk import QuoteRampArgs, sign_prepared_swig_transaction
+from swig_developer_sdk import QuoteRampArgs
+from swig_developer_sdk.signers import sign_prepared_swig_transaction
 
 options = await swig.ramp.offramp.get_options(
     organization_meld_configuration_id=configuration_id,
@@ -344,7 +345,7 @@ Swig signer helper patches secp256r1 or secp256k1 signatures into both legacy
 and versioned Solana transactions.
 
 ```python
-from swig_developer_sdk import (
+from swig_developer_sdk.signers import (
     sign_prepared_swig_transaction,
     sign_prepared_transaction,
 )
@@ -368,7 +369,7 @@ a browser, hardware, wallet, or remote signer without changing the preparation
 API:
 
 ```python
-from swig_developer_sdk import (
+from swig_developer_sdk.signers import (
     create_secp256k1_evm_signing_fn,
     create_secp256r1_passkey_signing_fn,
 )
