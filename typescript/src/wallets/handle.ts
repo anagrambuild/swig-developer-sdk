@@ -1,5 +1,5 @@
 import type {
-  AddParticipantSetRoleArgs,
+  AddRoleArgs,
   BuildTransactionArgs,
   CancelRecoveryArgs,
   ExecuteRecoveryArgs,
@@ -48,7 +48,7 @@ export type WalletRecoveryClient = {
 };
 
 export type WalletRolesClient = {
-  add(args: AddParticipantSetRoleArgs): Promise<PreparedTransaction>;
+  add(args: AddRoleArgs): Promise<PreparedTransaction>;
   list(args?: WalletReadArgs): Promise<ListSwigRolesResult>;
 };
 
@@ -74,7 +74,7 @@ export class WalletHandle {
     this.swap = createWalletSwapClient(wallets, this);
     this.recovery = createWalletRecoveryClient(wallets, this);
     this.roles = {
-      add: (args) => wallets.addParticipantSetRole(this, args),
+      add: (args) => wallets.addRole(this, args),
       list: (args) => wallets.listRoles(this, args),
     };
   }

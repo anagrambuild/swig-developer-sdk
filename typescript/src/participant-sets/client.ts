@@ -7,6 +7,7 @@ import type {
   ParticipantSetMember,
 } from '../types/index.js';
 import { normalizePreparedTransaction } from '../wallets/normalizers.js';
+import { walletAuthorityRequest } from '../wallets/requests.js';
 
 export class ParticipantSetsClient {
   constructor(
@@ -23,7 +24,7 @@ export class ParticipantSetsClient {
     }
 
     const response = await this.http.post<CreateParticipantSetResponseWire>(
-      '/transaction/participant-set/create',
+      '/transaction/wallet/participant-set/create',
       {
         network: toProtoNetwork(network),
         feePayer: args.feePayer,
@@ -50,10 +51,16 @@ export class ParticipantSetsClient {
 }
 
 function participantSetMemberToWire(member: ParticipantSetMember) {
-  if ('secp256k1' in member) {
-    return { secp256k1PublicKey: member.secp256k1.publicKey };
+  if (
+    !('ed25519' in member) &&
+    !('secp256k1' in member) &&
+    !('secp256r1' in member)
+  ) {
+    throw new Error(
+      'ParticipantSet members must use ed25519, secp256k1, or secp256r1',
+    );
   }
-  return { webauthnP256PublicKey: member.webauthnP256.publicKey };
+  return walletAuthorityRequest(member);
 }
 
 function toProtoNetwork(network: Network): string {

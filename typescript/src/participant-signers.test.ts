@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
 import {
+  createParticipantEd25519Signer,
   createParticipantPasskeySigner,
   createParticipantPersonalSignSigner,
   signParticipantSetApproval,
@@ -42,9 +43,9 @@ describe('ParticipantSet signers', () => {
     const approval = await signParticipantSetApproval(
       {
         memberIndex: 3,
-        signerType: 'secp256k1',
-        publicKey: publicKey.toUpperCase(),
-        counter: 7,
+        authority: {
+          secp256k1: { publicKey: publicKey.toUpperCase() },
+        },
         challenge,
       },
       signer,
@@ -53,7 +54,6 @@ describe('ParticipantSet signers', () => {
     expect(messages).toEqual([challenge.toLowerCase()]);
     expect(approval).toEqual({
       memberIndex: 3,
-      counter: 7,
       secp256k1: {
         signature: Uint8Array.from([
           ...signature.slice(0, 32),
@@ -61,6 +61,33 @@ describe('ParticipantSet signers', () => {
           28,
         ]),
       },
+    });
+  });
+
+  test('signs decoded challenge bytes with an Ed25519 callback', async () => {
+    const challenge = '44'.repeat(32);
+    const messages: Uint8Array[] = [];
+    const signature = Uint8Array.from({ length: 64 }, (_, index) => index);
+
+    const approval = await signParticipantSetApproval(
+      {
+        memberIndex: 2,
+        authority: { ed25519: { publicKey: 'ed25519_public_key' } },
+        challenge,
+      },
+      createParticipantEd25519Signer({
+        publicKey: 'ed25519_public_key',
+        signMessage: (message) => {
+          messages.push(message);
+          return signature;
+        },
+      }),
+    );
+
+    expect(messages).toEqual([hexToBytes(challenge)]);
+    expect(approval).toEqual({
+      memberIndex: 2,
+      ed25519: { signature },
     });
   });
 
@@ -101,9 +128,7 @@ describe('ParticipantSet signers', () => {
     const approval = await signParticipantSetApproval(
       {
         memberIndex: 1,
-        signerType: 'webauthnP256',
-        publicKey,
-        counter: 4,
+        authority: { secp256r1: { publicKey } },
         challenge,
       },
       createParticipantPasskeySigner({ publicKey, credentialId }),
@@ -111,7 +136,6 @@ describe('ParticipantSet signers', () => {
 
     expect(approval).toEqual({
       memberIndex: 1,
-      counter: 4,
       webauthnP256: {
         authenticatorData,
         clientDataJson,
@@ -132,9 +156,9 @@ describe('ParticipantSet signers', () => {
       signParticipantSetApproval(
         {
           memberIndex: 0,
-          signerType: 'secp256k1',
-          publicKey: `02${'22'.repeat(32)}`,
-          counter: 0,
+          authority: {
+            secp256k1: { publicKey: `02${'22'.repeat(32)}` },
+          },
           challenge: '33'.repeat(32),
         },
         signer,

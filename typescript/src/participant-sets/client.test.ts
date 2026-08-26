@@ -34,8 +34,9 @@ describe('ParticipantSetsClient', () => {
         feePayer: 'payer_123',
         threshold: 2,
         members: [
+          { ed25519: { publicKey: 'ed25519_public_key' } },
           { secp256k1: { publicKey: `02${'11'.repeat(32)}` } },
-          { webauthnP256: { publicKey: `03${'22'.repeat(32)}` } },
+          { secp256r1: { publicKey: `03${'22'.repeat(32)}` } },
         ],
         setId: 'set_id_123',
       }),
@@ -49,7 +50,7 @@ describe('ParticipantSetsClient', () => {
     });
     expect(calls).toEqual([
       {
-        path: '/transaction/participant-set/create',
+        path: '/transaction/wallet/participant-set/create',
         body: {
           network: 'NETWORK_DEVNET',
           feePayer: 'payer_123',
@@ -57,8 +58,9 @@ describe('ParticipantSetsClient', () => {
           setId: 'set_id_123',
           threshold: 2,
           members: [
-            { secp256k1PublicKey: `02${'11'.repeat(32)}` },
-            { webauthnP256PublicKey: `03${'22'.repeat(32)}` },
+            { ed25519: { publicKey: 'ed25519_public_key' } },
+            { secp256k1: { publicKey: `02${'11'.repeat(32)}` } },
+            { secp256r1: { publicKey: `03${'22'.repeat(32)}` } },
           ],
         },
       },
