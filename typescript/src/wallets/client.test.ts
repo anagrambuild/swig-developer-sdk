@@ -141,7 +141,51 @@ describe('WalletsClient', () => {
       authority: {
         participantSet: { address: 'participant_set_new' },
       },
-      actions: [{ type: 'all' }, { type: 'solLimit', amount: 1_000_000n }],
+      actions: [
+        { type: 'all' },
+        { type: 'allButManageAuthority' },
+        { type: 'manageAuthority' },
+        { type: 'solLimit', amount: 1_000_000n },
+        { type: 'solRecurringLimit', recurringAmount: 2, window: 3 },
+        {
+          type: 'solDestinationLimit',
+          amount: 4,
+          destination: 'sol_destination',
+        },
+        {
+          type: 'solRecurringDestinationLimit',
+          recurringAmount: 5,
+          window: 6,
+          destination: 'recurring_sol_destination',
+        },
+        { type: 'tokenLimit', mint: 'mint_1', amount: 7 },
+        {
+          type: 'tokenRecurringLimit',
+          mint: 'mint_2',
+          recurringAmount: 8,
+          window: 9,
+        },
+        {
+          type: 'tokenDestinationLimit',
+          mint: 'mint_3',
+          amount: 10,
+          destination: 'token_destination',
+        },
+        {
+          type: 'tokenRecurringDestinationLimit',
+          mint: 'mint_4',
+          recurringAmount: 11,
+          window: 12,
+          destination: 'recurring_token_destination',
+        },
+        { type: 'program', programId: 'program_123' },
+        { type: 'programAll' },
+        { type: 'programCurated' },
+        { type: 'stakeLimit', amount: 13 },
+        { type: 'stakeRecurringLimit', recurringAmount: 14, window: 15 },
+        { type: 'stakeAll' },
+        { type: 'subAccount' },
+      ],
     });
 
     expect(calls).toEqual([
@@ -159,7 +203,61 @@ describe('WalletsClient', () => {
               participantSetAddress: 'participant_set_new',
             },
           },
-          actions: [{ all: {} }, { solLimit: { amount: '1000000' } }],
+          actions: [
+            { all: {} },
+            { allButManageAuthority: {} },
+            { manageAuthority: {} },
+            { solLimit: { amount: '1000000' } },
+            { solRecurringLimit: { recurringAmount: '2', window: '3' } },
+            {
+              solDestinationLimit: {
+                amount: '4',
+                destination: 'sol_destination',
+              },
+            },
+            {
+              solRecurringDestinationLimit: {
+                recurringAmount: '5',
+                window: '6',
+                destination: 'recurring_sol_destination',
+              },
+            },
+            { tokenLimit: { mint: 'mint_1', amount: '7' } },
+            {
+              tokenRecurringLimit: {
+                mint: 'mint_2',
+                recurringAmount: '8',
+                window: '9',
+              },
+            },
+            {
+              tokenDestinationLimit: {
+                mint: 'mint_3',
+                amount: '10',
+                destination: 'token_destination',
+              },
+            },
+            {
+              tokenRecurringDestinationLimit: {
+                mint: 'mint_4',
+                recurringAmount: '11',
+                window: '12',
+                destination: 'recurring_token_destination',
+              },
+            },
+            { program: { programId: 'program_123' } },
+            { programAll: {} },
+            { programCurated: {} },
+            { stakeLimit: { amount: '13' } },
+            {
+              stakeRecurringLimit: {
+                recurringAmount: '14',
+                window: '15',
+              },
+            },
+            { stakeAll: {} },
+            { subAccount: {} },
+          ],
         },
       },
     ]);
