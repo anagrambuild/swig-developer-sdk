@@ -6,14 +6,87 @@ export type WalletAuthority =
   | { ed25519: { publicKey: string } }
   | { secp256k1: { publicKey: string } }
   | { secp256r1: { publicKey: string } }
-  | { programExecProof: { roleId: number; zkProof: string } };
+  | { programExecProof: { roleId: number; zkProof: string } }
+  | {
+      participantSet: {
+        address: string;
+        roleId?: number;
+      };
+    };
+
+export type DirectWalletAuthority = Extract<
+  WalletAuthority,
+  { ed25519: unknown } | { secp256k1: unknown } | { secp256r1: unknown }
+>;
+
+export type NonParticipantWalletAuthority = Exclude<
+  WalletAuthority,
+  { participantSet: unknown }
+>;
+
+export type AddRoleRequesterAuthority = Extract<
+  WalletAuthority,
+  { ed25519: unknown } | { secp256r1: unknown }
+>;
+
+export type RoleAuthority =
+  DirectWalletAuthority | { participantSet: { address: string } };
 
 export type WalletAuthorityKind = 'ed25519' | 'secp256k1' | 'secp256r1';
+
+export type AddRoleAction =
+  | { type: 'all' }
+  | { type: 'allButManageAuthority' }
+  | { type: 'manageAuthority' }
+  | { type: 'solLimit'; amount: Amount }
+  | { type: 'solRecurringLimit'; recurringAmount: Amount; window: Amount }
+  | { type: 'solDestinationLimit'; amount: Amount; destination: string }
+  | {
+      type: 'solRecurringDestinationLimit';
+      recurringAmount: Amount;
+      window: Amount;
+      destination: string;
+    }
+  | { type: 'tokenLimit'; mint: string; amount: Amount }
+  | {
+      type: 'tokenRecurringLimit';
+      mint: string;
+      recurringAmount: Amount;
+      window: Amount;
+    }
+  | {
+      type: 'tokenDestinationLimit';
+      mint: string;
+      amount: Amount;
+      destination: string;
+    }
+  | {
+      type: 'tokenRecurringDestinationLimit';
+      mint: string;
+      recurringAmount: Amount;
+      window: Amount;
+      destination: string;
+    }
+  | { type: 'program'; programId: string }
+  | { type: 'programAll' }
+  | { type: 'programCurated' }
+  | { type: 'stakeLimit'; amount: Amount }
+  | { type: 'stakeRecurringLimit'; recurringAmount: Amount; window: Amount }
+  | { type: 'stakeAll' }
+  | { type: 'subAccount' };
+
+export interface AddRoleArgs {
+  feePayer: string;
+  authority: RoleAuthority;
+  actions: AddRoleAction[];
+  requesterAuthority?: AddRoleRequesterAuthority;
+  network?: Network;
+}
 
 export interface CreateWalletArgs {
   policyId?: string;
   feePayer: string;
-  initialUser?: WalletAuthority;
+  initialUser?: DirectWalletAuthority;
   recovery?: {
     guardianPubkey?: string;
     delaySeconds?: number;
@@ -65,7 +138,7 @@ export interface PrepareArgs {
 
 export interface SwapArgs {
   feePayer: string;
-  requesterAuthority?: WalletAuthority;
+  requesterAuthority?: NonParticipantWalletAuthority;
   inputMint: string;
   outputMint: string;
   amount: Amount;
@@ -86,7 +159,7 @@ export interface BaseRecoveryArgs {
 }
 
 export interface AddRecoveryAuthorityArgs extends BaseRecoveryArgs {
-  requesterAuthority?: WalletAuthority;
+  requesterAuthority?: NonParticipantWalletAuthority;
 }
 
 export interface ConfigureRecoveryArgs extends BaseRecoveryArgs {
@@ -110,12 +183,12 @@ export type StartRecoveryArgs = BaseRecoveryArgs & {
     | {
         guardianPubkey?: never;
         guardianSwigAddress: string;
-        guardianRequesterAuthority: WalletAuthority;
+        guardianRequesterAuthority: NonParticipantWalletAuthority;
       }
   );
 
 export interface CancelRecoveryArgs extends BaseRecoveryArgs {
-  requesterAuthority?: WalletAuthority;
+  requesterAuthority?: NonParticipantWalletAuthority;
 }
 
 export type ExecuteRecoveryArgs = BaseRecoveryArgs & {
@@ -128,7 +201,7 @@ export type ExecuteRecoveryArgs = BaseRecoveryArgs & {
       }
     | {
         guardianSwigAddress: string;
-        guardianRequesterAuthority: WalletAuthority;
+        guardianRequesterAuthority: NonParticipantWalletAuthority;
       }
   );
 

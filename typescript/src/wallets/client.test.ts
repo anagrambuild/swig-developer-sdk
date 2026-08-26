@@ -4,8 +4,11 @@ import { SwigClient } from '../server/typescript/index.js';
 import { WalletsClient } from './client.js';
 import {
   addRecoveryAuthorityRequest,
+  addRoleRequest,
+  buildTransactionRequest,
   cancelRecoveryRequest,
   configureRecoveryRequest,
+  createWalletRequest,
   executeRecoveryRequest,
   startRecoveryRequest,
   swapRequest,
@@ -114,6 +117,255 @@ describe('WalletsClient', () => {
       destination: 'destination_123',
       lamports: '1000000',
     });
+  });
+
+  test('maps general role authorities and actions to typed protobuf fields', async () => {
+    const calls: Array<{ path: string; body: unknown }> = [];
+    const wallets = new WalletsClient(
+      {
+        post: async (path: string, body: unknown) => {
+          calls.push({ path, body });
+          return {
+            transaction: {
+              transaction: 'add-role-base64',
+              transactionEncoding: 'TRANSACTION_ENCODING_BASE64',
+            },
+          };
+        },
+      } as never,
+      'devnet',
+    );
+    const wallet = wallets.use('swig_123', {
+      requesterAuthority: { ed25519: { publicKey: 'requester_123' } },
+    });
+
+    await wallet.roles.add({
+      feePayer: 'payer_123',
+      authority: {
+        participantSet: { address: 'participant_set_new' },
+      },
+      actions: [
+        { type: 'all' },
+        { type: 'allButManageAuthority' },
+        { type: 'manageAuthority' },
+        { type: 'solLimit', amount: 1_000_000n },
+        { type: 'solRecurringLimit', recurringAmount: 2, window: 3 },
+        {
+          type: 'solDestinationLimit',
+          amount: 4,
+          destination: 'sol_destination',
+        },
+        {
+          type: 'solRecurringDestinationLimit',
+          recurringAmount: 5,
+          window: 6,
+          destination: 'recurring_sol_destination',
+        },
+        { type: 'tokenLimit', mint: 'mint_1', amount: 7 },
+        {
+          type: 'tokenRecurringLimit',
+          mint: 'mint_2',
+          recurringAmount: 8,
+          window: 9,
+        },
+        {
+          type: 'tokenDestinationLimit',
+          mint: 'mint_3',
+          amount: 10,
+          destination: 'token_destination',
+        },
+        {
+          type: 'tokenRecurringDestinationLimit',
+          mint: 'mint_4',
+          recurringAmount: 11,
+          window: 12,
+          destination: 'recurring_token_destination',
+        },
+        { type: 'program', programId: 'program_123' },
+        { type: 'programAll' },
+        { type: 'programCurated' },
+        { type: 'stakeLimit', amount: 13 },
+        { type: 'stakeRecurringLimit', recurringAmount: 14, window: 15 },
+        { type: 'stakeAll' },
+        { type: 'subAccount' },
+      ],
+    });
+
+    expect(calls).toEqual([
+      {
+        path: '/transaction/wallet/role/add',
+        body: {
+          network: 'NETWORK_DEVNET',
+          feePayer: 'payer_123',
+          swigAddress: 'swig_123',
+          requesterAuthority: {
+            ed25519: { publicKey: 'requester_123' },
+          },
+          authority: {
+            participantSet: {
+              participantSetAddress: 'participant_set_new',
+            },
+          },
+          actions: [
+            { all: {} },
+            { allButManageAuthority: {} },
+            { manageAuthority: {} },
+            { solLimit: { amount: '1000000' } },
+            { solRecurringLimit: { recurringAmount: '2', window: '3' } },
+            {
+              solDestinationLimit: {
+                amount: '4',
+                destination: 'sol_destination',
+              },
+            },
+            {
+              solRecurringDestinationLimit: {
+                recurringAmount: '5',
+                window: '6',
+                destination: 'recurring_sol_destination',
+              },
+            },
+            { tokenLimit: { mint: 'mint_1', amount: '7' } },
+            {
+              tokenRecurringLimit: {
+                mint: 'mint_2',
+                recurringAmount: '8',
+                window: '9',
+              },
+            },
+            {
+              tokenDestinationLimit: {
+                mint: 'mint_3',
+                amount: '10',
+                destination: 'token_destination',
+              },
+            },
+            {
+              tokenRecurringDestinationLimit: {
+                mint: 'mint_4',
+                recurringAmount: '11',
+                window: '12',
+                destination: 'recurring_token_destination',
+              },
+            },
+            { program: { programId: 'program_123' } },
+            { programAll: {} },
+            { programCurated: {} },
+            { stakeLimit: { amount: '13' } },
+            {
+              stakeRecurringLimit: {
+                recurringAmount: '14',
+                window: '15',
+              },
+            },
+            { stakeAll: {} },
+            { subAccount: {} },
+          ],
+        },
+      },
+    ]);
+  });
+
+  test('rejects ParticipantSet as an add-role requester before transport', async () => {
+    const wallet = new WalletsClient(
+      {
+        post: async () => {
+          throw new Error('transport must not be called');
+        },
+      } as never,
+      'devnet',
+    ).use('swig_123', {
+      requesterAuthority: {
+        participantSet: { address: 'participant_set_requester' },
+      },
+    });
+
+    await expect(
+      wallet.roles.add({
+        feePayer: 'payer_123',
+        authority: { ed25519: { publicKey: 'role_public_key' } },
+        actions: [{ type: 'all' }],
+      }),
+    ).rejects.toThrow(
+      'Add role requesterAuthority must use ed25519 or secp256r1',
+    );
+  });
+
+  test('rejects a ParticipantSet roleId before add-role transport', () => {
+    const wallet = new WalletsClient(
+      { post: async () => ({}) } as never,
+      'devnet',
+    ).use('swig_123', {
+      requesterAuthority: { ed25519: { publicKey: 'requester_123' } },
+    });
+
+    expect(() =>
+      addRoleRequest(
+        wallet,
+        {
+          feePayer: 'payer_123',
+          authority: {
+            participantSet: { address: 'participant_set_123', roleId: 7 },
+          },
+          actions: [{ type: 'all' }],
+        } as never,
+        'devnet',
+      ),
+    ).toThrow('Add role ParticipantSet authority must omit roleId');
+  });
+
+  test('rejects ParticipantSet from unsupported endpoint shapes', () => {
+    const participantSet = {
+      participantSet: { address: 'participant_set_123' },
+    } as const;
+    const wallets = new WalletsClient(
+      { post: async () => ({}) } as never,
+      'devnet',
+    );
+    const wallet = wallets.use('swig_123', {
+      requesterAuthority: participantSet,
+    });
+
+    expect(() =>
+      createWalletRequest(
+        {
+          feePayer: 'payer_123',
+          initialUser: participantSet,
+        } as never,
+        'devnet',
+      ),
+    ).toThrow('initialUser does not support ParticipantSet authority');
+    expect(() =>
+      swapRequest(
+        wallet,
+        {
+          feePayer: 'payer_123',
+          inputMint: 'input_mint',
+          outputMint: 'output_mint',
+          amount: 1,
+        },
+        'devnet',
+      ),
+    ).toThrow('requesterAuthority does not support ParticipantSet authority');
+    expect(() =>
+      addRecoveryAuthorityRequest(wallet, { feePayer: 'payer_123' }, 'devnet'),
+    ).toThrow('requesterAuthority does not support ParticipantSet authority');
+    expect(() =>
+      cancelRecoveryRequest(wallet, { feePayer: 'payer_123' }, 'devnet'),
+    ).toThrow('requesterAuthority does not support ParticipantSet authority');
+    expect(() =>
+      buildTransactionRequest(
+        wallet,
+        {
+          feePayer: 'payer_123',
+          instructions: [],
+          addressLookupTableAccounts: ['lookup_table_123'],
+        },
+        'devnet',
+      ),
+    ).toThrow(
+      'ParticipantSet requesterAuthority does not support addressLookupTableAccounts',
+    );
   });
 
   test('builds token transfer requests for the transaction API', () => {

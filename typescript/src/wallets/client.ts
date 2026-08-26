@@ -1,12 +1,14 @@
 import type { HttpClient } from '../core/index.js';
 import type {
   AddRecoveryAuthorityArgs,
+  AddRoleArgs,
   BuildTransactionArgs,
   CancelRecoveryArgs,
   ConfigureRecoveryArgs,
   CreateWalletArgs,
   CreateWalletResponseWire,
   CreateWalletResult,
+  DirectWalletAuthority,
   ExecuteRecoveryArgs,
   IdpWalletSession,
   ListSwigRolesResult,
@@ -31,7 +33,6 @@ import type {
   SwigUsdBalance,
   SwigUsdBalanceWire,
   TransferArgs,
-  WalletAuthority,
   WalletHandleOptions,
   WalletReadArgs,
   WalletReference,
@@ -48,6 +49,7 @@ import {
 } from './normalizers.js';
 import {
   addRecoveryAuthorityRequest,
+  addRoleRequest,
   buildTransactionRequest,
   cancelRecoveryRequest,
   configureRecoveryRequest,
@@ -146,6 +148,22 @@ export class WalletsClient {
       }),
     );
     return normalizeSwigRoles(response);
+  };
+
+  addRole = async (
+    wallet: WalletHandle,
+    args: AddRoleArgs,
+  ): Promise<PreparedTransaction> => {
+    const response = await this.http.post<{
+      transaction?: PreparedTransactionWire;
+    }>(
+      '/transaction/wallet/role/add',
+      addRoleRequest(wallet, args, this.defaultNetwork),
+    );
+    if (!response.transaction) {
+      throw new Error('Add role response is missing transaction');
+    }
+    return normalizePreparedTransaction(response.transaction);
   };
 
   use = (
@@ -389,7 +407,7 @@ function normalizePolicyDelaySeconds(delaySeconds: unknown): number {
 
 function walletAuthorityFromPolicy(
   authority: Policy['authority'],
-): WalletAuthority | undefined {
+): DirectWalletAuthority | undefined {
   if (!authority) {
     return undefined;
   }
@@ -401,7 +419,7 @@ function walletAuthorityFromPolicy(
   ) {
     return authority;
   }
-  if ('programExecProof' in authority) {
+  if ('programExecProof' in authority || 'participantSet' in authority) {
     return undefined;
   }
 
@@ -430,7 +448,7 @@ function publicKeyFromPolicyAuthority(
   if ('secp256k1' in authority) {
     return authority.secp256k1.publicKey;
   }
-  if ('programExecProof' in authority) {
+  if ('programExecProof' in authority || 'participantSet' in authority) {
     return undefined;
   }
   return authority.secp256r1.publicKey;

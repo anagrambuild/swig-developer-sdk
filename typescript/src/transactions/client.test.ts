@@ -4,6 +4,125 @@ import { describe, expect, test } from 'bun:test';
 import { TransactionsClient } from './client.js';
 
 describe('TransactionsClient', () => {
+  test('compiles detached ParticipantSet approvals without submitting', async () => {
+    const calls: Array<{ path: string; body: unknown }> = [];
+    const transactions = new TransactionsClient({
+      post: async (path: string, body: unknown) => {
+        calls.push({ path, body });
+        return {
+          transaction: {
+            transaction: 'compiled-base64',
+            transactionEncoding: 'TRANSACTION_ENCODING_BASE64',
+            network: 'NETWORK_DEVNET',
+          },
+          authorizationExpirationSlot: '12345',
+        };
+      },
+    } as never);
+
+    const result = await transactions.compileParticipantSetApprovals({
+      preparedTransaction: {
+        transaction: 'original-base64',
+        transactionEncoding: 'base64',
+        network: 'devnet',
+        signatureRequests: [],
+        participantSetApprovalPlan: {
+          type: 'participantSet',
+          participantSetAddress: 'participant_set_123',
+          roleId: 4,
+          expirationSlot: '12345',
+          nonce: 7,
+          transactionDigest: '11'.repeat(32),
+          compilationEnvelope: 'envelope_123',
+          threshold: 2,
+          members: [
+            {
+              memberIndex: 0,
+              authority: {
+                secp256k1: { publicKey: `02${'22'.repeat(32)}` },
+              },
+              challenge: '33'.repeat(32),
+            },
+            {
+              memberIndex: 1,
+              authority: {
+                ed25519: { publicKey: 'ed25519_public_key' },
+              },
+              challenge: '44'.repeat(32),
+            },
+          ],
+        },
+      },
+      approvals: [
+        {
+          memberIndex: 0,
+          secp256k1: { signature: Uint8Array.from([1, 2, 3]) },
+        },
+        {
+          memberIndex: 1,
+          ed25519: { signature: Uint8Array.from([4, 5, 6]) },
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      transaction: { transaction: 'compiled-base64' },
+      authorizationExpirationSlot: '12345',
+    });
+    expect(calls).toEqual([
+      {
+        path: '/transaction/wallet/participant-set/compile',
+        body: {
+          preparedTransaction: {
+            transaction: 'original-base64',
+            transactionEncoding: 'TRANSACTION_ENCODING_BASE64',
+            wallet: undefined,
+            expiresAt: undefined,
+            network: 'NETWORK_DEVNET',
+            recentBlockhash: undefined,
+            kind: undefined,
+            signatureRequests: [],
+            participantSetApprovalPlan: {
+              participantSetAddress: 'participant_set_123',
+              roleId: 4,
+              expirationSlot: '12345',
+              nonce: 7,
+              transactionDigest: '11'.repeat(32),
+              compilationEnvelope: 'envelope_123',
+              threshold: 2,
+              members: [
+                {
+                  memberIndex: 0,
+                  authority: {
+                    secp256k1: { publicKey: `02${'22'.repeat(32)}` },
+                  },
+                  challenge: '33'.repeat(32),
+                },
+                {
+                  memberIndex: 1,
+                  authority: {
+                    ed25519: { publicKey: 'ed25519_public_key' },
+                  },
+                  challenge: '44'.repeat(32),
+                },
+              ],
+            },
+          },
+          approvals: [
+            {
+              memberIndex: 0,
+              secp256k1: { signature: 'AQID' },
+            },
+            {
+              memberIndex: 1,
+              ed25519: { signature: 'BAUG' },
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
   test('sponsors base64 transactions through the deployed paymaster endpoint', async () => {
     const transactionBytes = Uint8Array.from([1, 2, 3, 4, 5]);
     const calls: Array<{

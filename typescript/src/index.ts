@@ -6,6 +6,7 @@ export {
   completeOneBusinessGrantAccess,
   redirectToOneBusinessGrantAccess,
 } from './one-business/index.js';
+export { ParticipantSetsClient } from './participant-sets/index.js';
 export { PaymasterClient } from './paymaster/index.js';
 export { OfframpClient, OnrampClient, RampClient } from './ramp/index.js';
 export { SwigClient } from './server/typescript/index.js';
@@ -21,15 +22,22 @@ export type {
 } from './one-business/index.js';
 export type {
   AddRecoveryAuthorityArgs,
+  AddRoleAction,
+  AddRoleArgs,
   Amount,
   BuildTransactionArgs,
   CancelRecoveryArgs,
+  CompileParticipantSetApprovalsArgs,
+  CompileParticipantSetApprovalsResult,
   ConfigureRecoveryArgs,
+  CreateParticipantSetArgs,
+  CreateParticipantSetResult,
   CreateRampSessionArgs,
   CreateRampSessionResult,
   CreateWalletArgs,
   CreateWalletResponse,
   CreateWalletResult,
+  DirectWalletAuthority,
   ExecuteRecoveryArgs,
   GetRampOptionsArgs,
   GetRampSessionArgs,
@@ -38,6 +46,7 @@ export type {
   JsonValue,
   MeldEnvironment,
   Network,
+  NonParticipantWalletAuthority,
   OfframpOptions,
   OfframpSession,
   OfframpSessionStatus,
@@ -45,6 +54,10 @@ export type {
   OnrampOptions,
   OnrampSession,
   OnrampSessionStatus,
+  ParticipantApprovalRequest,
+  ParticipantSetApproval,
+  ParticipantSetApprovalPlan,
+  ParticipantSetMember,
   Policy,
   PolicyAuthority,
   PrepareOfframpAuthorizationArgs,
@@ -79,6 +92,7 @@ export type {
   TransactionEncoding,
   TransferArgs,
   WalletAddressInfo,
+  WalletAuthority,
   WalletAuthorityKind,
   WalletHandleOptions,
   WalletReference,

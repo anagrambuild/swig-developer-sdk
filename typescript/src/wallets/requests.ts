@@ -1,5 +1,7 @@
 import type {
   AddRecoveryAuthorityArgs,
+  AddRoleAction,
+  AddRoleArgs,
   BuildTransactionArgs,
   CancelRecoveryArgs,
   ConfigureRecoveryArgs,
@@ -13,6 +15,7 @@ import type {
   TransferArgs,
   TransferSolArgs,
   TransferTokenArgs,
+  WalletAuthority,
   WalletAuthorityKind,
 } from '../types/index.js';
 import type { WalletHandle } from './handle.js';
@@ -26,11 +29,16 @@ export function createWalletRequest(
   args: CreateWalletArgs,
   defaultNetwork?: Network,
 ) {
+  if (args.initialUser) {
+    assertNonParticipantAuthority(args.initialUser, 'initialUser');
+  }
   return {
     network: toProtoNetwork(resolveNetwork(args.network, defaultNetwork)),
     feePayer: args.feePayer,
     ...(args.policyId ? { policyId: args.policyId } : {}),
-    initialUser: args.initialUser,
+    initialUser: args.initialUser
+      ? walletAuthorityRequest(args.initialUser)
+      : undefined,
   };
 }
 
@@ -45,7 +53,9 @@ export function transferSolRequest(
     ),
     feePayer: args.feePayer,
     swigAddress: wallet.swigConfigAddress,
-    requesterAuthority: resolveRequesterAuthority(wallet, args),
+    requesterAuthority: walletAuthorityRequest(
+      resolveRequesterAuthority(wallet, args),
+    ),
     destination: args.destination,
     lamports: normalizeAmount(args.amount),
   };
@@ -62,7 +72,9 @@ export function transferTokenRequest(
     ),
     feePayer: args.feePayer,
     swigAddress: wallet.swigConfigAddress,
-    requesterAuthority: resolveRequesterAuthority(wallet, args),
+    requesterAuthority: walletAuthorityRequest(
+      resolveRequesterAuthority(wallet, args),
+    ),
     mint: args.mint,
     destinationOwner: args.destinationOwner,
     amount: normalizeAmount(args.amount),
@@ -80,7 +92,9 @@ export function prepareRequest(
     ),
     feePayer: args.feePayer,
     swigAddress: wallet.swigConfigAddress,
-    requesterAuthority: resolveRequesterAuthority(wallet, args),
+    requesterAuthority: walletAuthorityRequest(
+      resolveRequesterAuthority(wallet, args),
+    ),
     operations: args.operations.map(prepareOperationRequest),
   };
 }
@@ -90,13 +104,15 @@ export function swapRequest(
   args: SwapArgs,
   defaultNetwork?: Network,
 ) {
+  const requesterAuthority = resolveRequesterAuthority(wallet, args);
+  assertNonParticipantAuthority(requesterAuthority, 'requesterAuthority');
   return {
     network: toProtoNetwork(
       resolveNetwork(args.network, wallet.network, defaultNetwork),
     ),
     feePayer: args.feePayer,
     swigAddress: wallet.swigConfigAddress,
-    requesterAuthority: resolveRequesterAuthority(wallet, args),
+    requesterAuthority: walletAuthorityRequest(requesterAuthority),
     inputMint: args.inputMint,
     outputMint: args.outputMint,
     amount: normalizeAmount(args.amount),
@@ -120,6 +136,12 @@ export function startRecoveryRequest(
   defaultNetwork?: Network,
 ) {
   validateGuardianSource(args);
+  if ('guardianRequesterAuthority' in args) {
+    assertNonParticipantAuthority(
+      args.guardianRequesterAuthority!,
+      'guardianRequesterAuthority',
+    );
+  }
   return {
     network: toProtoNetwork(
       resolveNetwork(args.network, wallet.network, defaultNetwork),
@@ -134,7 +156,9 @@ export function startRecoveryRequest(
     ...('guardianSwigAddress' in args
       ? {
           guardianSwigAddress: args.guardianSwigAddress,
-          guardianRequesterAuthority: args.guardianRequesterAuthority,
+          guardianRequesterAuthority: walletAuthorityRequest(
+            args.guardianRequesterAuthority!,
+          ),
         }
       : {}),
   };
@@ -145,13 +169,15 @@ export function addRecoveryAuthorityRequest(
   args: AddRecoveryAuthorityArgs,
   defaultNetwork?: Network,
 ) {
+  const requesterAuthority = resolveRequesterAuthority(wallet, args);
+  assertNonParticipantAuthority(requesterAuthority, 'requesterAuthority');
   return {
     network: toProtoNetwork(
       resolveNetwork(args.network, wallet.network, defaultNetwork),
     ),
     feePayer: args.feePayer,
     swigAddress: wallet.swigConfigAddress,
-    requesterAuthority: resolveRequesterAuthority(wallet, args),
+    requesterAuthority: walletAuthorityRequest(requesterAuthority),
   };
 }
 
@@ -177,13 +203,15 @@ export function cancelRecoveryRequest(
   args: CancelRecoveryArgs,
   defaultNetwork?: Network,
 ) {
+  const requesterAuthority = resolveRequesterAuthority(wallet, args);
+  assertNonParticipantAuthority(requesterAuthority, 'requesterAuthority');
   return {
     network: toProtoNetwork(
       resolveNetwork(args.network, wallet.network, defaultNetwork),
     ),
     feePayer: args.feePayer,
     swigAddress: wallet.swigConfigAddress,
-    requesterAuthority: resolveRequesterAuthority(wallet, args),
+    requesterAuthority: walletAuthorityRequest(requesterAuthority),
   };
 }
 
@@ -200,6 +228,12 @@ export function executeRecoveryRequest(
       'guardianSwigAddress and guardianRequesterAuthority must be provided together',
     );
   }
+  if (args.guardianRequesterAuthority) {
+    assertNonParticipantAuthority(
+      args.guardianRequesterAuthority,
+      'guardianRequesterAuthority',
+    );
+  }
   return {
     network: toProtoNetwork(
       resolveNetwork(args.network, wallet.network, defaultNetwork),
@@ -211,7 +245,9 @@ export function executeRecoveryRequest(
     ...(args.guardianSwigAddress
       ? {
           guardianSwigAddress: args.guardianSwigAddress,
-          guardianRequesterAuthority: args.guardianRequesterAuthority,
+          guardianRequesterAuthority: walletAuthorityRequest(
+            args.guardianRequesterAuthority,
+          ),
         }
       : {}),
   };
@@ -222,13 +258,22 @@ export function buildTransactionRequest(
   args: BuildTransactionArgs,
   defaultNetwork?: Network,
 ) {
+  const requesterAuthority = resolveRequesterAuthority(wallet, args);
+  if (
+    'participantSet' in requesterAuthority &&
+    args.addressLookupTableAccounts?.length
+  ) {
+    throw new Error(
+      'ParticipantSet requesterAuthority does not support addressLookupTableAccounts',
+    );
+  }
   return {
     network: toProtoNetwork(
       resolveNetwork(args.network, wallet.network, defaultNetwork),
     ),
     feePayer: args.feePayer,
     swigAddress: wallet.swigConfigAddress,
-    requesterAuthority: resolveRequesterAuthority(wallet, args),
+    requesterAuthority: walletAuthorityRequest(requesterAuthority),
     instructions: args.instructions.map(normalizeInstruction),
     addressLookupTableAccounts: args.addressLookupTableAccounts,
   };
@@ -238,6 +283,151 @@ export function isTokenTransfer(args: TransferArgs): args is TransferTokenArgs {
   return (
     'mint' in args && typeof args.mint === 'string' && args.mint.length > 0
   );
+}
+
+export function addRoleRequest(
+  wallet: WalletHandle,
+  args: AddRoleArgs,
+  defaultNetwork?: Network,
+) {
+  const requesterAuthority = resolveRequesterAuthority(wallet, args);
+  if (
+    !('ed25519' in requesterAuthority) &&
+    !('secp256r1' in requesterAuthority)
+  ) {
+    throw new Error(
+      'Add role requesterAuthority must use ed25519 or secp256r1',
+    );
+  }
+  if ('programExecProof' in args.authority) {
+    throw new Error('Add role authority does not support programExecProof');
+  }
+  if (
+    'participantSet' in args.authority &&
+    'roleId' in args.authority.participantSet
+  ) {
+    throw new Error('Add role ParticipantSet authority must omit roleId');
+  }
+  if (args.actions.length === 0) {
+    throw new Error('Add role actions must not be empty');
+  }
+  return {
+    network: toProtoNetwork(
+      resolveNetwork(args.network, wallet.network, defaultNetwork),
+    ),
+    feePayer: args.feePayer,
+    swigAddress: wallet.swigConfigAddress,
+    requesterAuthority: walletAuthorityRequest(requesterAuthority),
+    authority: walletAuthorityRequest(args.authority),
+    actions: args.actions.map(addRoleActionRequest),
+  };
+}
+
+function addRoleActionRequest(action: AddRoleAction) {
+  switch (action.type) {
+    case 'all':
+      return { all: {} };
+    case 'allButManageAuthority':
+      return { allButManageAuthority: {} };
+    case 'manageAuthority':
+      return { manageAuthority: {} };
+    case 'solLimit':
+      return { solLimit: { amount: normalizeAmount(action.amount) } };
+    case 'solRecurringLimit':
+      return {
+        solRecurringLimit: {
+          recurringAmount: normalizeAmount(action.recurringAmount),
+          window: normalizeAmount(action.window),
+        },
+      };
+    case 'solDestinationLimit':
+      return {
+        solDestinationLimit: {
+          amount: normalizeAmount(action.amount),
+          destination: action.destination,
+        },
+      };
+    case 'solRecurringDestinationLimit':
+      return {
+        solRecurringDestinationLimit: {
+          recurringAmount: normalizeAmount(action.recurringAmount),
+          window: normalizeAmount(action.window),
+          destination: action.destination,
+        },
+      };
+    case 'tokenLimit':
+      return {
+        tokenLimit: {
+          mint: action.mint,
+          amount: normalizeAmount(action.amount),
+        },
+      };
+    case 'tokenRecurringLimit':
+      return {
+        tokenRecurringLimit: {
+          mint: action.mint,
+          recurringAmount: normalizeAmount(action.recurringAmount),
+          window: normalizeAmount(action.window),
+        },
+      };
+    case 'tokenDestinationLimit':
+      return {
+        tokenDestinationLimit: {
+          mint: action.mint,
+          amount: normalizeAmount(action.amount),
+          destination: action.destination,
+        },
+      };
+    case 'tokenRecurringDestinationLimit':
+      return {
+        tokenRecurringDestinationLimit: {
+          mint: action.mint,
+          recurringAmount: normalizeAmount(action.recurringAmount),
+          window: normalizeAmount(action.window),
+          destination: action.destination,
+        },
+      };
+    case 'program':
+      return { program: { programId: action.programId } };
+    case 'programAll':
+      return { programAll: {} };
+    case 'programCurated':
+      return { programCurated: {} };
+    case 'stakeLimit':
+      return { stakeLimit: { amount: normalizeAmount(action.amount) } };
+    case 'stakeRecurringLimit':
+      return {
+        stakeRecurringLimit: {
+          recurringAmount: normalizeAmount(action.recurringAmount),
+          window: normalizeAmount(action.window),
+        },
+      };
+    case 'stakeAll':
+      return { stakeAll: {} };
+    case 'subAccount':
+      return { subAccount: {} };
+  }
+}
+
+export function walletAuthorityRequest(authority: WalletAuthority) {
+  if ('participantSet' in authority) {
+    return {
+      participantSet: {
+        participantSetAddress: authority.participantSet.address,
+        roleId: authority.participantSet.roleId,
+      },
+    };
+  }
+  return authority;
+}
+
+function assertNonParticipantAuthority(
+  authority: WalletAuthority,
+  field: string,
+): void {
+  if ('participantSet' in authority) {
+    throw new Error(`${field} does not support ParticipantSet authority`);
+  }
 }
 
 function prepareOperationRequest(operation: PrepareOperation) {
@@ -303,7 +493,8 @@ function resolveRequesterAuthority(
     | PrepareArgs
     | BuildTransactionArgs
     | CancelRecoveryArgs
-    | AddRecoveryAuthorityArgs,
+    | AddRecoveryAuthorityArgs
+    | AddRoleArgs,
 ): NonNullable<
   | TransferArgs['requesterAuthority']
   | SwapArgs['requesterAuthority']
@@ -311,6 +502,7 @@ function resolveRequesterAuthority(
   | BuildTransactionArgs['requesterAuthority']
   | CancelRecoveryArgs['requesterAuthority']
   | AddRecoveryAuthorityArgs['requesterAuthority']
+  | AddRoleArgs['requesterAuthority']
 > {
   const requesterAuthority =
     args.requesterAuthority ?? wallet.requesterAuthority;

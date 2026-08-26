@@ -132,6 +132,64 @@ const wallet = swig.wallets.use({
 and `swig.wallets.fromIdpSession(session)` builds the same handle from an IdP
 session.
 
+### Configure and use a ParticipantSet
+
+Create the set, submit its prepared creation transaction, then attach it to one
+Swig role with the permissions your application chooses:
+
+```typescript
+const createdSet = await swig.participantSets.create({
+  swigConfigAddress,
+  feePayer,
+  threshold: 2,
+  members: [
+    { ed25519: { publicKey: recoveryPublicKey } },
+    { secp256r1: { publicKey: clientPublicKey } },
+    { secp256k1: { publicKey: serverPublicKey } },
+  ],
+});
+
+const wallet = swig.wallets.use(swigConfigAddress, {
+  requesterAuthority,
+});
+const addRole = await wallet.roles.add({
+  feePayer,
+  authority: {
+    participantSet: { address: createdSet.participantSetAddress },
+  },
+  actions: [
+    { type: 'solLimit', amount: 1_000_000n },
+    { type: 'program', programId },
+  ],
+});
+```
+
+After those transactions land, use the set as the requester for a transaction
+preparation route:
+
+```typescript
+const participantWallet = swig.wallets.use(swigConfigAddress, {
+  requesterAuthority: {
+    participantSet: { address: createdSet.participantSetAddress },
+  },
+});
+const prepared = await participantWallet.transfer.sol({
+  feePayer,
+  destination,
+  amount: 1_000_000n,
+});
+
+const compiled = await swig.transactions.compileParticipantSetApprovals({
+  preparedTransaction: prepared,
+  approvals,
+});
+```
+
+Each member approval signs the challenge returned for that member and the plan
+uses one shared nonce. Compilation validates the plan through the API and
+returns `compiled.transaction`, an RPC-simulated unsigned transaction.
+Sponsorship or submission remains a separate explicit call.
+
 ### Prepare a SOL transfer
 
 ```typescript

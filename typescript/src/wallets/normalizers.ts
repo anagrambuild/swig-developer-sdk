@@ -12,6 +12,12 @@ import type {
   ListSwigTokenTransactionsWire,
   Network,
   NetworkWire,
+  ParticipantApprovalRequest,
+  ParticipantApprovalRequestWire,
+  ParticipantSetApprovalPlan,
+  ParticipantSetApprovalPlanWire,
+  ParticipantSetMember,
+  ParticipantSetMemberWire,
   PreparedTransaction,
   PreparedTransactionKind,
   PreparedTransactionKindWire,
@@ -49,6 +55,11 @@ export function normalizePreparedTransaction(
     throw new Error('Prepared transaction response is missing transaction');
   }
 
+  const participantSetApprovalPlan = normalizeParticipantSetApprovalPlan(
+    response.participantSetApprovalPlan ??
+      response.participant_set_approval_plan,
+  );
+
   return {
     wallet: response.wallet,
     transaction,
@@ -62,6 +73,7 @@ export function normalizePreparedTransaction(
     signatureRequests: normalizeSignatureRequests(
       response.signatureRequests ?? response.signature_requests,
     ),
+    ...(participantSetApprovalPlan ? { participantSetApprovalPlan } : {}),
   };
 }
 
@@ -461,8 +473,98 @@ function normalizePreparedTransactionKind(
     case 'PREPARED_TRANSACTION_KIND_CONFIGURE_RECOVERY':
     case 3:
       return 'configure-recovery';
+    case 'create-participant-set':
+    case 'PREPARED_TRANSACTION_KIND_CREATE_PARTICIPANT_SET':
+    case 4:
+      return 'create-participant-set';
     default:
       return undefined;
+  }
+}
+
+function normalizeParticipantSetApprovalPlan(
+  plan?: ParticipantSetApprovalPlanWire,
+): ParticipantSetApprovalPlan | undefined {
+  if (!plan) {
+    return undefined;
+  }
+
+  const expirationSlot = plan.expirationSlot ?? plan.expiration_slot;
+  if (
+    typeof expirationSlot !== 'string' &&
+    typeof expirationSlot !== 'number'
+  ) {
+    throw new Error('ParticipantSet approval plan is missing expirationSlot');
+  }
+  if (!Array.isArray(plan.members) || plan.members.length === 0) {
+    throw new Error('ParticipantSet approval plan is missing members');
+  }
+
+  return {
+    type: 'participantSet',
+    participantSetAddress: readString(
+      plan.participantSetAddress ?? plan.participant_set_address,
+      'participantSetAddress',
+    ),
+    roleId: readNumber(plan.roleId ?? plan.role_id, 'roleId'),
+    expirationSlot: String(expirationSlot),
+    nonce: readNumber(plan.nonce, 'nonce'),
+    transactionDigest: readString(
+      plan.transactionDigest ?? plan.transaction_digest,
+      'transactionDigest',
+    ),
+    compilationEnvelope: readString(
+      plan.compilationEnvelope ?? plan.compilation_envelope,
+      'compilationEnvelope',
+    ),
+    threshold: readNumber(plan.threshold, 'threshold'),
+    members: plan.members.map(normalizeParticipantApprovalRequest),
+  };
+}
+
+function normalizeParticipantApprovalRequest(
+  request: ParticipantApprovalRequestWire,
+): ParticipantApprovalRequest {
+  return {
+    memberIndex: readNumber(
+      request.memberIndex ?? request.member_index,
+      'memberIndex',
+    ),
+    authority: normalizeParticipantSetMember(request.authority),
+    challenge: readString(request.challenge, 'challenge'),
+  };
+}
+
+function normalizeParticipantSetMember(
+  authority?: ParticipantSetMemberWire,
+): ParticipantSetMember {
+  if (!authority || typeof authority !== 'object') {
+    throw new Error('ParticipantSet approval request is missing authority');
+  }
+
+  const variants = [
+    ['ed25519', authority.ed25519],
+    ['secp256k1', authority.secp256k1],
+    ['secp256r1', authority.secp256r1],
+  ] as const;
+  const selected = variants.filter(([, value]) => value !== undefined);
+  const selectedAuthority = selected[0];
+  if (selected.length !== 1 || !selectedAuthority) {
+    throw new Error('ParticipantSet approval request has invalid authority');
+  }
+
+  const [scheme, value] = selectedAuthority;
+  const publicKey = readString(
+    value?.publicKey ?? value?.public_key,
+    'authority.publicKey',
+  );
+  switch (scheme) {
+    case 'ed25519':
+      return { ed25519: { publicKey } };
+    case 'secp256k1':
+      return { secp256k1: { publicKey } };
+    case 'secp256r1':
+      return { secp256r1: { publicKey } };
   }
 }
 

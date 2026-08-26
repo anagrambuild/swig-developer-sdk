@@ -29,6 +29,49 @@ describe('wallet normalizers', () => {
     });
   });
 
+  test('normalizes a ParticipantSet approval plan from ProtoJSON', () => {
+    expect(
+      normalizePreparedTransaction({
+        transaction: 'base64-tx',
+        participantSetApprovalPlan: {
+          participantSetAddress: 'participant-set-123',
+          roleId: 4,
+          expirationSlot: '12345',
+          nonce: 9,
+          transactionDigest: '11'.repeat(32),
+          compilationEnvelope: 'envelope-123',
+          threshold: 2,
+          members: [
+            {
+              memberIndex: 1,
+              authority: {
+                secp256r1: { publicKey: `03${'22'.repeat(32)}` },
+              },
+              challenge: '33'.repeat(32),
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({
+      participantSetApprovalPlan: {
+        type: 'participantSet',
+        participantSetAddress: 'participant-set-123',
+        roleId: 4,
+        expirationSlot: '12345',
+        nonce: 9,
+        threshold: 2,
+        members: [
+          {
+            memberIndex: 1,
+            authority: {
+              secp256r1: { publicKey: `03${'22'.repeat(32)}` },
+            },
+          },
+        ],
+      },
+    });
+  });
+
   test('normalizes create wallet responses with multiple prepared transactions', () => {
     expect(
       normalizeCreateWalletResponse({
