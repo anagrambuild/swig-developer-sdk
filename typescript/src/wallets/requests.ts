@@ -29,6 +29,9 @@ export function createWalletRequest(
   args: CreateWalletArgs,
   defaultNetwork?: Network,
 ) {
+  if (args.initialUser) {
+    assertNonParticipantAuthority(args.initialUser, 'initialUser');
+  }
   return {
     network: toProtoNetwork(resolveNetwork(args.network, defaultNetwork)),
     feePayer: args.feePayer,
@@ -101,15 +104,15 @@ export function swapRequest(
   args: SwapArgs,
   defaultNetwork?: Network,
 ) {
+  const requesterAuthority = resolveRequesterAuthority(wallet, args);
+  assertNonParticipantAuthority(requesterAuthority, 'requesterAuthority');
   return {
     network: toProtoNetwork(
       resolveNetwork(args.network, wallet.network, defaultNetwork),
     ),
     feePayer: args.feePayer,
     swigAddress: wallet.swigConfigAddress,
-    requesterAuthority: walletAuthorityRequest(
-      resolveRequesterAuthority(wallet, args),
-    ),
+    requesterAuthority: walletAuthorityRequest(requesterAuthority),
     inputMint: args.inputMint,
     outputMint: args.outputMint,
     amount: normalizeAmount(args.amount),
@@ -133,6 +136,12 @@ export function startRecoveryRequest(
   defaultNetwork?: Network,
 ) {
   validateGuardianSource(args);
+  if ('guardianRequesterAuthority' in args) {
+    assertNonParticipantAuthority(
+      args.guardianRequesterAuthority!,
+      'guardianRequesterAuthority',
+    );
+  }
   return {
     network: toProtoNetwork(
       resolveNetwork(args.network, wallet.network, defaultNetwork),
@@ -160,15 +169,15 @@ export function addRecoveryAuthorityRequest(
   args: AddRecoveryAuthorityArgs,
   defaultNetwork?: Network,
 ) {
+  const requesterAuthority = resolveRequesterAuthority(wallet, args);
+  assertNonParticipantAuthority(requesterAuthority, 'requesterAuthority');
   return {
     network: toProtoNetwork(
       resolveNetwork(args.network, wallet.network, defaultNetwork),
     ),
     feePayer: args.feePayer,
     swigAddress: wallet.swigConfigAddress,
-    requesterAuthority: walletAuthorityRequest(
-      resolveRequesterAuthority(wallet, args),
-    ),
+    requesterAuthority: walletAuthorityRequest(requesterAuthority),
   };
 }
 
@@ -194,15 +203,15 @@ export function cancelRecoveryRequest(
   args: CancelRecoveryArgs,
   defaultNetwork?: Network,
 ) {
+  const requesterAuthority = resolveRequesterAuthority(wallet, args);
+  assertNonParticipantAuthority(requesterAuthority, 'requesterAuthority');
   return {
     network: toProtoNetwork(
       resolveNetwork(args.network, wallet.network, defaultNetwork),
     ),
     feePayer: args.feePayer,
     swigAddress: wallet.swigConfigAddress,
-    requesterAuthority: walletAuthorityRequest(
-      resolveRequesterAuthority(wallet, args),
-    ),
+    requesterAuthority: walletAuthorityRequest(requesterAuthority),
   };
 }
 
@@ -217,6 +226,12 @@ export function executeRecoveryRequest(
   ) {
     throw new Error(
       'guardianSwigAddress and guardianRequesterAuthority must be provided together',
+    );
+  }
+  if (args.guardianRequesterAuthority) {
+    assertNonParticipantAuthority(
+      args.guardianRequesterAuthority,
+      'guardianRequesterAuthority',
     );
   }
   return {
@@ -243,15 +258,22 @@ export function buildTransactionRequest(
   args: BuildTransactionArgs,
   defaultNetwork?: Network,
 ) {
+  const requesterAuthority = resolveRequesterAuthority(wallet, args);
+  if (
+    'participantSet' in requesterAuthority &&
+    args.addressLookupTableAccounts?.length
+  ) {
+    throw new Error(
+      'ParticipantSet requesterAuthority does not support addressLookupTableAccounts',
+    );
+  }
   return {
     network: toProtoNetwork(
       resolveNetwork(args.network, wallet.network, defaultNetwork),
     ),
     feePayer: args.feePayer,
     swigAddress: wallet.swigConfigAddress,
-    requesterAuthority: walletAuthorityRequest(
-      resolveRequesterAuthority(wallet, args),
-    ),
+    requesterAuthority: walletAuthorityRequest(requesterAuthority),
     instructions: args.instructions.map(normalizeInstruction),
     addressLookupTableAccounts: args.addressLookupTableAccounts,
   };
@@ -279,6 +301,12 @@ export function addRoleRequest(
   }
   if ('programExecProof' in args.authority) {
     throw new Error('Add role authority does not support programExecProof');
+  }
+  if (
+    'participantSet' in args.authority &&
+    'roleId' in args.authority.participantSet
+  ) {
+    throw new Error('Add role ParticipantSet authority must omit roleId');
   }
   if (args.actions.length === 0) {
     throw new Error('Add role actions must not be empty');
@@ -391,6 +419,15 @@ export function walletAuthorityRequest(authority: WalletAuthority) {
     };
   }
   return authority;
+}
+
+function assertNonParticipantAuthority(
+  authority: WalletAuthority,
+  field: string,
+): void {
+  if ('participantSet' in authority) {
+    throw new Error(`${field} does not support ParticipantSet authority`);
+  }
 }
 
 function prepareOperationRequest(operation: PrepareOperation) {

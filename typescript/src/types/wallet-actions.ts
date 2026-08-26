@@ -14,15 +14,23 @@ export type WalletAuthority =
       };
     };
 
+export type DirectWalletAuthority = Extract<
+  WalletAuthority,
+  { ed25519: unknown } | { secp256k1: unknown } | { secp256r1: unknown }
+>;
+
+export type NonParticipantWalletAuthority = Exclude<
+  WalletAuthority,
+  { participantSet: unknown }
+>;
+
 export type AddRoleRequesterAuthority = Extract<
   WalletAuthority,
   { ed25519: unknown } | { secp256r1: unknown }
 >;
 
-export type RoleAuthority = Exclude<
-  WalletAuthority,
-  { programExecProof: unknown }
->;
+export type RoleAuthority =
+  DirectWalletAuthority | { participantSet: { address: string } };
 
 export type WalletAuthorityKind = 'ed25519' | 'secp256k1' | 'secp256r1';
 
@@ -78,7 +86,7 @@ export interface AddRoleArgs {
 export interface CreateWalletArgs {
   policyId?: string;
   feePayer: string;
-  initialUser?: WalletAuthority;
+  initialUser?: DirectWalletAuthority;
   recovery?: {
     guardianPubkey?: string;
     delaySeconds?: number;
@@ -130,7 +138,7 @@ export interface PrepareArgs {
 
 export interface SwapArgs {
   feePayer: string;
-  requesterAuthority?: WalletAuthority;
+  requesterAuthority?: NonParticipantWalletAuthority;
   inputMint: string;
   outputMint: string;
   amount: Amount;
@@ -151,7 +159,7 @@ export interface BaseRecoveryArgs {
 }
 
 export interface AddRecoveryAuthorityArgs extends BaseRecoveryArgs {
-  requesterAuthority?: WalletAuthority;
+  requesterAuthority?: NonParticipantWalletAuthority;
 }
 
 export interface ConfigureRecoveryArgs extends BaseRecoveryArgs {
@@ -175,12 +183,12 @@ export type StartRecoveryArgs = BaseRecoveryArgs & {
     | {
         guardianPubkey?: never;
         guardianSwigAddress: string;
-        guardianRequesterAuthority: WalletAuthority;
+        guardianRequesterAuthority: NonParticipantWalletAuthority;
       }
   );
 
 export interface CancelRecoveryArgs extends BaseRecoveryArgs {
-  requesterAuthority?: WalletAuthority;
+  requesterAuthority?: NonParticipantWalletAuthority;
 }
 
 export type ExecuteRecoveryArgs = BaseRecoveryArgs & {
@@ -193,7 +201,7 @@ export type ExecuteRecoveryArgs = BaseRecoveryArgs & {
       }
     | {
         guardianSwigAddress: string;
-        guardianRequesterAuthority: WalletAuthority;
+        guardianRequesterAuthority: NonParticipantWalletAuthority;
       }
   );
 
