@@ -19,6 +19,7 @@ import type {
   ListSwigTokenTransactionsResult,
   ListSwigTokenTransactionsWire,
   Network,
+  PaymentRequiredV2,
   Policy,
   PrepareArgs,
   PreparedRecoverySetupResult,
@@ -27,6 +28,7 @@ import type {
   PreparedTransactionWire,
   PrepareRecoverySetupArgs,
   PrepareTransactionsResponseWire,
+  PrepareX402PaymentOptions,
   RecoverySetupPlan,
   StartRecoveryArgs,
   SwapArgs,
@@ -36,7 +38,12 @@ import type {
   WalletHandleOptions,
   WalletReadArgs,
   WalletReference,
+  X402PreparationResult,
 } from '../types/index.js';
+import {
+  prepareX402Payment,
+  prepareX402PaymentFromResponse,
+} from '../x402/index.js';
 import { WalletHandle } from './handle.js';
 import {
   normalizeCreateWalletResponse,
@@ -219,6 +226,32 @@ export class WalletsClient {
     );
     return normalizePrepareTransactionsResponse(response);
   };
+
+  prepareX402PaymentFromResponse = (
+    wallet: WalletHandle,
+    response: Response,
+    options: PrepareX402PaymentOptions = {},
+  ): Promise<X402PreparationResult> =>
+    prepareX402PaymentFromResponse(
+      this.http,
+      wallet,
+      this.defaultNetwork,
+      response,
+      options,
+    );
+
+  prepareX402Payment = (
+    wallet: WalletHandle,
+    paymentRequired: PaymentRequiredV2,
+    acceptedIndex?: number,
+  ): Promise<X402PreparationResult> =>
+    prepareX402Payment(
+      this.http,
+      wallet,
+      this.defaultNetwork,
+      paymentRequired,
+      acceptedIndex,
+    );
 
   transferSol = async (
     wallet: WalletHandle,

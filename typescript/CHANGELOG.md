@@ -10,6 +10,11 @@
   entrypoints. Import the API-key SDK from the package root and expose only the
   application routes your product needs.
 
+### Minor Changes
+
+- Add x402 V2 payment preparation through the wallet client, including optional
+  accepted-offer selection and `PAYMENT-SIGNATURE` assembly.
+
 ## 0.8.0
 
 ### Major Changes

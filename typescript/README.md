@@ -217,6 +217,59 @@ const preparedTokenTransfer = await wallet.transfer.token({
 `wallet.transfer.splToken` is an alias, and calling `wallet.transfer(args)`
 directly routes to the SOL or token endpoint based on whether `mint` is set.
 
+### Prepare an x402 payment
+
+Pass the resource provider's `402 Payment Required` response directly to the
+wallet. When `acceptedIndex` is omitted, Swig selects the first eligible exact
+Solana requirement and returns its original array index.
+
+```typescript
+import { SwigClient } from '@swig-wallet/developer-sdk';
+import {
+  createX402Payment,
+  signPreparedTransaction,
+} from '@swig-wallet/developer-sdk/signers';
+
+const swig = new SwigClient({
+  apiKey: process.env.SWIG_API_KEY!,
+  network: 'devnet',
+});
+const wallet = swig.wallets.use({
+  swigConfigAddress,
+  walletAddress,
+  requesterAuthority: {
+    ed25519: {
+      publicKey: userPublicKey,
+    },
+  },
+});
+
+const challenge = await fetch(resourceUrl);
+const prepared = await wallet.x402.prepareFromResponse(challenge);
+const signed = await signPreparedTransaction(prepared.preparedTransaction, {
+  signTransaction,
+});
+const payment = createX402Payment(prepared, signed);
+
+const paidResponse = await fetch(resourceUrl, {
+  headers: payment.paymentSignatureHeaders,
+});
+```
+
+To select a specific offer, pass its index from the original `accepts` array:
+
+```typescript
+const prepared = await wallet.x402.prepareFromResponse(challenge, {
+  acceptedIndex,
+});
+```
+
+Use `signPreparedTransaction` for Ed25519 authorities. For
+Secp256r1/passkey authorities, use `signPreparedSwigTransaction` to fulfill
+the prepared transaction's signature requests.
+
+See the [complete runnable x402 example](https://github.com/anagrambuild/swig-developer-sdk/tree/main/typescript/examples/x402).
+
 ### Prepare a Jupiter swap
 
 ```typescript

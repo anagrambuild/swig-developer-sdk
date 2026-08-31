@@ -158,6 +158,44 @@ challenge. Compilation returns `compiled.transaction` plus
 `compiled.authorization_expiration_slot`; it does not sponsor, submit, or
 broadcast the result.
 
+### Prepare an x402 payment
+
+Pass the resource server's `402 Payment Required` response directly to the
+wallet. When `accepted_index` is omitted, Swig selects the first eligible exact
+Solana requirement and returns its original array index.
+
+```python
+import httpx
+
+from swig_developer_sdk import create_x402_payment
+from swig_developer_sdk.signers import sign_prepared_transaction
+
+async with httpx.AsyncClient() as http:
+    challenge = await http.get(resource_url)
+    prepared = await wallet.x402.prepare_from_response(challenge)
+    signed = await sign_prepared_transaction(
+        prepared.prepared_transaction,
+        sign_transaction=sign_transaction,
+    )
+    payment = create_x402_payment(prepared, signed)
+    response = await http.get(
+        resource_url,
+        headers=payment.payment_signature_headers,
+    )
+```
+
+To choose a specific offer from the original `accepts` array:
+
+```python
+prepared = await wallet.x402.prepare_from_response(
+    challenge,
+    accepted_index=accepted_index,
+)
+```
+
+Use `sign_prepared_transaction` for Ed25519 authorities and
+`sign_prepared_swig_transaction` for Secp256r1/passkey authorities.
+
 ### Prepare transfers and swaps
 
 ```python
@@ -568,17 +606,17 @@ response = await swig_handler.handle(
 # return response.body with response.status
 ```
 
-The handler covers the same routes as the TypeScript adapters: wallet create,
-grouped prepare, SOL and SPL transfers, Jupiter swap, wallet USD balance, token
-balances, token transactions, roles, paymaster balance, and the onramp and
-offramp routes.
+The handler covers wallet creation, grouped preparation, SOL and SPL transfers,
+Jupiter swaps, wallet USD balance, token balances, token transactions, roles,
+x402 payment preparation, paymaster balance, and the onramp and offramp routes.
 
 `SwigProxyConfig` accepts `api_key`, `transaction_api_url`, `network`,
 `fee_payer` (a value or a callable resolved per request),
 `resolve_requester_authority`, and an optional `httpx` transport. It falls back
 to `SWIG_DEVELOPER_API_KEY` / `SWIG_API_KEY`, `SWIG_TRANSACTION_API_URL`, and
-`SWIG_FEE_PAYER` when those fields are unset. A fee payer is required for every
-preparation route; the handler returns a `400` body when it cannot resolve one.
+`SWIG_FEE_PAYER` when those fields are unset. A fee payer is required for
+preparation routes other than x402; x402 obtains its sponsor fee payer from the
+selected payment requirement.
 
 ## Errors
 

@@ -43,6 +43,7 @@ Supported preparation routes:
 | POST | `/transaction/transfer/spl-token` |
 | POST | `/transaction/swap/jupiter` |
 | POST | `/transaction/prepare/custom` |
+| POST | `/transaction/payment/x402/prepare` |
 
 ParticipantSet setup and stateless approval compilation use:
 
@@ -68,6 +69,12 @@ not consume them. Prepared transactions are signed locally before submission.
 Prepared transaction responses also carry `network` and zero or more signature
 requests. Each signature request identifies the scheme, signer, message hash,
 slot, and counter.
+
+The x402 helper validates `PAYMENT-REQUIRED` with the pinned x402 V2 schema,
+preserves requirement order and index correspondence while forwarding the
+schema-normalized challenge and optional accepted index to the dedicated
+preparation route, and assembles `PAYMENT-SIGNATURE` after the prepared
+transaction is signed. The SDK does not settle the payment itself.
 
 Recovery routes exist in the backend and remain represented by guarded SDK
 types, but the recovery product flow is currently broken. Do not document,
