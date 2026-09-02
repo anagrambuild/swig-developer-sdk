@@ -13,6 +13,8 @@
   environment is a ramp environment rather than a MELD one. `getOrder`,
   `prepareTransfer`, and `submitTransfer` no longer take an environment; it is
   a property of the stored order.
+- `getQuotes` returns a `route` plus a `details` arm rather than a flat quote,
+  matching the Python client.
 - Quotes no longer carry an id and must not be cached. `createOrder` takes the
   chosen `route` plus a caller-generated `requestId` idempotency key, and
   re-prices the route server-side. Repeating a `requestId` returns the stored

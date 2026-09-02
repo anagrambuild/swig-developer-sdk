@@ -135,7 +135,7 @@ describe('RampClient', () => {
         receive: { token: { mint: 'MINT' } },
       },
     });
-    expect(quotes[0]?.type).toBe('buy');
+    expect(quotes[0]?.details.type).toBe('buy');
   });
 
   test('encodes native SOL as an empty message on a sell order', async () => {
@@ -165,10 +165,10 @@ describe('RampClient', () => {
         receiveFiatCurrencyCode: 'USD',
       },
     });
-    const quote = quotes[0];
-    expect(quote?.type).toBe('sell');
-    if (quote?.type === 'sell') {
-      expect(quote.sell.asset).toEqual({ type: 'sol' });
+    const details = quotes[0]?.details;
+    expect(details?.type).toBe('sell');
+    if (details?.type === 'sell') {
+      expect(details.sell.asset).toEqual({ type: 'sol' });
     }
   });
 
@@ -207,8 +207,8 @@ describe('RampClient', () => {
     });
 
     const quote = quotes[0];
-    if (quote?.type !== 'buy') throw new Error('expected a buy quote');
-    expect(quote.receive.baseUnits).toBe('18446744073709551615');
+    if (quote?.details.type !== 'buy') throw new Error('expected a buy quote');
+    expect(quote.details.receive.baseUnits).toBe('18446744073709551615');
 
     await swig.ramp.createOrder({
       requestId: 'request-1',
@@ -222,7 +222,10 @@ describe('RampClient', () => {
       route: quote.route,
       order: {
         type: 'sell',
-        sell: { asset: { type: 'sol' }, baseUnits: quote.receive.baseUnits },
+        sell: {
+          asset: { type: 'sol' },
+          baseUnits: quote.details.receive.baseUnits,
+        },
         receiveFiatCurrencyCode: 'USD',
       },
     });
