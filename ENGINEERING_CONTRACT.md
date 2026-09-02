@@ -5,13 +5,13 @@ migration. It is an engineering review artifact, not a product tutorial.
 
 ## Baseline
 
-- Backend source: `anagrambuild/swig-dev-portal` at `eac45da`.
+- Backend source: `anagrambuild/swig-dev-portal` at `0affa0c3`.
 - SDK source history: `anagrambuild/swig-ts/packages/developer-sdk` at
   `6fc9e22`, preserved with `git subtree split`.
 - Standalone repository: `anagrambuild/swig-developer-sdk`.
 - Public API base URL: `https://api.onswig.com`.
-- TypeScript package: `@swig-wallet/developer-sdk` version `0.9.0`.
-- Python package: `swig-developer-sdk` version `0.8.0`.
+- TypeScript package: `@swig-wallet/developer-sdk` version `0.10.0`.
+- Python package: `swig-developer-sdk` version `0.9.0`.
 
 The `0.9.0` TypeScript release removes the browser proxy and framework adapter
 entrypoints. Application-owned signing helpers now use the dedicated
@@ -30,6 +30,10 @@ entrypoints. Application-owned signing helpers now use the dedicated
 - GET requests use the configured retry policy.
 - POST requests do not retry by default because replay may duplicate work.
 - Sponsorship POST requests retry only when an idempotency key is present.
+- Ramp order creation always retries, because `requestId` is required and the
+  backend resolves a replay before any eligibility or credential check.
+- Ramp quote requests never retry. A retried quote is a different quote, so the
+  caller decides whether to ask again.
 
 ## Transaction API
 
@@ -120,28 +124,40 @@ accepted the bundle; it likewise may still be pending.
 
 ## Ramp API
 
-Every ramp request requires an environment (`sandbox` or `production`, encoded
-on the wire as the MELD enum). Options, quotes, and session creation also
-require `organizationMeldConfigurationId`. Quotes additionally require
-`externalCustomerId` and `swigConfigAddress`; session reads and off-ramp
-authorization actions identify the session in the route path instead.
+One service covers both directions. Direction is carried by the buy or sell
+order rather than a parallel field, so the two cannot disagree. Every request
+requires a `configurationId` and a `sandbox` or `production` ramp environment;
+order reads and transfer actions identify the order in the route path and take
+no environment, because the environment is a property of the stored order.
 
 | Method | Route |
 | --- | --- |
-| GET | `/wallet/api/ramp/onramp/options` |
-| POST | `/wallet/api/ramp/onramp/quote` |
-| POST | `/wallet/api/ramp/onramp/session` |
-| GET | `/wallet/api/ramp/onramp/session/{session_id}` |
-| GET | `/wallet/api/ramp/offramp/options` |
-| POST | `/wallet/api/ramp/offramp/quote` |
-| POST | `/wallet/api/ramp/offramp/session` |
-| POST | `/wallet/api/ramp/offramp/session/{session_id}/prepare` |
-| POST | `/wallet/api/ramp/offramp/session/{session_id}/submit` |
-| GET | `/wallet/api/ramp/offramp/session/{session_id}` |
+| GET | `/wallet/api/ramp/options` |
+| POST | `/wallet/api/ramp/quotes` |
+| POST | `/wallet/api/ramp/orders` |
+| GET | `/wallet/api/ramp/orders/{order_id}` |
+| POST | `/wallet/api/ramp/orders/{order_id}/transfer/prepare` |
+| POST | `/wallet/api/ramp/orders/{order_id}/transfer/submit` |
 
-The removed generic routes (`/ramp/options`, `/ramp/quote`, `/ramp/sessions`,
-and ramp transaction-history routes) are not part of the current backend.
-TypeScript and Python expose `swig.ramp.onramp` and `swig.ramp.offramp`.
+Quotes carry no identifier and must never be cached. Order creation takes the
+chosen route plus a caller-generated `requestId` idempotency key, unique within
+the configuration, and re-prices the route server-side. Repeating a `requestId`
+returns the stored order; repeating it with different inputs is refused.
+
+Amounts are integers in the smallest unit — minor units for fiat, base units
+for crypto — and are encoded as decimal strings in ProtoJSON, matching the
+existing uint64 fields. A value too precise for the currency is refused rather
+than rounded. Crypto is a two-case asset: native SOL, encoded as an empty
+`{"sol": {}}`, or an SPL mint.
+
+Selling adds a transfer leg. Preparation returns the transfer, the prepared
+transaction, and the canonical deposit; the application signs and submits.
+The prepared transaction is handed over once, so submitting with an empty
+`signedTransaction` resolves an attempt that was already broadcast.
+
+The previous direction-specific surface — `/wallet/api/ramp/{onramp,offramp}/*`
+with sessions, quote ids, `organizationMeldConfigurationId`, and the MELD
+environment enum — is not part of the current backend.
 
 ## Public identity API
 
