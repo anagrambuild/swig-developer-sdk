@@ -287,8 +287,8 @@ export function normalizeRampQuotes(
 
 function normalizeQuote(quote: RampQuoteWire): RampQuote {
   const route = normalizeRoute(quote.route);
-  if (quote.buy) return { ...normalizeBuyQuote(quote.buy), route };
-  if (quote.sell) return { ...normalizeSellQuote(quote.sell), route };
+  if (quote.buy) return { route, details: normalizeBuyQuote(quote.buy) };
+  if (quote.sell) return { route, details: normalizeSellQuote(quote.sell) };
   throw new Error('Ramp response is missing quote');
 }
 

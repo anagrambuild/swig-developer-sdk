@@ -117,7 +117,10 @@ export type RampQuoteDetails = RampBuyQuote | RampSellQuote;
  * Quotes carry no identifier and must never be cached; the chosen route is
  * re-priced when the order is created.
  */
-export type RampQuote = RampQuoteDetails & { route: RampRoute };
+export interface RampQuote {
+  route: RampRoute;
+  details: RampQuoteDetails;
+}
 
 export interface RampOrderContext {
   customerId: string;
