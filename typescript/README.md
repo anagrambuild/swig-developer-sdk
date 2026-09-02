@@ -374,123 +374,115 @@ const policy = await swig.wallets.getPolicy(policyId);
 
 ## Fiat ramps
 
-Ramp is split into `swig.ramp.onramp` and `swig.ramp.offramp`. Every ramp call
-requires an `environment` of `'sandbox'` or `'production'`; the SDK encodes it
-as the MELD enum on the wire. Options, quotes, and session creation also require
-`organizationMeldConfigurationId`. Quotes additionally require
-`externalCustomerId`, `swigConfigAddress`, and a network (from the argument or
-the client default).
+`swig.ramp` covers both directions. Direction is carried by the `buy` or `sell`
+order you pass, so there is no separate on-ramp or off-ramp client. Every call
+requires a `configurationId` and an `environment` of `'sandbox'` or
+`'production'`; `getOrder`, `prepareTransfer`, and `submitTransfer` identify the
+order in the route and take no environment.
 
-| Client method                            | Route                                                        |
-| ---------------------------------------- | ------------------------------------------------------------ |
-| `swig.ramp.onramp.getOptions`            | `GET /wallet/api/ramp/onramp/options`                        |
-| `swig.ramp.onramp.quote`                 | `POST /wallet/api/ramp/onramp/quote`                         |
-| `swig.ramp.onramp.createSession`         | `POST /wallet/api/ramp/onramp/session`                       |
-| `swig.ramp.onramp.getSession`            | `GET /wallet/api/ramp/onramp/session/{session_id}`           |
-| `swig.ramp.offramp.getOptions`           | `GET /wallet/api/ramp/offramp/options`                       |
-| `swig.ramp.offramp.quote`                | `POST /wallet/api/ramp/offramp/quote`                        |
-| `swig.ramp.offramp.createSession`        | `POST /wallet/api/ramp/offramp/session`                      |
-| `swig.ramp.offramp.prepareAuthorization` | `POST /wallet/api/ramp/offramp/session/{session_id}/prepare` |
-| `swig.ramp.offramp.submitAuthorization`  | `POST /wallet/api/ramp/offramp/session/{session_id}/submit`  |
-| `swig.ramp.offramp.getSession`           | `GET /wallet/api/ramp/offramp/session/{session_id}`          |
+Amounts are integers in the smallest unit the thing has — `minorUnits` for fiat
+(cents for USD, whole yen for JPY) and `baseUnits` for crypto. They cross the
+wire as decimal strings, so a value above 2^53 survives; pass a `bigint`,
+`number`, or `string` and read a `string` back. Crypto is a `CryptoAsset` of
+`{ type: 'sol' }` or `{ type: 'token', mint }`.
 
-### Onramp
+| Client method               | Route                                                      |
+| --------------------------- | ---------------------------------------------------------- |
+| `swig.ramp.getOptions`      | `GET /wallet/api/ramp/options`                             |
+| `swig.ramp.getQuotes`       | `POST /wallet/api/ramp/quotes`                             |
+| `swig.ramp.createOrder`     | `POST /wallet/api/ramp/orders`                             |
+| `swig.ramp.getOrder`        | `GET /wallet/api/ramp/orders/{order_id}`                   |
+| `swig.ramp.prepareTransfer` | `POST /wallet/api/ramp/orders/{order_id}/transfer/prepare` |
+| `swig.ramp.submitTransfer`  | `POST /wallet/api/ramp/orders/{order_id}/transfer/submit`  |
+
+### Options and quotes
+
+Read the options first, so currency, payment-method, and asset values come from
+the API rather than a hardcoded list. `AssetOption.decimals` and
+`FiatCurrencyOption.exponent` are the scales you need to build a valid amount.
 
 ```typescript
-const environment = 'sandbox';
-const organizationMeldConfigurationId = process.env.SWIG_MELD_CONFIG_ID!;
-
-const options = await swig.ramp.onramp.getOptions({
-  organizationMeldConfigurationId,
-  environment,
+const options = await swig.ramp.getOptions({
+  configurationId,
+  environment: 'sandbox',
+  direction: 'buy',
   countryCode: 'US',
 });
 
-const { quotes } = await swig.ramp.onramp.quote({
-  organizationMeldConfigurationId,
-  environment,
-  externalCustomerId,
-  swigConfigAddress,
-  network: 'devnet',
-  sourceAmount: '100.00',
-  sourceCurrencyCode: options.fiatCurrencyCodes[0]!,
-  destinationCurrencyCode: options.cryptoCurrencyCodes[0]!,
-  countryCode: 'US',
-  paymentMethodType: options.paymentMethodTypes[0],
+const quotes = await swig.ramp.getQuotes({
+  configurationId,
+  environment: 'sandbox',
+  location: { countryCode: 'US' },
+  order: {
+    type: 'buy',
+    spend: { currencyCode: 'USD', minorUnits: 10_000n },
+    receive: { type: 'token', mint: usdcMint },
+  },
 });
-
-const session = await swig.ramp.onramp.createSession({
-  organizationMeldConfigurationId,
-  environment,
-  quoteId: quotes[0]!.quoteId,
-});
-
-// Send session.launchUrl to the user. Treat it as a user-specific secret.
-const state = await swig.ramp.onramp.getSession({
-  sessionId: session.sessionId,
-  environment,
-});
-// state.status is one of 'unspecified' | 'created' | 'pending' | 'settling'
-// | 'settled' | 'failed' | 'declined' | 'cancelled' | 'refunded'
 ```
 
-### Offramp
+Quotes carry no identifier and must never be cached. Pick one and pass its
+`route` to `createOrder`; the route is re-priced when the order is created.
 
-Offramp adds an on-chain authorization step: the user's wallet must sign the
-transfer to the provider before the session can settle.
+### Orders
+
+`requestId` is your idempotency key and is unique within the configuration.
+Repeating it returns the stored order; repeating it with different inputs is
+refused, so mint it once and reuse it across retries.
 
 ```typescript
-import { signPreparedSwigTransaction } from '@swig-wallet/developer-sdk/signers';
-
-const options = await swig.ramp.offramp.getOptions({
-  organizationMeldConfigurationId,
-  environment,
-  countryCode: 'US',
+const order = await swig.ramp.createOrder({
+  requestId: crypto.randomUUID(),
+  configurationId,
+  environment: 'sandbox',
+  context: {
+    customerId,
+    swigConfigAddress,
+    location: { countryCode: 'US' },
+  },
+  route: quotes[0].route,
+  order: {
+    type: 'buy',
+    spend: { currencyCode: 'USD', minorUnits: 10_000n },
+    receive: { type: 'token', mint: usdcMint },
+  },
 });
+```
 
-const { quotes } = await swig.ramp.offramp.quote({
-  organizationMeldConfigurationId,
-  environment,
-  externalCustomerId,
-  swigConfigAddress,
-  network: 'mainnet',
-  sourceAmount: '25.00',
-  sourceCurrencyCode: options.cryptoCurrencies[0]!.currencyCode,
-  destinationCurrencyCode: options.fiatCurrencyCodes[0]!,
-  countryCode: 'US',
-  paymentMethodType: options.paymentMethodTypes[0],
-});
+A buy sends the customer to `order.launchUrl`. Poll `swig.ramp.getOrder` until
+the status is final; a read of a non-final order also reconciles it against the
+provider. `refunded` can follow `settled`.
 
-const session = await swig.ramp.offramp.createSession({
-  organizationMeldConfigurationId,
-  environment,
-  quoteId: quotes[0]!.quoteId,
-});
+> A `launchUrl` is a user-specific session URL. Hand it to the customer who owns
+> the order and keep it out of logs and analytics.
 
-const authorization = await swig.ramp.offramp.prepareAuthorization({
-  sessionId: session.sessionId,
-  environment,
+### Selling
+
+A sell waits for `awaiting-transfer` and a `deposit`, then moves the crypto from
+the Swig. Your application owns the signing step.
+
+```typescript
+const prepared = await swig.ramp.prepareTransfer({
+  orderId: order.id,
+  requesterAuthority: { ed25519: { publicKey: requester } },
   feePayer,
-  requesterAuthority: { secp256r1: { publicKey: passkeyPublicKey } },
 });
 
-// Show authorization.display to the user, then sign on the client.
-const signed = await signPreparedSwigTransaction(
-  authorization.preparedTransaction,
-  { secp256r1: passkeySigningFn },
+const signed = await signPreparedTransaction(
+  prepared.preparedTransaction,
+  signer,
 );
 
-const { solanaSignature } = await swig.ramp.offramp.submitAuthorization({
-  sessionId: session.sessionId,
-  environment,
-  authorizationId: authorization.authorizationId,
+const transfer = await swig.ramp.submitTransfer({
+  orderId: order.id,
+  transferId: prepared.transfer.transferId,
   signedTransaction: signed.transaction,
 });
 ```
 
-`authorization.display` carries the human-readable transfer summary
-(`sourceAmount`, `destinationAmount`, `serviceProvider`, wallet addresses, and
-optional `paymentMethodType` / `providerDestinationAmount`).
+The prepared transaction is handed over once. If you broadcast it and then lose
+it, call `submitTransfer` again without `signedTransaction` to resolve the
+attempt that is already live.
 
 ## Signing
 
@@ -576,7 +568,7 @@ const signed = await signPreparedTransaction(prepared, {
 
 Use this for any prepared transaction whose `signatureRequests` contains a
 `secp256r1` request. The same pattern applies to create, transfer, token
-transfer, swap, and offramp authorization.
+transfer, swap, and ramp transfer.
 
 ```typescript
 import {

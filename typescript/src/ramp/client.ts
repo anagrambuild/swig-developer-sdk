@@ -1,527 +1,509 @@
 import type { HttpClient } from '../core/index.js';
 import type {
-  CreateRampSessionArgs,
-  CreateRampSessionResult,
-  CreateRampSessionResultWire,
+  CreateRampOrderArgs,
+  CryptoAmount,
+  CryptoAmountWire,
+  CryptoAsset,
+  CryptoAssetWire,
+  FiatAmount,
+  FiatAmountWire,
   GetRampOptionsArgs,
-  GetRampSessionArgs,
-  MeldEnvironment,
+  GetRampOrderArgs,
+  GetRampQuotesArgs,
+  GetRampQuotesResponseWire,
   Network,
-  OfframpOptions,
-  OfframpOptionsWire,
-  OfframpSession,
-  OfframpSessionStatus,
-  OfframpSessionWire,
-  OfframpTransferDisplay,
-  OnrampOptions,
-  OnrampOptionsWire,
-  OnrampSession,
-  OnrampSessionStatus,
-  OnrampSessionWire,
-  PrepareOfframpAuthorizationArgs,
-  PrepareOfframpAuthorizationResult,
-  PrepareOfframpAuthorizationResultWire,
-  QuoteRampArgs,
-  QuoteRampResult,
-  QuoteRampResultWire,
-  RampCountryOption,
-  RampCountryOptionWire,
-  RampCryptoCurrencyOption,
-  RampCryptoCurrencyOptionWire,
+  PrepareRampTransferArgs,
+  PrepareRampTransferResponseWire,
+  PreparedRampTransfer,
+  PreparedRampTransferWire,
+  RampAssetOption,
+  RampAssetOptionWire,
+  RampBuyQuote,
+  RampBuyQuoteWire,
+  RampCountry,
+  RampCountryWire,
+  RampDeposit,
+  RampDepositWire,
+  RampDirection,
+  RampEnvironment,
+  RampFiatCurrencyOption,
+  RampFiatCurrencyOptionWire,
+  RampOptions,
+  RampOptionsWire,
+  RampOrder,
+  RampOrderRequest,
+  RampOrderResponseWire,
+  RampOrderStatus,
+  RampOrderWire,
   RampQuote,
   RampQuoteWire,
-  SubmitOfframpAuthorizationArgs,
-  SubmitOfframpAuthorizationResult,
-  SubmitOfframpAuthorizationResultWire,
+  RampRoute,
+  RampRouteWire,
+  RampSellQuote,
+  RampSellQuoteWire,
+  RampSubdivision,
+  RampSubdivisionWire,
+  RampTransfer,
+  RampTransferState,
+  RampTransferWire,
+  SubmitRampTransferArgs,
+  SubmitRampTransferResponseWire,
 } from '../types/index.js';
-import { normalizePreparedTransaction } from '../wallets/normalizers.js';
+import {
+  normalizeAmount,
+  normalizePreparedTransaction,
+} from '../wallets/normalizers.js';
 
 export class RampClient {
-  readonly onramp: OnrampClient;
-  readonly offramp: OfframpClient;
-
-  constructor(http: HttpClient, defaultNetwork?: Network) {
-    this.onramp = new OnrampClient(http, defaultNetwork);
-    this.offramp = new OfframpClient(http, defaultNetwork);
-  }
-}
-
-export class OnrampClient {
   constructor(
     private readonly http: HttpClient,
     private readonly defaultNetwork?: Network,
   ) {}
 
-  getOptions = async (args: GetRampOptionsArgs): Promise<OnrampOptions> =>
-    normalizeOnrampOptions(
-      await this.http.get<OnrampOptionsWire>(optionsPath('onramp', args)),
+  getOptions = async (args: GetRampOptionsArgs): Promise<RampOptions> =>
+    normalizeRampOptions(
+      await this.http.get<RampOptionsWire>(optionsPath(args)),
     );
 
-  quote = async (args: QuoteRampArgs): Promise<QuoteRampResult> =>
-    normalizeQuoteRampResult(
-      await this.http.post<QuoteRampResultWire>(
-        '/wallet/api/ramp/onramp/quote',
-        quoteRequest(args, this.defaultNetwork),
+  getQuotes = async (args: GetRampQuotesArgs): Promise<RampQuote[]> =>
+    normalizeRampQuotes(
+      await this.http.post<GetRampQuotesResponseWire>(
+        '/wallet/api/ramp/quotes',
+        quotesRequest(args),
       ),
     );
 
-  createSession = async (
-    args: CreateRampSessionArgs,
-  ): Promise<CreateRampSessionResult> =>
-    normalizeCreateRampSessionResult(
-      await this.http.post<CreateRampSessionResultWire>(
-        '/wallet/api/ramp/onramp/session',
-        sessionRequest(args),
+  createOrder = async (args: CreateRampOrderArgs): Promise<RampOrder> =>
+    // requestId makes a replay return the stored order, so a retry is safe.
+    normalizeRampOrderResponse(
+      await this.http.post<RampOrderResponseWire>(
+        '/wallet/api/ramp/orders',
+        orderRequest(args, this.defaultNetwork),
+        { retry: true },
       ),
     );
 
-  getSession = async (args: GetRampSessionArgs): Promise<OnrampSession> =>
-    normalizeOnrampSession(
-      await this.http.get<OnrampSessionWire>(sessionPath('onramp', args)),
-    );
-}
-
-export class OfframpClient {
-  constructor(
-    private readonly http: HttpClient,
-    private readonly defaultNetwork?: Network,
-  ) {}
-
-  getOptions = async (args: GetRampOptionsArgs): Promise<OfframpOptions> =>
-    normalizeOfframpOptions(
-      await this.http.get<OfframpOptionsWire>(optionsPath('offramp', args)),
+  getOrder = async (args: GetRampOrderArgs): Promise<RampOrder> =>
+    normalizeRampOrderResponse(
+      await this.http.get<RampOrderResponseWire>(orderPath(args.orderId)),
     );
 
-  quote = async (args: QuoteRampArgs): Promise<QuoteRampResult> =>
-    normalizeQuoteRampResult(
-      await this.http.post<QuoteRampResultWire>(
-        '/wallet/api/ramp/offramp/quote',
-        quoteRequest(args, this.defaultNetwork),
-      ),
-    );
-
-  createSession = async (
-    args: CreateRampSessionArgs,
-  ): Promise<CreateRampSessionResult> =>
-    normalizeCreateRampSessionResult(
-      await this.http.post<CreateRampSessionResultWire>(
-        '/wallet/api/ramp/offramp/session',
-        sessionRequest(args),
-      ),
-    );
-
-  prepareAuthorization = async (
-    args: PrepareOfframpAuthorizationArgs,
-  ): Promise<PrepareOfframpAuthorizationResult> => {
-    const response =
-      await this.http.post<PrepareOfframpAuthorizationResultWire>(
-        `/wallet/api/ramp/offramp/session/${encodeURIComponent(args.sessionId)}/prepare`,
-        {
-          requesterAuthority: args.requesterAuthority,
-          environment: environmentWire(args.environment),
-          feePayer: args.feePayer,
-        },
-      );
-    const prepared =
-      response.preparedTransaction ?? response.prepared_transaction;
-    if (!prepared) {
-      throw new Error('Ramp response is missing preparedTransaction');
-    }
-    return {
-      authorizationId: requiredString(
-        response.authorizationId ?? response.authorization_id,
-        'authorizationId',
-      ),
-      preparedTransaction: normalizePreparedTransaction(prepared),
-      display: normalizeTransferDisplay(response.display),
-    };
-  };
-
-  submitAuthorization = async (
-    args: SubmitOfframpAuthorizationArgs,
-  ): Promise<SubmitOfframpAuthorizationResult> => {
-    const response = await this.http.post<SubmitOfframpAuthorizationResultWire>(
-      `/wallet/api/ramp/offramp/session/${encodeURIComponent(args.sessionId)}/submit`,
+  prepareTransfer = async (
+    args: PrepareRampTransferArgs,
+  ): Promise<PreparedRampTransfer> => {
+    const response = await this.http.post<PrepareRampTransferResponseWire>(
+      `${orderPath(args.orderId)}/transfer/prepare`,
       {
-        authorizationId: args.authorizationId,
-        signedTransaction: args.signedTransaction,
-        environment: environmentWire(args.environment),
+        requesterAuthority: args.requesterAuthority,
+        feePayer: args.feePayer,
       },
     );
-    return {
-      solanaSignature: requiredString(
-        response.solanaSignature ?? response.solana_signature,
-        'solanaSignature',
+    return normalizePreparedRampTransfer(
+      requiredField(
+        response.preparedTransfer ?? response.prepared_transfer,
+        'preparedTransfer',
       ),
-    };
-  };
-
-  getSession = async (args: GetRampSessionArgs): Promise<OfframpSession> =>
-    normalizeOfframpSession(
-      await this.http.get<OfframpSessionWire>(sessionPath('offramp', args)),
     );
-}
+  };
 
-export function normalizeOnrampOptions(
-  response: OnrampOptionsWire,
-): OnrampOptions {
-  return {
-    ...normalizeCommonOptions(response),
-    cryptoCurrencyCodes:
-      response.cryptoCurrencyCodes ?? response.crypto_currency_codes ?? [],
+  submitTransfer = async (
+    args: SubmitRampTransferArgs,
+  ): Promise<RampTransfer> => {
+    const response = await this.http.post<SubmitRampTransferResponseWire>(
+      `${orderPath(args.orderId)}/transfer/submit`,
+      {
+        transferId: args.transferId,
+        signedTransaction: args.signedTransaction ?? '',
+      },
+    );
+    return normalizeRampTransfer(requiredField(response.transfer, 'transfer'));
   };
 }
 
-export function normalizeOfframpOptions(
-  response: OfframpOptionsWire,
-): OfframpOptions {
-  return {
-    ...normalizeCommonOptions(response),
-    cryptoCurrencies: (
-      response.cryptoCurrencies ??
-      response.crypto_currencies ??
-      []
-    ).map(normalizeCryptoCurrency),
-  };
-}
-
-export function normalizeQuoteRampResult(
-  response: QuoteRampResultWire,
-): QuoteRampResult {
-  return { quotes: (response.quotes ?? []).map(normalizeQuote) };
-}
-
-export function normalizeCreateRampSessionResult(
-  response: CreateRampSessionResultWire,
-): CreateRampSessionResult {
-  return {
-    sessionId: requiredString(
-      response.sessionId ?? response.session_id,
-      'sessionId',
-    ),
-    launchUrl: requiredString(
-      response.launchUrl ?? response.launch_url,
-      'launchUrl',
-    ),
-  };
-}
-
-export function normalizeOnrampSession(
-  response: OnrampSessionWire,
-): OnrampSession {
-  return {
-    ...normalizeSessionBase(response),
-    status: normalizeOnrampStatus(response.status),
-  };
-}
-
-export function normalizeOfframpSession(
-  response: OfframpSessionWire,
-): OfframpSession {
-  const base = normalizeSessionBase(response);
-  return {
-    ...base,
-    status: normalizeOfframpStatus(response.status),
-    sourceAmount: requiredString(
-      response.sourceAmount ?? response.source_amount,
-      'sourceAmount',
-    ),
-    sourceCurrencyCode: requiredString(
-      response.sourceCurrencyCode ?? response.source_currency_code,
-      'sourceCurrencyCode',
-    ),
-    destinationAmount: requiredString(
-      response.destinationAmount ?? response.destination_amount,
-      'destinationAmount',
-    ),
-    destinationCurrencyCode: requiredString(
-      response.destinationCurrencyCode ?? response.destination_currency_code,
-      'destinationCurrencyCode',
-    ),
-    serviceProvider: requiredString(
-      response.serviceProvider ?? response.service_provider,
-      'serviceProvider',
-    ),
-    ...optionalString(
-      'paymentMethodType',
-      response.paymentMethodType ?? response.payment_method_type,
-    ),
-    ...optionalString(
-      'solanaSignature',
-      response.solanaSignature ?? response.solana_signature,
-    ),
-    ...optionalString(
-      'providerDestinationAmount',
-      response.providerDestinationAmount ??
-        response.provider_destination_amount,
-    ),
-  };
-}
-
-function optionsPath(
-  direction: 'onramp' | 'offramp',
-  args: GetRampOptionsArgs,
-): string {
+function optionsPath(args: GetRampOptionsArgs): string {
   const query = new URLSearchParams({
-    organizationMeldConfigurationId: args.organizationMeldConfigurationId,
+    configurationId: args.configurationId,
     environment: environmentWire(args.environment),
+    direction: directionWire(args.direction),
   });
   if (args.countryCode) query.set('countryCode', args.countryCode);
   if (args.fiatCurrencyCode)
     query.set('fiatCurrencyCode', args.fiatCurrencyCode);
-  return `/wallet/api/ramp/${direction}/options?${query.toString()}`;
+  return `/wallet/api/ramp/options?${query.toString()}`;
 }
 
-function sessionPath(
-  direction: 'onramp' | 'offramp',
-  args: GetRampSessionArgs,
-): string {
-  const query = new URLSearchParams({
+function orderPath(orderId: string): string {
+  return `/wallet/api/ramp/orders/${encodeURIComponent(orderId)}`;
+}
+
+function quotesRequest(args: GetRampQuotesArgs) {
+  return {
+    configurationId: args.configurationId,
     environment: environmentWire(args.environment),
-  });
-  return `/wallet/api/ramp/${direction}/session/${encodeURIComponent(args.sessionId)}?${query.toString()}`;
+    location: locationRequest(args.location),
+    ...orderRequestBody(args.order),
+  };
 }
 
-function quoteRequest(args: QuoteRampArgs, defaultNetwork?: Network) {
-  const network = args.network ?? defaultNetwork;
+function orderRequest(args: CreateRampOrderArgs, defaultNetwork?: Network) {
+  const network = args.context.network ?? defaultNetwork;
   if (!network) throw new Error('network is required');
   return {
-    organizationMeldConfigurationId: args.organizationMeldConfigurationId,
-    externalCustomerId: args.externalCustomerId,
-    swigConfigAddress: args.swigConfigAddress,
-    network: network === 'mainnet' ? 'NETWORK_MAINNET' : 'NETWORK_DEVNET',
-    sourceAmount: args.sourceAmount,
-    sourceCurrencyCode: args.sourceCurrencyCode,
-    destinationCurrencyCode: args.destinationCurrencyCode,
-    countryCode: args.countryCode,
-    subdivision: args.subdivision,
-    paymentMethodType: args.paymentMethodType,
+    requestId: args.requestId,
+    configurationId: args.configurationId,
     environment: environmentWire(args.environment),
+    context: {
+      customerId: args.context.customerId,
+      swigConfigAddress: args.context.swigConfigAddress,
+      network: network === 'mainnet' ? 'NETWORK_MAINNET' : 'NETWORK_DEVNET',
+      location: locationRequest(args.context.location),
+    },
+    route: {
+      provider: args.route.provider,
+      paymentMethod: args.route.paymentMethod,
+    },
+    ...orderRequestBody(args.order),
   };
 }
 
-function sessionRequest(args: CreateRampSessionArgs) {
+function locationRequest(location: {
+  countryCode: string;
+  subdivisionCode?: string;
+}) {
   return {
-    organizationMeldConfigurationId: args.organizationMeldConfigurationId,
-    quoteId: args.quoteId,
-    environment: environmentWire(args.environment),
+    countryCode: location.countryCode,
+    ...optionalString('subdivisionCode', location.subdivisionCode),
   };
 }
 
-function environmentWire(environment: MeldEnvironment): string {
+/** Direction lives in the oneof, so there is no flag for it to disagree with. */
+function orderRequestBody(order: RampOrderRequest) {
+  if (order.type === 'buy') {
+    return {
+      buy: {
+        spend: {
+          currencyCode: order.spend.currencyCode,
+          minorUnits: normalizeAmount(order.spend.minorUnits),
+        },
+        receive: assetRequest(order.receive),
+      },
+    };
+  }
+  return {
+    sell: {
+      sell: {
+        asset: assetRequest(order.sell.asset),
+        baseUnits: normalizeAmount(order.sell.baseUnits),
+      },
+      receiveFiatCurrencyCode: order.receiveFiatCurrencyCode,
+    },
+  };
+}
+
+/** Native SOL is an empty message, so it is `{ sol: {} }` on the wire. */
+function assetRequest(asset: CryptoAsset) {
+  if (asset.type === 'sol') return { sol: {} };
+  return { token: { mint: asset.mint } };
+}
+
+function environmentWire(environment: RampEnvironment): string {
   switch (environment) {
     case 'production':
-      return 'MELD_ENVIRONMENT_PRODUCTION';
+      return 'RAMP_ENVIRONMENT_PRODUCTION';
     case 'sandbox':
-      return 'MELD_ENVIRONMENT_SANDBOX';
+      return 'RAMP_ENVIRONMENT_SANDBOX';
     default:
       throw new Error('environment must be "sandbox" or "production"');
   }
 }
 
-function normalizeCommonOptions(
-  response: Pick<
-    OnrampOptionsWire,
-    | 'countries'
-    | 'fiatCurrencyCodes'
-    | 'fiat_currency_codes'
-    | 'paymentMethodTypes'
-    | 'payment_method_types'
-  >,
-) {
+function directionWire(direction: RampDirection): string {
+  switch (direction) {
+    case 'buy':
+      return 'RAMP_DIRECTION_BUY';
+    case 'sell':
+      return 'RAMP_DIRECTION_SELL';
+    default:
+      throw new Error('direction must be "buy" or "sell"');
+  }
+}
+
+export function normalizeRampOptions(response: RampOptionsWire): RampOptions {
   return {
     countries: (response.countries ?? []).map(normalizeCountry),
-    fiatCurrencyCodes:
-      response.fiatCurrencyCodes ?? response.fiat_currency_codes ?? [],
-    paymentMethodTypes:
-      response.paymentMethodTypes ?? response.payment_method_types ?? [],
+    fiatCurrencies: (
+      response.fiatCurrencies ??
+      response.fiat_currencies ??
+      []
+    ).map(normalizeFiatCurrency),
+    paymentMethods: response.paymentMethods ?? response.payment_methods ?? [],
+    assets: (response.assets ?? []).map(normalizeAssetOption),
   };
 }
 
-function normalizeCountry(country: RampCountryOptionWire): RampCountryOption {
+function normalizeCountry(country: RampCountryWire): RampCountry {
   return {
-    countryCode: requiredString(
-      country.countryCode ?? country.country_code,
-      'countryCode',
-    ),
-    countryName: requiredString(
-      country.countryName ?? country.country_name,
-      'countryName',
-    ),
-    subdivisions: (country.subdivisions ?? []).map((subdivision) => ({
-      subdivisionCode: requiredString(
-        subdivision.subdivisionCode ?? subdivision.subdivision_code,
-        'subdivisionCode',
-      ),
-      subdivisionName: requiredString(
-        subdivision.subdivisionName ?? subdivision.subdivision_name,
-        'subdivisionName',
-      ),
-    })),
+    code: requiredString(country.code, 'code'),
+    name: requiredString(country.name, 'name'),
+    subdivisions: (country.subdivisions ?? []).map(normalizeSubdivision),
   };
 }
 
-function normalizeCryptoCurrency(
-  currency: RampCryptoCurrencyOptionWire,
-): RampCryptoCurrencyOption {
+function normalizeSubdivision(
+  subdivision: RampSubdivisionWire,
+): RampSubdivision {
+  return {
+    code: requiredString(subdivision.code, 'code'),
+    name: requiredString(subdivision.name, 'name'),
+  };
+}
+
+function normalizeFiatCurrency(
+  currency: RampFiatCurrencyOptionWire,
+): RampFiatCurrencyOption {
   return {
     currencyCode: requiredString(
       currency.currencyCode ?? currency.currency_code,
       'currencyCode',
     ),
-    currencyName: requiredString(
-      currency.currencyName ?? currency.currency_name,
-      'currencyName',
-    ),
-    iconUrl: requiredString(currency.iconUrl ?? currency.icon_url, 'iconUrl'),
-    contractAddress: requiredString(
-      currency.contractAddress ?? currency.contract_address,
-      'contractAddress',
-    ),
+    exponent: numberField(currency.exponent, 'exponent'),
   };
 }
 
-function normalizeQuote(quote: RampQuoteWire): RampQuote {
+function normalizeAssetOption(asset: RampAssetOptionWire): RampAssetOption {
   return {
-    quoteId: requiredString(quote.quoteId ?? quote.quote_id, 'quoteId'),
-    serviceProvider: requiredString(
-      quote.serviceProvider ?? quote.service_provider,
-      'serviceProvider',
-    ),
-    paymentMethodType: requiredString(
-      quote.paymentMethodType ?? quote.payment_method_type,
-      'paymentMethodType',
-    ),
-    sourceAmount: requiredString(
-      quote.sourceAmount ?? quote.source_amount,
-      'sourceAmount',
-    ),
-    sourceCurrencyCode: requiredString(
-      quote.sourceCurrencyCode ?? quote.source_currency_code,
-      'sourceCurrencyCode',
-    ),
-    destinationAmount: requiredString(
-      quote.destinationAmount ?? quote.destination_amount,
-      'destinationAmount',
-    ),
-    destinationCurrencyCode: requiredString(
-      quote.destinationCurrencyCode ?? quote.destination_currency_code,
-      'destinationCurrencyCode',
+    asset: normalizeAsset(asset.asset),
+    name: requiredString(asset.name, 'name'),
+    decimals: numberField(asset.decimals, 'decimals'),
+    ...optionalString('iconUrl', asset.iconUrl ?? asset.icon_url),
+  };
+}
+
+export function normalizeRampQuotes(
+  response: GetRampQuotesResponseWire,
+): RampQuote[] {
+  return (response.quotes ?? []).map(normalizeQuote);
+}
+
+function normalizeQuote(quote: RampQuoteWire): RampQuote {
+  const route = normalizeRoute(quote.route);
+  if (quote.buy) return { ...normalizeBuyQuote(quote.buy), route };
+  if (quote.sell) return { ...normalizeSellQuote(quote.sell), route };
+  throw new Error('Ramp response is missing quote');
+}
+
+function normalizeBuyQuote(quote: RampBuyQuoteWire): RampBuyQuote {
+  return {
+    type: 'buy',
+    spend: normalizeFiatAmount(quote.spend, 'spend'),
+    receive: normalizeCryptoAmount(quote.receive, 'receive'),
+    totalFee: normalizeFiatAmount(
+      quote.totalFee ?? quote.total_fee,
+      'totalFee',
     ),
     exchangeRate: requiredString(
       quote.exchangeRate ?? quote.exchange_rate,
       'exchangeRate',
     ),
-    totalFee: requiredString(quote.totalFee ?? quote.total_fee, 'totalFee'),
   };
 }
 
-function normalizeSessionBase(response: OnrampSessionWire) {
+function normalizeSellQuote(quote: RampSellQuoteWire): RampSellQuote {
   return {
-    sessionId: requiredString(
-      response.sessionId ?? response.session_id,
-      'sessionId',
+    type: 'sell',
+    sell: normalizeCryptoAmount(quote.sell, 'sell'),
+    receive: normalizeFiatAmount(quote.receive, 'receive'),
+    totalFee: normalizeFiatAmount(
+      quote.totalFee ?? quote.total_fee,
+      'totalFee',
     ),
-    createdAt: requiredString(
-      response.createdAt ?? response.created_at,
-      'createdAt',
-    ),
-    updatedAt: requiredString(
-      response.updatedAt ?? response.updated_at,
-      'updatedAt',
+    exchangeRate: requiredString(
+      quote.exchangeRate ?? quote.exchange_rate,
+      'exchangeRate',
     ),
   };
 }
 
-function normalizeTransferDisplay(
-  value: Record<string, unknown> | undefined,
-): OfframpTransferDisplay {
-  if (!value) throw new Error('Ramp response is missing display');
+function normalizeRoute(route?: RampRouteWire): RampRoute {
+  const wire = requiredField(route, 'route');
   return {
-    sourceWalletAddress: readWireString(value, 'sourceWalletAddress'),
-    destinationWalletAddress: readWireString(value, 'destinationWalletAddress'),
-    sourceAmount: readWireString(value, 'sourceAmount'),
-    sourceCurrencyCode: readWireString(value, 'sourceCurrencyCode'),
-    destinationAmount: readWireString(value, 'destinationAmount'),
-    destinationCurrencyCode: readWireString(value, 'destinationCurrencyCode'),
-    serviceProvider: readWireString(value, 'serviceProvider'),
-    ...optionalString(
-      'paymentMethodType',
-      readOptionalWireString(value, 'paymentMethodType'),
-    ),
-    ...optionalString(
-      'providerDestinationAmount',
-      readOptionalWireString(value, 'providerDestinationAmount'),
+    provider: requiredString(wire.provider, 'provider'),
+    paymentMethod: requiredString(
+      wire.paymentMethod ?? wire.payment_method,
+      'paymentMethod',
     ),
   };
 }
 
-function readWireString(value: Record<string, unknown>, field: string): string {
-  return requiredString(value[field] ?? value[toSnakeCase(field)], field);
+export function normalizeRampOrderResponse(
+  response: RampOrderResponseWire,
+): RampOrder {
+  return normalizeOrder(requiredField(response.order, 'order'));
 }
 
-function readOptionalWireString(
-  value: Record<string, unknown>,
-  field: string,
-): string | undefined {
-  const candidate = value[field] ?? value[toSnakeCase(field)];
-  return typeof candidate === 'string' ? candidate : undefined;
-}
+function normalizeOrder(order: RampOrderWire): RampOrder {
+  const base = {
+    id: requiredString(order.id, 'id'),
+    status: normalizeOrderStatus(order.status),
+    createdAt: requiredString(order.createdAt ?? order.created_at, 'createdAt'),
+    updatedAt: requiredString(order.updatedAt ?? order.updated_at, 'updatedAt'),
+  };
 
-function toSnakeCase(value: string): string {
-  return value.replace(/[A-Z]/g, (character) => `_${character.toLowerCase()}`);
-}
-
-function normalizeOnrampStatus(
-  value: string | number | undefined,
-): OnrampSessionStatus {
-  const statuses: OnrampSessionStatus[] = [
-    'unspecified',
-    'created',
-    'pending',
-    'settling',
-    'settled',
-    'failed',
-    'declined',
-    'cancelled',
-    'refunded',
-  ];
-  return normalizeStatus(value, statuses, 'ONRAMP_SESSION_STATUS_');
-}
-
-function normalizeOfframpStatus(
-  value: string | number | undefined,
-): OfframpSessionStatus {
-  const statuses: OfframpSessionStatus[] = [
-    'unspecified',
-    'created',
-    'provider-session-created',
-    'transfer-required',
-    'transfer-submitted',
-    'pending',
-    'settling',
-    'settled',
-    'declined',
-    'cancelled',
-    'failed',
-    'refunded',
-  ];
-  return normalizeStatus(value, statuses, 'OFFRAMP_SESSION_STATUS_');
-}
-
-function normalizeStatus<TStatus extends string>(
-  value: string | number | undefined,
-  statuses: TStatus[],
-  prefix: string,
-): TStatus {
-  if (typeof value === 'number' && statuses[value]) return statuses[value];
-  if (typeof value === 'string') {
-    const normalized = value.startsWith(prefix)
-      ? value.slice(prefix.length).toLowerCase().replaceAll('_', '-')
-      : value;
-    if (statuses.includes(normalized as TStatus)) return normalized as TStatus;
+  if (order.buy) {
+    return {
+      ...base,
+      type: 'buy',
+      quote: normalizeBuyQuote(requiredField(order.buy.quote, 'quote')),
+      ...optionalString(
+        'launchUrl',
+        order.buy.launchUrl ?? order.buy.launch_url,
+      ),
+    };
   }
-  throw new Error('Ramp response has invalid status');
+
+  if (order.sell) {
+    return {
+      ...base,
+      type: 'sell',
+      quote: normalizeSellQuote(requiredField(order.sell.quote, 'quote')),
+      ...optionalString(
+        'launchUrl',
+        order.sell.launchUrl ?? order.sell.launch_url,
+      ),
+      ...(order.sell.deposit
+        ? { deposit: normalizeDeposit(order.sell.deposit) }
+        : {}),
+      ...(order.sell.transfer
+        ? { transfer: normalizeRampTransfer(order.sell.transfer) }
+        : {}),
+    };
+  }
+
+  throw new Error('Ramp response is missing order details');
+}
+
+function normalizePreparedRampTransfer(
+  response: PreparedRampTransferWire,
+): PreparedRampTransfer {
+  return {
+    transfer: normalizeRampTransfer(
+      requiredField(response.transfer, 'transfer'),
+    ),
+    preparedTransaction: normalizePreparedTransaction(
+      requiredField(
+        response.preparedTransaction ?? response.prepared_transaction,
+        'preparedTransaction',
+      ),
+    ),
+    deposit: normalizeDeposit(requiredField(response.deposit, 'deposit')),
+  };
+}
+
+export function normalizeRampTransfer(
+  transfer: RampTransferWire,
+): RampTransfer {
+  return {
+    transferId: requiredString(
+      transfer.transferId ?? transfer.transfer_id,
+      'transferId',
+    ),
+    state: normalizeTransferState(transfer.state),
+    expiresAt: requiredString(
+      transfer.expiresAt ?? transfer.expires_at,
+      'expiresAt',
+    ),
+    ...optionalString(
+      'solanaSignature',
+      transfer.solanaSignature ?? transfer.solana_signature,
+    ),
+  };
+}
+
+function normalizeDeposit(deposit: RampDepositWire): RampDeposit {
+  return {
+    address: requiredString(deposit.address, 'address'),
+    amount: normalizeCryptoAmount(deposit.amount, 'amount'),
+  };
+}
+
+function normalizeFiatAmount(
+  amount: FiatAmountWire | undefined,
+  field: string,
+): FiatAmount {
+  const wire = requiredField(amount, field);
+  return {
+    currencyCode: requiredString(
+      wire.currencyCode ?? wire.currency_code,
+      'currencyCode',
+    ),
+    minorUnits: unitsField(wire.minorUnits ?? wire.minor_units, 'minorUnits'),
+  };
+}
+
+function normalizeCryptoAmount(
+  amount: CryptoAmountWire | undefined,
+  field: string,
+): CryptoAmount {
+  const wire = requiredField(amount, field);
+  return {
+    asset: normalizeAsset(wire.asset),
+    baseUnits: unitsField(wire.baseUnits ?? wire.base_units, 'baseUnits'),
+  };
+}
+
+/** Key presence, not truthiness: native SOL arrives as an empty object. */
+function normalizeAsset(asset?: CryptoAssetWire): CryptoAsset {
+  if (asset && 'sol' in asset) return { type: 'sol' };
+  if (asset && 'token' in asset) {
+    return { type: 'token', mint: requiredString(asset.token?.mint, 'mint') };
+  }
+  throw new Error('Ramp response is missing asset');
+}
+
+const ORDER_STATUSES: Record<string, RampOrderStatus> = {
+  RAMP_ORDER_STATUS_UNSPECIFIED: 'unspecified',
+  RAMP_ORDER_STATUS_CREATING: 'creating',
+  RAMP_ORDER_STATUS_CREATION_UNCERTAIN: 'creation-uncertain',
+  RAMP_ORDER_STATUS_AWAITING_CUSTOMER: 'awaiting-customer',
+  RAMP_ORDER_STATUS_AWAITING_TRANSFER: 'awaiting-transfer',
+  RAMP_ORDER_STATUS_PROCESSING: 'processing',
+  RAMP_ORDER_STATUS_SETTLING: 'settling',
+  RAMP_ORDER_STATUS_SETTLED: 'settled',
+  RAMP_ORDER_STATUS_DECLINED: 'declined',
+  RAMP_ORDER_STATUS_CANCELLED: 'cancelled',
+  RAMP_ORDER_STATUS_FAILED: 'failed',
+  RAMP_ORDER_STATUS_REFUNDED: 'refunded',
+};
+
+const TRANSFER_STATES: Record<string, RampTransferState> = {
+  TRANSFER_STATE_UNSPECIFIED: 'unspecified',
+  TRANSFER_STATE_PREPARED: 'prepared',
+  TRANSFER_STATE_SUBMITTED: 'submitted',
+  TRANSFER_STATE_LANDED: 'landed',
+  TRANSFER_STATE_FAILED: 'failed',
+  TRANSFER_STATE_EXPIRED: 'expired',
+};
+
+function normalizeOrderStatus(value?: string): RampOrderStatus {
+  const status = value ? ORDER_STATUSES[value] : undefined;
+  if (!status) throw new Error('Ramp response has invalid status');
+  return status;
+}
+
+function normalizeTransferState(value?: string): RampTransferState {
+  const state = value ? TRANSFER_STATES[value] : undefined;
+  if (!state) throw new Error('Ramp response has invalid state');
+  return state;
+}
+
+function requiredField<TValue>(
+  value: TValue | undefined,
+  field: string,
+): TValue {
+  if (value === undefined || value === null) {
+    throw new Error(`Ramp response is missing ${field}`);
+  }
+  return value;
 }
 
 function requiredString(value: unknown, field: string): string {
@@ -529,6 +511,25 @@ function requiredString(value: unknown, field: string): string {
     throw new Error(`Ramp response is missing ${field}`);
   }
   return value;
+}
+
+/** uint64 crosses the wire as a decimal string; keeping it one avoids 2^53. */
+function unitsField(value: number | string | undefined, field: string): string {
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) {
+    throw new Error(`Ramp response has invalid ${field}`);
+  }
+  return value;
+}
+
+function numberField(
+  value: number | string | undefined,
+  field: string,
+): number {
+  const parsed = typeof value === 'string' ? Number(value) : value;
+  if (typeof parsed !== 'number' || !Number.isFinite(parsed)) {
+    throw new Error(`Ramp response is missing ${field}`);
+  }
+  return parsed;
 }
 
 function optionalString<TKey extends string>(key: TKey, value: unknown) {
