@@ -1,1 +1,1 @@
-export { OfframpClient, OnrampClient, RampClient } from './client.js';
+export { RampClient } from './client.js';

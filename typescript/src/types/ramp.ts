@@ -1,277 +1,361 @@
-import type { Network } from './common.js';
+import type { Amount, Network } from './common.js';
 import type {
   PreparedTransaction,
   PreparedTransactionWire,
 } from './transaction.js';
 import type { WalletAuthority } from './wallet-actions.js';
 
-export type MeldEnvironment = 'sandbox' | 'production';
+export type RampEnvironment = 'sandbox' | 'production';
+
+/** Only options needs this; every other call infers direction from the order. */
+export type RampDirection = 'buy' | 'sell';
+
+/** Native SOL carries no mint, so the two cases cannot be mixed up. */
+export type CryptoAsset = { type: 'sol' } | { type: 'token'; mint: string };
+
+/** Minor units: cents for USD, whole yen for JPY. */
+export interface FiatAmount {
+  currencyCode: string;
+  minorUnits: string;
+}
+
+export interface CryptoAmount {
+  asset: CryptoAsset;
+  baseUnits: string;
+}
+
+export interface FiatAmountInput {
+  currencyCode: string;
+  minorUnits: Amount;
+}
+
+export interface CryptoAmountInput {
+  asset: CryptoAsset;
+  baseUnits: Amount;
+}
+
+export interface RampRoute {
+  provider: string;
+  paymentMethod: string;
+}
+
+export interface RampLocation {
+  countryCode: string;
+  subdivisionCode?: string;
+}
+
+export type RampOrderRequest =
+  | { type: 'buy'; spend: FiatAmountInput; receive: CryptoAsset }
+  | { type: 'sell'; sell: CryptoAmountInput; receiveFiatCurrencyCode: string };
 
 export interface RampConfigurationArgs {
-  organizationMeldConfigurationId: string;
-  environment: MeldEnvironment;
+  configurationId: string;
+  environment: RampEnvironment;
 }
 
 export interface GetRampOptionsArgs extends RampConfigurationArgs {
+  direction: RampDirection;
   countryCode?: string;
   fiatCurrencyCode?: string;
 }
 
-export interface RampSubdivisionOption {
-  subdivisionCode: string;
-  subdivisionName: string;
+export interface RampSubdivision {
+  code: string;
+  name: string;
 }
 
-export interface RampCountryOption {
-  countryCode: string;
-  countryName: string;
-  subdivisions: RampSubdivisionOption[];
+export interface RampCountry {
+  code: string;
+  name: string;
+  subdivisions: RampSubdivision[];
 }
 
-export interface RampCryptoCurrencyOption {
+export interface RampAssetOption {
+  asset: CryptoAsset;
+  name: string;
+  iconUrl?: string;
+  decimals: number;
+}
+
+export interface RampFiatCurrencyOption {
   currencyCode: string;
-  currencyName: string;
-  iconUrl: string;
-  contractAddress: string;
+  exponent: number;
 }
 
 export interface RampOptions {
-  countries: RampCountryOption[];
-  fiatCurrencyCodes: string[];
-  paymentMethodTypes: string[];
+  countries: RampCountry[];
+  fiatCurrencies: RampFiatCurrencyOption[];
+  paymentMethods: string[];
+  assets: RampAssetOption[];
 }
 
-export interface OnrampOptions extends RampOptions {
-  cryptoCurrencyCodes: string[];
+export interface GetRampQuotesArgs extends RampConfigurationArgs {
+  location: RampLocation;
+  order: RampOrderRequest;
 }
 
-export interface OfframpOptions extends RampOptions {
-  cryptoCurrencies: RampCryptoCurrencyOption[];
+export interface RampBuyQuote {
+  type: 'buy';
+  spend: FiatAmount;
+  receive: CryptoAmount;
+  totalFee: FiatAmount;
+  /** Display-only exact decimal; a rate has no minor unit to scale to. */
+  exchangeRate: string;
 }
 
-export interface QuoteRampArgs extends RampConfigurationArgs {
-  externalCustomerId: string;
+export interface RampSellQuote {
+  type: 'sell';
+  sell: CryptoAmount;
+  receive: FiatAmount;
+  totalFee: FiatAmount;
+  exchangeRate: string;
+}
+
+export type RampQuoteDetails = RampBuyQuote | RampSellQuote;
+
+/**
+ * Quotes carry no identifier and must never be cached; the chosen route is
+ * re-priced when the order is created.
+ */
+export type RampQuote = RampQuoteDetails & { route: RampRoute };
+
+export interface RampOrderContext {
+  customerId: string;
   swigConfigAddress: string;
   network?: Network;
-  sourceAmount: string;
-  sourceCurrencyCode: string;
-  destinationCurrencyCode: string;
-  countryCode: string;
-  subdivision?: string;
-  paymentMethodType?: string;
+  location: RampLocation;
 }
 
-export interface RampQuote {
-  quoteId: string;
-  serviceProvider: string;
-  paymentMethodType: string;
-  sourceAmount: string;
-  sourceCurrencyCode: string;
-  destinationAmount: string;
-  destinationCurrencyCode: string;
-  exchangeRate: string;
-  totalFee: string;
+export interface CreateRampOrderArgs extends RampConfigurationArgs {
+  /** Caller-generated idempotency key, unique within the configuration. */
+  requestId: string;
+  context: RampOrderContext;
+  route: RampRoute;
+  order: RampOrderRequest;
 }
 
-export interface QuoteRampResult {
-  quotes: RampQuote[];
+export interface GetRampOrderArgs {
+  orderId: string;
 }
 
-export interface CreateRampSessionArgs extends RampConfigurationArgs {
-  quoteId: string;
-}
-
-export interface CreateRampSessionResult {
-  sessionId: string;
-  launchUrl: string;
-}
-
-export interface GetRampSessionArgs {
-  sessionId: string;
-  environment: MeldEnvironment;
-}
-
-export type OnrampSessionStatus =
+export type RampOrderStatus =
   | 'unspecified'
-  | 'created'
-  | 'pending'
+  | 'creating'
+  | 'creation-uncertain'
+  | 'awaiting-customer'
+  | 'awaiting-transfer'
+  | 'processing'
   | 'settling'
   | 'settled'
-  | 'failed'
   | 'declined'
   | 'cancelled'
+  | 'failed'
   | 'refunded';
 
-export type OfframpSessionStatus =
-  | OnrampSessionStatus
-  | 'provider-session-created'
-  | 'transfer-required'
-  | 'transfer-submitted';
+export type RampTransferState =
+  'unspecified' | 'prepared' | 'submitted' | 'landed' | 'failed' | 'expired';
 
-export interface OnrampSession {
-  sessionId: string;
-  status: OnrampSessionStatus;
+export interface RampDeposit {
+  address: string;
+  amount: CryptoAmount;
+}
+
+export interface RampTransfer {
+  transferId: string;
+  state: RampTransferState;
+  solanaSignature?: string;
+  expiresAt: string;
+}
+
+interface RampOrderBase {
+  id: string;
+  status: RampOrderStatus;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface OfframpSession extends Omit<OnrampSession, 'status'> {
-  status: OfframpSessionStatus;
-  sourceAmount: string;
-  sourceCurrencyCode: string;
-  destinationAmount: string;
-  destinationCurrencyCode: string;
-  serviceProvider: string;
-  paymentMethodType?: string;
-  solanaSignature?: string;
-  providerDestinationAmount?: string;
+export interface RampBuyOrder extends RampOrderBase {
+  type: 'buy';
+  quote: RampBuyQuote;
+  launchUrl?: string;
 }
 
-export interface PrepareOfframpAuthorizationArgs extends GetRampSessionArgs {
+export interface RampSellOrder extends RampOrderBase {
+  type: 'sell';
+  quote: RampSellQuote;
+  launchUrl?: string;
+  /** Absent until the provider assigns one. */
+  deposit?: RampDeposit;
+  /** Absent until a transfer is prepared. */
+  transfer?: RampTransfer;
+}
+
+export type RampOrder = RampBuyOrder | RampSellOrder;
+
+export interface PrepareRampTransferArgs {
+  orderId: string;
   requesterAuthority: WalletAuthority;
   feePayer: string;
 }
 
-export interface OfframpTransferDisplay {
-  sourceWalletAddress: string;
-  destinationWalletAddress: string;
-  sourceAmount: string;
-  sourceCurrencyCode: string;
-  destinationAmount: string;
-  destinationCurrencyCode: string;
-  serviceProvider: string;
-  paymentMethodType?: string;
-  providerDestinationAmount?: string;
-}
-
-export interface PrepareOfframpAuthorizationResult {
-  authorizationId: string;
+export interface PreparedRampTransfer {
+  transfer: RampTransfer;
   preparedTransaction: PreparedTransaction;
-  display: OfframpTransferDisplay;
+  deposit: RampDeposit;
 }
 
-export interface SubmitOfframpAuthorizationArgs extends GetRampSessionArgs {
-  authorizationId: string;
-  /** Base64-encoded signed Solana transaction. */
-  signedTransaction: string;
+export interface SubmitRampTransferArgs {
+  orderId: string;
+  transferId: string;
+  /**
+   * Base64-encoded signed Solana transaction. Omit to resolve an attempt that
+   * was already broadcast; the prepared transaction is handed over only once.
+   */
+  signedTransaction?: string;
 }
 
-export interface SubmitOfframpAuthorizationResult {
-  solanaSignature: string;
+export interface CryptoAssetWire {
+  sol?: Record<string, never>;
+  token?: { mint?: string };
 }
 
-export interface RampCountryOptionWire {
-  country_code?: string;
-  countryCode?: string;
-  country_name?: string;
-  countryName?: string;
-  subdivisions?: Array<{
-    subdivision_code?: string;
-    subdivisionCode?: string;
-    subdivision_name?: string;
-    subdivisionName?: string;
-  }>;
-}
-
-export interface RampCryptoCurrencyOptionWire {
+export interface FiatAmountWire {
   currency_code?: string;
   currencyCode?: string;
-  currency_name?: string;
-  currencyName?: string;
+  minor_units?: number | string;
+  minorUnits?: number | string;
+}
+
+export interface CryptoAmountWire {
+  asset?: CryptoAssetWire;
+  base_units?: number | string;
+  baseUnits?: number | string;
+}
+
+export interface RampRouteWire {
+  provider?: string;
+  payment_method?: string;
+  paymentMethod?: string;
+}
+
+export interface RampSubdivisionWire {
+  code?: string;
+  name?: string;
+}
+
+export interface RampCountryWire {
+  code?: string;
+  name?: string;
+  subdivisions?: RampSubdivisionWire[];
+}
+
+export interface RampAssetOptionWire {
+  asset?: CryptoAssetWire;
+  name?: string;
   icon_url?: string;
   iconUrl?: string;
-  contract_address?: string;
-  contractAddress?: string;
+  decimals?: number | string;
 }
 
-export interface OnrampOptionsWire {
-  countries?: RampCountryOptionWire[];
-  fiat_currency_codes?: string[];
-  fiatCurrencyCodes?: string[];
-  payment_method_types?: string[];
-  paymentMethodTypes?: string[];
-  crypto_currency_codes?: string[];
-  cryptoCurrencyCodes?: string[];
+export interface RampFiatCurrencyOptionWire {
+  currency_code?: string;
+  currencyCode?: string;
+  exponent?: number | string;
 }
 
-export interface OfframpOptionsWire extends Omit<
-  OnrampOptionsWire,
-  'crypto_currency_codes' | 'cryptoCurrencyCodes'
-> {
-  crypto_currencies?: RampCryptoCurrencyOptionWire[];
-  cryptoCurrencies?: RampCryptoCurrencyOptionWire[];
+export interface RampOptionsWire {
+  countries?: RampCountryWire[];
+  fiat_currencies?: RampFiatCurrencyOptionWire[];
+  fiatCurrencies?: RampFiatCurrencyOptionWire[];
+  payment_methods?: string[];
+  paymentMethods?: string[];
+  assets?: RampAssetOptionWire[];
+}
+
+export interface RampBuyQuoteWire {
+  spend?: FiatAmountWire;
+  receive?: CryptoAmountWire;
+  total_fee?: FiatAmountWire;
+  totalFee?: FiatAmountWire;
+  exchange_rate?: string;
+  exchangeRate?: string;
+}
+
+export interface RampSellQuoteWire {
+  sell?: CryptoAmountWire;
+  receive?: FiatAmountWire;
+  total_fee?: FiatAmountWire;
+  totalFee?: FiatAmountWire;
+  exchange_rate?: string;
+  exchangeRate?: string;
 }
 
 export interface RampQuoteWire {
-  quote_id?: string;
-  quoteId?: string;
-  service_provider?: string;
-  serviceProvider?: string;
-  payment_method_type?: string;
-  paymentMethodType?: string;
-  source_amount?: string;
-  sourceAmount?: string;
-  source_currency_code?: string;
-  sourceCurrencyCode?: string;
-  destination_amount?: string;
-  destinationAmount?: string;
-  destination_currency_code?: string;
-  destinationCurrencyCode?: string;
-  exchange_rate?: string;
-  exchangeRate?: string;
-  total_fee?: string;
-  totalFee?: string;
+  route?: RampRouteWire;
+  buy?: RampBuyQuoteWire;
+  sell?: RampSellQuoteWire;
 }
 
-export interface QuoteRampResultWire {
+export interface GetRampQuotesResponseWire {
   quotes?: RampQuoteWire[];
 }
 
-export interface CreateRampSessionResultWire {
-  session_id?: string;
-  sessionId?: string;
+export interface RampDepositWire {
+  address?: string;
+  amount?: CryptoAmountWire;
+}
+
+export interface RampTransferWire {
+  transfer_id?: string;
+  transferId?: string;
+  state?: string;
+  solana_signature?: string;
+  solanaSignature?: string;
+  expires_at?: string;
+  expiresAt?: string;
+}
+
+export interface RampBuyOrderDetailsWire {
+  quote?: RampBuyQuoteWire;
   launch_url?: string;
   launchUrl?: string;
 }
 
-export interface OnrampSessionWire {
-  session_id?: string;
-  sessionId?: string;
-  status?: string | number;
+export interface RampSellOrderDetailsWire {
+  quote?: RampSellQuoteWire;
+  launch_url?: string;
+  launchUrl?: string;
+  deposit?: RampDepositWire;
+  transfer?: RampTransferWire;
+}
+
+export interface RampOrderWire {
+  id?: string;
+  status?: string;
   created_at?: string;
   createdAt?: string;
   updated_at?: string;
   updatedAt?: string;
+  buy?: RampBuyOrderDetailsWire;
+  sell?: RampSellOrderDetailsWire;
 }
 
-export interface OfframpSessionWire extends OnrampSessionWire {
-  source_amount?: string;
-  sourceAmount?: string;
-  source_currency_code?: string;
-  sourceCurrencyCode?: string;
-  destination_amount?: string;
-  destinationAmount?: string;
-  destination_currency_code?: string;
-  destinationCurrencyCode?: string;
-  service_provider?: string;
-  serviceProvider?: string;
-  payment_method_type?: string;
-  paymentMethodType?: string;
-  solana_signature?: string;
-  solanaSignature?: string;
-  provider_destination_amount?: string;
-  providerDestinationAmount?: string;
+export interface RampOrderResponseWire {
+  order?: RampOrderWire;
 }
 
-export interface PrepareOfframpAuthorizationResultWire {
-  authorization_id?: string;
-  authorizationId?: string;
+export interface PreparedRampTransferWire {
+  transfer?: RampTransferWire;
   prepared_transaction?: PreparedTransactionWire;
   preparedTransaction?: PreparedTransactionWire;
-  display?: Record<string, unknown>;
+  deposit?: RampDepositWire;
 }
 
-export interface SubmitOfframpAuthorizationResultWire {
-  solana_signature?: string;
-  solanaSignature?: string;
+export interface PrepareRampTransferResponseWire {
+  prepared_transfer?: PreparedRampTransferWire;
+  preparedTransfer?: PreparedRampTransferWire;
+}
+
+export interface SubmitRampTransferResponseWire {
+  transfer?: RampTransferWire;
 }
