@@ -15,8 +15,19 @@ from .client import SwigClient
 from .common import DEFAULT_BACKEND_URL, Network, WalletAuthority, normalize_network
 from .paymaster import PaymasterBalanceKind
 from .ramp import (
-    MeldEnvironment,
-    QuoteRampArgs,
+    CryptoAmountInput,
+    CryptoAsset,
+    FiatAmountInput,
+    NativeSolAsset,
+    RampBuyOrderRequest,
+    RampDirection,
+    RampEnvironment,
+    RampLocation,
+    RampOrderContext,
+    RampOrderRequest,
+    RampRoute,
+    RampSellOrderRequest,
+    SplTokenAsset,
 )
 from .wallets import (
     RecoveryOptions,
@@ -33,12 +44,10 @@ PostProxyRoute: TypeAlias = Literal[
     "transfer/spl-token",
     "swap/jupiter",
     "x402/prepare",
-    "ramp/onramp/quote",
-    "ramp/onramp/session",
-    "ramp/offramp/quote",
-    "ramp/offramp/session",
-    "ramp/offramp/prepare",
-    "ramp/offramp/submit",
+    "ramp/quotes",
+    "ramp/orders",
+    "ramp/transfer/prepare",
+    "ramp/transfer/submit",
 ]
 ReadProxyRoute: TypeAlias = Literal[
     "wallet/balance/usd",
@@ -46,10 +55,8 @@ ReadProxyRoute: TypeAlias = Literal[
     "wallet/token-transactions",
     "wallet/roles",
     "paymaster/balance",
-    "ramp/onramp/options",
-    "ramp/onramp/session",
-    "ramp/offramp/options",
-    "ramp/offramp/session",
+    "ramp/options",
+    "ramp/order",
 ]
 ProxyRoute: TypeAlias = PostProxyRoute | ReadProxyRoute
 T = TypeVar("T")
@@ -137,7 +144,7 @@ class SwigProxyHandler:
         body: Mapping[str, object],
         query: Mapping[str, str],
     ) -> Mapping[str, object]:
-        route, session_id = _resolve_post_route(path)
+        route, order_id = _resolve_post_route(path)
         network = _read_network(body.get("network")) or self._config.network
         wallet = None if route.startswith("ramp/") else _read_wallet(body.get("wallet"))
         context = SwigRouteContext(
@@ -168,83 +175,56 @@ class SwigProxyHandler:
                     "Wallet creation response is missing transaction", 502
                 )
             return {"prepared": created}
-        if route in ("ramp/onramp/quote", "ramp/offramp/quote"):
-            client = (
-                swig.ramp.onramp if route == "ramp/onramp/quote" else swig.ramp.offramp
-            )
+        if route == "ramp/quotes":
             return cast(
                 Mapping[str, object],
                 _to_wire(
-                    await client.quote(
-                        QuoteRampArgs(
-                            organization_meld_configuration_id=_required_string(
-                                body, "organizationMeldConfigurationId"
-                            ),
-                            environment=_read_meld_environment(body.get("environment")),
-                            external_customer_id=_required_string(
-                                body, "externalCustomerId"
-                            ),
-                            swig_config_address=_required_string(
-                                body, "swigConfigAddress"
-                            ),
-                            network=network,
-                            source_amount=_required_string(body, "sourceAmount"),
-                            source_currency_code=_required_string(
-                                body, "sourceCurrencyCode"
-                            ),
-                            destination_currency_code=_required_string(
-                                body, "destinationCurrencyCode"
-                            ),
-                            country_code=_required_string(body, "countryCode"),
-                            subdivision=_optional_string(body.get("subdivision")),
-                            payment_method_type=_optional_string(
-                                body.get("paymentMethodType")
-                            ),
-                        )
+                    await swig.ramp.get_quotes(
+                        configuration_id=_required_string(body, "configurationId"),
+                        environment=_read_ramp_environment(body.get("environment")),
+                        location=_read_ramp_location(body.get("location")),
+                        order=_read_ramp_order(body),
                     )
                 ),
             )
-        if route in ("ramp/onramp/session", "ramp/offramp/session"):
-            client = (
-                swig.ramp.onramp
-                if route == "ramp/onramp/session"
-                else swig.ramp.offramp
-            )
+        if route == "ramp/orders":
             return cast(
                 Mapping[str, object],
                 _to_wire(
-                    await client.create_session(
-                        organization_meld_configuration_id=_required_string(
-                            body, "organizationMeldConfigurationId"
-                        ),
-                        quote_id=_required_string(body, "quoteId"),
-                        environment=_read_meld_environment(body.get("environment")),
+                    await swig.ramp.create_order(
+                        request_id=_required_string(body, "requestId"),
+                        configuration_id=_required_string(body, "configurationId"),
+                        environment=_read_ramp_environment(body.get("environment")),
+                        context=_read_ramp_context(body.get("context"), network),
+                        route=_read_ramp_route(body.get("route")),
+                        order=_read_ramp_order(body),
                     )
                 ),
             )
-        if route == "ramp/offramp/prepare":
+        if route == "ramp/transfer/prepare":
             return cast(
                 Mapping[str, object],
                 _to_wire(
-                    await swig.ramp.offramp.prepare_authorization(
-                        session_id=_require_session_id(session_id),
+                    await swig.ramp.prepare_transfer(
+                        order_id=_require_order_id(order_id),
                         requester_authority=_require_authority(
                             _read_authority(body.get("requesterAuthority"))
                         ),
-                        environment=_read_meld_environment(body.get("environment")),
                         fee_payer=_required_string(body, "feePayer"),
                     )
                 ),
             )
-        if route == "ramp/offramp/submit":
+        if route == "ramp/transfer/submit":
             return cast(
                 Mapping[str, object],
                 _to_wire(
-                    await swig.ramp.offramp.submit_authorization(
-                        session_id=_require_session_id(session_id),
-                        authorization_id=_required_string(body, "authorizationId"),
-                        signed_transaction=_required_string(body, "signedTransaction"),
-                        environment=_read_meld_environment(body.get("environment")),
+                    await swig.ramp.submit_transfer(
+                        order_id=_require_order_id(order_id),
+                        transfer_id=_required_string(body, "transferId"),
+                        signed_transaction=_optional_string(
+                            body.get("signedTransaction")
+                        )
+                        or "",
                     )
                 ),
             )
@@ -340,44 +320,25 @@ class SwigProxyHandler:
                 Mapping[str, object],
                 _to_wire(await swig.paymaster.get_balance(network=network, kind=kind)),
             )
-        if route in ("ramp/onramp/options", "ramp/offramp/options"):
-            client = (
-                swig.ramp.onramp
-                if route == "ramp/onramp/options"
-                else swig.ramp.offramp
-            )
+        if route == "ramp/options":
             return cast(
                 Mapping[str, object],
                 _to_wire(
-                    await client.get_options(
-                        organization_meld_configuration_id=_required_query_string(
-                            query, "organizationMeldConfigurationId"
+                    await swig.ramp.get_options(
+                        configuration_id=_required_query_string(
+                            query, "configurationId"
                         ),
-                        environment=_read_meld_environment(query.get("environment")),
+                        environment=_read_ramp_environment(query.get("environment")),
+                        direction=_read_ramp_direction(query.get("direction")),
                         country_code=query.get("countryCode"),
                         fiat_currency_code=query.get("fiatCurrencyCode"),
                     )
                 ),
             )
-        if route == "ramp/onramp/session":
+        if route == "ramp/order":
             return cast(
                 Mapping[str, object],
-                _to_wire(
-                    await swig.ramp.onramp.get_session(
-                        session_id=identifier,
-                        environment=_read_meld_environment(query.get("environment")),
-                    )
-                ),
-            )
-        if route == "ramp/offramp/session":
-            return cast(
-                Mapping[str, object],
-                _to_wire(
-                    await swig.ramp.offramp.get_session(
-                        session_id=identifier,
-                        environment=_read_meld_environment(query.get("environment")),
-                    )
-                ),
+                _to_wire(await swig.ramp.get_order(order_id=identifier)),
             )
 
         handle = swig.wallets.use(identifier, network=network)
@@ -465,19 +426,13 @@ def _resolve_post_route(path: str) -> tuple[PostProxyRoute, str | None]:
         "transfer/sol",
         "transfer/spl-token",
         "swap/jupiter",
-        "ramp/onramp/quote",
-        "ramp/onramp/session",
-        "ramp/offramp/quote",
-        "ramp/offramp/session",
+        "ramp/quotes",
+        "ramp/orders",
     )
     normalized = path.rstrip("/")
-    action = re.search(r"/ramp/offramp/session/([^/]+)/(prepare|submit)$", normalized)
+    action = re.search(r"/ramp/orders/([^/]+)/transfer/(prepare|submit)$", normalized)
     if action:
-        route: PostProxyRoute = (
-            "ramp/offramp/prepare"
-            if action.group(2) == "prepare"
-            else "ramp/offramp/submit"
-        )
+        route: PostProxyRoute = cast(PostProxyRoute, f"ramp/transfer/{action.group(2)}")
         return route, unquote(action.group(1))
     for route in routes:
         if normalized == f"/{route}" or normalized.endswith(f"/{route}"):
@@ -489,14 +444,11 @@ def _resolve_read_route(path: str) -> tuple[ReadProxyRoute, str]:
     normalized = path.rstrip("/")
     if normalized.endswith("/paymaster/balance"):
         return "paymaster/balance", ""
-    for direction in ("onramp", "offramp"):
-        if normalized.endswith(f"/ramp/{direction}/options"):
-            return cast(ReadProxyRoute, f"ramp/{direction}/options"), ""
-        match = re.search(rf"/ramp/{direction}/session/([^/]+)$", normalized)
-        if match:
-            return cast(ReadProxyRoute, f"ramp/{direction}/session"), unquote(
-                match.group(1)
-            )
+    if normalized.endswith("/ramp/options"):
+        return "ramp/options", ""
+    order = re.search(r"/ramp/orders/([^/]+)$", normalized)
+    if order:
+        return "ramp/order", unquote(order.group(1))
     match = re.search(
         r"/wallet/([^/]+)/(balance/usd|token-balances|token-transactions|roles)$",
         normalized,
@@ -604,18 +556,101 @@ def _require_authority(value: WalletAuthority | None) -> WalletAuthority:
     return value
 
 
-def _require_session_id(value: str | None) -> str:
+def _require_order_id(value: str | None) -> str:
     if not value:
-        raise SwigProxyRouteError("sessionId is required")
+        raise SwigProxyRouteError("orderId is required")
     return value
 
 
-def _read_meld_environment(value: object) -> MeldEnvironment:
-    if value in ("sandbox", "MELD_ENVIRONMENT_SANDBOX"):
+def _read_ramp_environment(value: object) -> RampEnvironment:
+    if value in ("sandbox", "RAMP_ENVIRONMENT_SANDBOX"):
         return "sandbox"
-    if value in ("production", "MELD_ENVIRONMENT_PRODUCTION"):
+    if value in ("production", "RAMP_ENVIRONMENT_PRODUCTION"):
         return "production"
     raise SwigProxyRouteError("environment must be sandbox or production")
+
+
+def _read_ramp_direction(value: object) -> RampDirection:
+    if value in ("buy", "RAMP_DIRECTION_BUY"):
+        return "buy"
+    if value in ("sell", "RAMP_DIRECTION_SELL"):
+        return "sell"
+    raise SwigProxyRouteError("direction must be buy or sell")
+
+
+def _read_ramp_location(value: object) -> RampLocation:
+    if not isinstance(value, Mapping):
+        raise SwigProxyRouteError("location is required")
+    country_code = value.get("countryCode")
+    if not isinstance(country_code, str) or not country_code:
+        raise SwigProxyRouteError("countryCode is required")
+    return RampLocation(
+        country_code=country_code,
+        subdivision_code=_optional_string(value.get("subdivisionCode")),
+    )
+
+
+def _read_ramp_asset(value: object) -> CryptoAsset:
+    if not isinstance(value, Mapping):
+        raise SwigProxyRouteError("asset is required")
+    if "sol" in value:
+        return NativeSolAsset()
+    token = value.get("token")
+    if isinstance(token, Mapping):
+        mint = token.get("mint")
+        if isinstance(mint, str) and mint:
+            return SplTokenAsset(mint=mint)
+    raise SwigProxyRouteError("asset must be sol or token")
+
+
+def _read_ramp_order(body: Mapping[str, object]) -> RampOrderRequest:
+    buy = body.get("buy")
+    if isinstance(buy, Mapping):
+        spend = buy.get("spend")
+        if not isinstance(spend, Mapping):
+            raise SwigProxyRouteError("spend is required")
+        return RampBuyOrderRequest(
+            spend=FiatAmountInput(
+                currency_code=_required_string(spend, "currencyCode"),
+                minor_units=_required_string(spend, "minorUnits"),
+            ),
+            receive=_read_ramp_asset(buy.get("receive")),
+        )
+    sell = body.get("sell")
+    if isinstance(sell, Mapping):
+        inner = sell.get("sell")
+        if not isinstance(inner, Mapping):
+            raise SwigProxyRouteError("sell is required")
+        return RampSellOrderRequest(
+            sell=CryptoAmountInput(
+                asset=_read_ramp_asset(inner.get("asset")),
+                base_units=_required_string(inner, "baseUnits"),
+            ),
+            receive_fiat_currency_code=_required_string(
+                sell, "receiveFiatCurrencyCode"
+            ),
+        )
+    raise SwigProxyRouteError("a buy or sell order is required")
+
+
+def _read_ramp_context(value: object, network: Network | None) -> RampOrderContext:
+    if not isinstance(value, Mapping):
+        raise SwigProxyRouteError("context is required")
+    return RampOrderContext(
+        customer_id=_required_string(value, "customerId"),
+        swig_config_address=_required_string(value, "swigConfigAddress"),
+        location=_read_ramp_location(value.get("location")),
+        network=_read_network(value.get("network")) or network,
+    )
+
+
+def _read_ramp_route(value: object) -> RampRoute:
+    if not isinstance(value, Mapping):
+        raise SwigProxyRouteError("route is required")
+    return RampRoute(
+        provider=_required_string(value, "provider"),
+        payment_method=_required_string(value, "paymentMethod"),
+    )
 
 
 def _read_network(value: object) -> Network | None:

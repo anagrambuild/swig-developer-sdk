@@ -304,135 +304,111 @@ policy = await swig.wallets.get_policy(policy_id)
 
 ## Fiat ramps
 
-Ramp is split into `swig.ramp.onramp` and `swig.ramp.offramp`. Every ramp call
-requires an `environment` of `"sandbox"` or `"production"`; the SDK encodes it
-as the MELD enum on the wire. Options, quotes, and session creation also require
-`organization_meld_configuration_id`. Quotes additionally require
-`external_customer_id`, `swig_config_address`, and a network (from
-`QuoteRampArgs.network` or the client default).
+`swig.ramp` covers both directions. Direction is carried by the buy or sell
+order you pass, so there is no separate on-ramp or off-ramp client. Every call
+requires a `configuration_id` and an `environment` of `"sandbox"` or
+`"production"`; `get_order`, `prepare_transfer`, and `submit_transfer` identify
+the order in the route and take no environment.
 
-| Client method | Route |
-| --- | --- |
-| `swig.ramp.onramp.get_options` | `GET /wallet/api/ramp/onramp/options` |
-| `swig.ramp.onramp.quote` | `POST /wallet/api/ramp/onramp/quote` |
-| `swig.ramp.onramp.create_session` | `POST /wallet/api/ramp/onramp/session` |
-| `swig.ramp.onramp.get_session` | `GET /wallet/api/ramp/onramp/session/{session_id}` |
-| `swig.ramp.offramp.get_options` | `GET /wallet/api/ramp/offramp/options` |
-| `swig.ramp.offramp.quote` | `POST /wallet/api/ramp/offramp/quote` |
-| `swig.ramp.offramp.create_session` | `POST /wallet/api/ramp/offramp/session` |
-| `swig.ramp.offramp.prepare_authorization` | `POST /wallet/api/ramp/offramp/session/{session_id}/prepare` |
-| `swig.ramp.offramp.submit_authorization` | `POST /wallet/api/ramp/offramp/session/{session_id}/submit` |
-| `swig.ramp.offramp.get_session` | `GET /wallet/api/ramp/offramp/session/{session_id}` |
+Amounts are integers in the smallest unit the thing has — `minor_units` for
+fiat (cents for USD, whole yen for JPY) and `base_units` for crypto. They cross
+the wire as decimal strings, so a value above 2^53 survives; pass an `int` or
+`str` and read a `str` back. Crypto is a `NativeSolAsset()` or
+`SplTokenAsset(mint=...)`.
 
-### Onramp
+| Client method                | Route                                                      |
+| ---------------------------- | ---------------------------------------------------------- |
+| `swig.ramp.get_options`      | `GET /wallet/api/ramp/options`                             |
+| `swig.ramp.get_quotes`       | `POST /wallet/api/ramp/quotes`                             |
+| `swig.ramp.create_order`     | `POST /wallet/api/ramp/orders`                             |
+| `swig.ramp.get_order`        | `GET /wallet/api/ramp/orders/{order_id}`                   |
+| `swig.ramp.prepare_transfer` | `POST /wallet/api/ramp/orders/{order_id}/transfer/prepare` |
+| `swig.ramp.submit_transfer`  | `POST /wallet/api/ramp/orders/{order_id}/transfer/submit`  |
+
+### Options and quotes
+
+Read the options first, so currency, payment-method, and asset values come from
+the API rather than a hardcoded list. `RampAssetOption.decimals` and
+`RampFiatCurrencyOption.exponent` are the scales you need to build a valid
+amount.
 
 ```python
-import os
-
-from swig_developer_sdk import QuoteRampArgs
-
-environment = "sandbox"
-configuration_id = os.environ["SWIG_MELD_CONFIG_ID"]
-
-options = await swig.ramp.onramp.get_options(
-    organization_meld_configuration_id=configuration_id,
-    environment=environment,
+options = await swig.ramp.get_options(
+    configuration_id=configuration_id,
+    environment="sandbox",
+    direction="buy",
     country_code="US",
 )
 
-result = await swig.ramp.onramp.quote(
-    QuoteRampArgs(
-        organization_meld_configuration_id=configuration_id,
-        environment=environment,
-        external_customer_id=external_customer_id,
-        swig_config_address=swig_config_address,
-        network="devnet",
-        source_amount="100.00",
-        source_currency_code=options.fiat_currency_codes[0],
-        destination_currency_code=options.crypto_currency_codes[0],
-        country_code="US",
-        payment_method_type=options.payment_method_types[0],
-    )
-)
-
-session = await swig.ramp.onramp.create_session(
-    organization_meld_configuration_id=configuration_id,
-    quote_id=result.quotes[0].quote_id,
-    environment=environment,
-)
-
-# Send session.launch_url to the user. Treat it as a user-specific secret.
-state = await swig.ramp.onramp.get_session(
-    session_id=session.session_id,
-    environment=environment,
+quotes = await swig.ramp.get_quotes(
+    configuration_id=configuration_id,
+    environment="sandbox",
+    location=RampLocation(country_code="US"),
+    order=RampBuyOrderRequest(
+        spend=FiatAmountInput(currency_code="USD", minor_units=10_000),
+        receive=SplTokenAsset(mint=usdc_mint),
+    ),
 )
 ```
 
-`state.status` is one of `unspecified`, `created`, `pending`, `settling`,
-`settled`, `failed`, `declined`, `cancelled`, or `refunded`.
+Quotes carry no identifier and must never be cached. Pick one and pass its
+`route` to `create_order`; the route is re-priced when the order is created.
 
-### Offramp
+### Orders
 
-Offramp adds an on-chain authorization step: the user's wallet must sign the
-transfer to the provider before the session can settle.
+`request_id` is your idempotency key and is unique within the configuration.
+Repeating it returns the stored order; repeating it with different inputs is
+refused, so mint it once and reuse it across retries.
 
 ```python
-from swig_developer_sdk import QuoteRampArgs
-from swig_developer_sdk.signers import sign_prepared_swig_transaction
-
-options = await swig.ramp.offramp.get_options(
-    organization_meld_configuration_id=configuration_id,
-    environment=environment,
-    country_code="US",
-)
-
-result = await swig.ramp.offramp.quote(
-    QuoteRampArgs(
-        organization_meld_configuration_id=configuration_id,
-        environment=environment,
-        external_customer_id=external_customer_id,
+order = await swig.ramp.create_order(
+    request_id=str(uuid.uuid4()),
+    configuration_id=configuration_id,
+    environment="sandbox",
+    context=RampOrderContext(
+        customer_id=customer_id,
         swig_config_address=swig_config_address,
-        network="mainnet",
-        source_amount="25.00",
-        source_currency_code=options.crypto_currencies[0].currency_code,
-        destination_currency_code=options.fiat_currency_codes[0],
-        country_code="US",
-        payment_method_type=options.payment_method_types[0],
-    )
+        location=RampLocation(country_code="US"),
+    ),
+    route=quotes[0].route,
+    order=RampBuyOrderRequest(
+        spend=FiatAmountInput(currency_code="USD", minor_units=10_000),
+        receive=SplTokenAsset(mint=usdc_mint),
+    ),
 )
+```
 
-session = await swig.ramp.offramp.create_session(
-    organization_meld_configuration_id=configuration_id,
-    quote_id=result.quotes[0].quote_id,
-    environment=environment,
-)
+A buy sends the customer to `order.launch_url`. Poll `swig.ramp.get_order`
+until the status is final; a read of a non-final order also reconciles it
+against the provider. `refunded` can follow `settled`.
 
-authorization = await swig.ramp.offramp.prepare_authorization(
-    session_id=session.session_id,
-    environment=environment,
+A `launch_url` is a user-specific session URL. Hand it to the customer who owns
+the order and keep it out of logs and analytics.
+
+### Selling
+
+A sell waits for `awaiting-transfer` and a `deposit`, then moves the crypto out
+of the Swig. Your application owns the signing step.
+
+```python
+prepared = await swig.ramp.prepare_transfer(
+    order_id=order.id,
+    requester_authority={"ed25519": {"publicKey": requester}},
     fee_payer=fee_payer,
-    requester_authority={"secp256r1": {"publicKey": passkey_public_key}},
 )
 
-# Show authorization.display to the user, then sign.
-signed = await sign_prepared_swig_transaction(
-    authorization.prepared_transaction,
-    secp256r1=application_passkey_signer,
-)
+signed = sign_prepared_transaction(prepared.prepared_transaction, signer)
 
-submitted = await swig.ramp.offramp.submit_authorization(
-    session_id=session.session_id,
-    environment=environment,
-    authorization_id=authorization.authorization_id,
+transfer = await swig.ramp.submit_transfer(
+    order_id=order.id,
+    transfer_id=prepared.transfer.transfer_id,
     signed_transaction=signed.transaction,
 )
-# submitted.solana_signature
 ```
 
-`authorization.display` carries the human-readable transfer summary
-(`source_amount`, `destination_amount`, `service_provider`, wallet addresses,
-and optional `payment_method_type` / `provider_destination_amount`). Offramp
-sessions add `transfer-required` and `transfer-submitted` to the status set.
+The prepared transaction is handed over once. If you broadcast it and then lose
+it, call `submit_transfer` again without `signed_transaction` to resolve the
+attempt that is already live.
 
 ## Sign locally
 
@@ -608,7 +584,7 @@ response = await swig_handler.handle(
 
 The handler covers wallet creation, grouped preparation, SOL and SPL transfers,
 Jupiter swaps, wallet USD balance, token balances, token transactions, roles,
-x402 payment preparation, paymaster balance, and the onramp and offramp routes.
+x402 payment preparation, paymaster balance, and the ramp routes.
 
 `SwigProxyConfig` accepts `api_key`, `transaction_api_url`, `network`,
 `fee_payer` (a value or a callable resolved per request),
