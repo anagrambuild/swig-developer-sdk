@@ -249,6 +249,51 @@ describe('RampClient', () => {
     expect(body.sell.sell.baseUnits).toBe('18446744073709551615');
   });
 
+  test('rejects unsafe number amounts before sending a request', async () => {
+    let requests = 0;
+    const swig = client(() => {
+      requests += 1;
+      return { quotes: [] };
+    });
+
+    await expect(
+      swig.ramp.getQuotes({
+        configurationId: '018f-config',
+        environment: 'sandbox',
+        location: { countryCode: 'US' },
+        order: {
+          type: 'buy',
+          spend: {
+            currencyCode: 'USD',
+            minorUnits: Number.MAX_SAFE_INTEGER + 1,
+          },
+          receive: { type: 'token', mint: 'MINT' },
+        },
+      }),
+    ).rejects.toThrow('Ramp amount numbers must be non-negative safe integers');
+    expect(requests).toBe(0);
+  });
+
+  test('rejects ramp amounts outside the uint64 domain', async () => {
+    const swig = client(() => ({ quotes: [] }));
+
+    await expect(
+      swig.ramp.getQuotes({
+        configurationId: '018f-config',
+        environment: 'sandbox',
+        location: { countryCode: 'US' },
+        order: {
+          type: 'sell',
+          sell: {
+            asset: { type: 'sol' },
+            baseUnits: '18446744073709551616',
+          },
+          receiveFiatCurrencyCode: 'USD',
+        },
+      }),
+    ).rejects.toThrow('Ramp amounts must fit in an unsigned 64-bit integer');
+  });
+
   test('rejects a uint64 wire value that is not a decimal string', async () => {
     const swig = client(() => ({
       quotes: [

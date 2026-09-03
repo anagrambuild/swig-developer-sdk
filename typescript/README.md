@@ -3,7 +3,7 @@
 API-key SDK for preparing Swig wallet operations on a server, with a separate
 entrypoint for application-owned signing.
 
-- Version: `0.9.0`
+- Version: `0.10.0`
 - Source: <https://github.com/anagrambuild/swig-developer-sdk>
 - Default API base URL: `https://api.onswig.com`
 
@@ -67,6 +67,8 @@ const swig = new SwigClient({
   or submission request can duplicate work.
 - Sponsorship `POST` requests retry only when you pass an `idempotencyKey`. A
   matching retry returns the original paymaster response.
+- Ramp order creation retries because its required `requestId` makes replay
+  safe. Transfer preparation and submission do not retry automatically.
 - `4xx` responses throw immediately as `SwigDeveloperSdkError`; `5xx` and
   network failures are what the retry policy covers.
 
@@ -375,16 +377,18 @@ const policy = await swig.wallets.getPolicy(policyId);
 ## Fiat ramps
 
 `swig.ramp` covers both directions. Direction is carried by the `buy` or `sell`
-order you pass, so there is no separate on-ramp or off-ramp client. Every call
-requires a `configurationId` and an `environment` of `'sandbox'` or
-`'production'`; `getOrder`, `prepareTransfer`, and `submitTransfer` identify the
-order in the route and take no environment.
+order you pass, so there is no separate on-ramp or off-ramp client.
+`getOptions`, `getQuotes`, and `createOrder` require a `configurationId` and an
+`environment` of `'sandbox'` or `'production'`. `getOrder`, `prepareTransfer`,
+and `submitTransfer` use the stored order and require neither field.
 
 Amounts are integers in the smallest unit the thing has — `minorUnits` for fiat
 (cents for USD, whole yen for JPY) and `baseUnits` for crypto. They cross the
-wire as decimal strings, so a value above 2^53 survives; pass a `bigint`,
-`number`, or `string` and read a `string` back. Crypto is a `CryptoAsset` of
-`{ type: 'sol' }` or `{ type: 'token', mint }`.
+wire as decimal strings, so a value above 2^53 survives; pass a `bigint`, a
+decimal `string`, or a safe integer `number`, and read a `string` back. Unsafe,
+fractional, negative, and out-of-range numbers are rejected before a request is
+sent. Crypto is a `CryptoAsset` of `{ type: 'sol' }` or
+`{ type: 'token', mint }`.
 
 | Client method               | Route                                                      |
 | --------------------------- | ---------------------------------------------------------- |
@@ -470,10 +474,9 @@ const prepared = await swig.ramp.prepareTransfer({
   feePayer,
 });
 
-const signed = await signPreparedTransaction(
-  prepared.preparedTransaction,
-  signer,
-);
+const signed = await signPreparedTransaction(prepared.preparedTransaction, {
+  signTransaction,
+});
 
 const transfer = await swig.ramp.submitTransfer({
   orderId: order.id,
