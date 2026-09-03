@@ -2,15 +2,30 @@ from __future__ import annotations
 
 import base64
 import json
+from collections.abc import Callable
 
 import base58
 import httpx
+import pytest
 
 from swig_developer_sdk import (
-    QuoteRampArgs,
+    CryptoAmountInput,
+    FiatAmountInput,
+    NativeSolAsset,
+    RampBuyOrderRequest,
+    RampBuyQuote,
+    RampLocation,
+    RampOrderContext,
+    RampRoute,
+    RampSellOrder,
+    RampSellOrderRequest,
+    RampSellQuote,
+    RetryOptions,
+    SplTokenAsset,
     SponsorSignedTransactionArgs,
     SponsorSignedTransactionBundleArgs,
     SwigClient,
+    SwigDeveloperSdkError,
 )
 
 
@@ -92,105 +107,458 @@ async def test_sponsor_bundle_converts_transactions_to_base58() -> None:
     }
 
 
-async def test_onramp_contract_uses_current_routes_and_fields() -> None:
+BUY_QUOTE: dict[str, object] = {
+    "route": {"provider": "PROVIDER", "paymentMethod": "CARD"},
+    "buy": {
+        "spend": {"currencyCode": "USD", "minorUnits": "10000"},
+        "receive": {"asset": {"token": {"mint": "MINT"}}, "baseUnits": "99000000"},
+        "totalFee": {"currencyCode": "USD", "minorUnits": "250"},
+        "exchangeRate": "0.0000099",
+    },
+}
+
+SELL_QUOTE: dict[str, object] = {
+    "route": {"provider": "PROVIDER", "paymentMethod": "BANK"},
+    "sell": {
+        "sell": {"asset": {"sol": {}}, "baseUnits": "1000000000"},
+        "receive": {"currencyCode": "USD", "minorUnits": "15000"},
+        "totalFee": {"currencyCode": "USD", "minorUnits": "300"},
+        "exchangeRate": "150.00",
+    },
+}
+
+
+def _buy_order(status: str) -> dict[str, object]:
+    return {
+        "id": "order-1",
+        "status": status,
+        "createdAt": "2026-09-01T00:00:00Z",
+        "updatedAt": "2026-09-01T00:00:00Z",
+        "buy": {
+            "quote": BUY_QUOTE["buy"],
+            "launchUrl": "https://provider.test/session",
+        },
+    }
+
+
+def _ramp_client(
+    handler: Callable[[httpx.Request], object],
+    requests: list[httpx.Request] | None = None,
+) -> SwigClient:
+    def transport(request: httpx.Request) -> httpx.Response:
+        if requests is not None:
+            requests.append(request)
+        return httpx.Response(200, json={"data": handler(request)})
+
+    return SwigClient(
+        api_key="secret",
+        base_url="https://example.test",
+        network="devnet",
+        transport=httpx.MockTransport(transport),
+    )
+
+
+async def test_ramp_options_query_and_four_lists() -> None:
     requests: list[httpx.Request] = []
+    swig = _ramp_client(
+        lambda request: {
+            "countries": [
+                {
+                    "code": "US",
+                    "name": "United States",
+                    "subdivisions": [{"code": "US-CA", "name": "California"}],
+                }
+            ],
+            "fiatCurrencies": [{"currencyCode": "USD", "exponent": 2}],
+            "paymentMethods": ["CARD"],
+            "assets": [
+                {
+                    "asset": {"token": {"mint": "MINT"}},
+                    "name": "USD Coin",
+                    "decimals": 6,
+                    "iconUrl": "https://example.test/usdc.png",
+                },
+                {"asset": {"sol": {}}, "name": "Solana", "decimals": 9},
+            ],
+        },
+        requests,
+    )
+
+    options = await swig.ramp.get_options(
+        configuration_id="018f-config",
+        environment="sandbox",
+        direction="buy",
+        country_code="US",
+    )
+
+    assert requests[0].url.path == "/wallet/api/ramp/options"
+    assert requests[0].url.params["configurationId"] == "018f-config"
+    assert requests[0].url.params["environment"] == "RAMP_ENVIRONMENT_SANDBOX"
+    assert requests[0].url.params["direction"] == "RAMP_DIRECTION_BUY"
+    assert options.countries[0].subdivisions[0].code == "US-CA"
+    assert options.fiat_currencies[0].exponent == 2
+    assert options.payment_methods == ("CARD",)
+    assert options.assets[0].asset == SplTokenAsset(mint="MINT")
+    assert options.assets[0].decimals == 6
+    assert options.assets[1].asset == NativeSolAsset()
+    assert options.assets[1].icon_url is None
+
+
+async def test_ramp_quotes_send_a_buy_order_oneof() -> None:
+    requests: list[httpx.Request] = []
+    swig = _ramp_client(lambda request: {"quotes": [BUY_QUOTE]}, requests)
+
+    quotes = await swig.ramp.get_quotes(
+        configuration_id="018f-config",
+        environment="sandbox",
+        location=RampLocation(country_code="US"),
+        order=RampBuyOrderRequest(
+            spend=FiatAmountInput(currency_code="USD", minor_units=10000),
+            receive=SplTokenAsset(mint="MINT"),
+        ),
+    )
+
+    assert json.loads(requests[0].content) == {
+        "configurationId": "018f-config",
+        "environment": "RAMP_ENVIRONMENT_SANDBOX",
+        "location": {"countryCode": "US"},
+        "buy": {
+            "spend": {"currencyCode": "USD", "minorUnits": "10000"},
+            "receive": {"token": {"mint": "MINT"}},
+        },
+    }
+    assert quotes[0].details.type == "buy"
+
+
+async def test_ramp_native_sol_survives_compact() -> None:
+    requests: list[httpx.Request] = []
+    swig = _ramp_client(lambda request: {"quotes": [SELL_QUOTE]}, requests)
+
+    quotes = await swig.ramp.get_quotes(
+        configuration_id="018f-config",
+        environment="sandbox",
+        location=RampLocation(country_code="US", subdivision_code="US-CA"),
+        order=RampSellOrderRequest(
+            sell=CryptoAmountInput(asset=NativeSolAsset(), base_units=1000000000),
+            receive_fiat_currency_code="USD",
+        ),
+    )
+
+    body = json.loads(requests[0].content)
+    assert body["sell"]["sell"]["asset"] == {"sol": {}}
+    assert body["location"] == {"countryCode": "US", "subdivisionCode": "US-CA"}
+    details = quotes[0].details
+    assert isinstance(details, RampSellQuote)
+    assert details.sell.asset == NativeSolAsset()
+
+
+async def test_ramp_decodes_uint64_above_2_53_without_loss() -> None:
+    requests: list[httpx.Request] = []
+    buy = dict(BUY_QUOTE["buy"])  # type: ignore[arg-type]
+    buy["receive"] = {
+        "asset": {"token": {"mint": "MINT"}},
+        "baseUnits": "18446744073709551615",
+    }
+    priced = {**BUY_QUOTE, "buy": buy}
+
+    def handler(request: httpx.Request) -> object:
+        if request.url.path.endswith("/quotes"):
+            return {"quotes": [priced]}
+        return {"order": _buy_order("RAMP_ORDER_STATUS_AWAITING_CUSTOMER")}
+
+    swig = _ramp_client(handler, requests)
+
+    quotes = await swig.ramp.get_quotes(
+        configuration_id="018f-config",
+        environment="sandbox",
+        location=RampLocation(country_code="US"),
+        order=RampBuyOrderRequest(
+            spend=FiatAmountInput(currency_code="USD", minor_units="10000"),
+            receive=SplTokenAsset(mint="MINT"),
+        ),
+    )
+    details = quotes[0].details
+    assert isinstance(details, RampBuyQuote)
+    assert details.receive.base_units == "18446744073709551615"
+
+    await swig.ramp.create_order(
+        request_id="request-1",
+        configuration_id="018f-config",
+        environment="sandbox",
+        context=RampOrderContext(
+            customer_id="customer-1",
+            swig_config_address="swig-config",
+            location=RampLocation(country_code="US"),
+        ),
+        route=quotes[0].route,
+        order=RampSellOrderRequest(
+            sell=CryptoAmountInput(
+                asset=NativeSolAsset(), base_units=details.receive.base_units
+            ),
+            receive_fiat_currency_code="USD",
+        ),
+    )
+
+    body = json.loads(requests[1].content)
+    assert body["sell"]["sell"]["baseUnits"] == "18446744073709551615"
+
+
+async def test_ramp_rejects_a_uint64_that_is_not_a_decimal_string() -> None:
+    buy = dict(BUY_QUOTE["buy"])  # type: ignore[arg-type]
+    buy["spend"] = {"currencyCode": "USD", "minorUnits": 10000}
+    swig = _ramp_client(lambda request: {"quotes": [{**BUY_QUOTE, "buy": buy}]})
+
+    with pytest.raises(ValueError, match="invalid minorUnits"):
+        await swig.ramp.get_quotes(
+            configuration_id="018f-config",
+            environment="sandbox",
+            location=RampLocation(country_code="US"),
+            order=RampBuyOrderRequest(
+                spend=FiatAmountInput(currency_code="USD", minor_units="10000"),
+                receive=SplTokenAsset(mint="MINT"),
+            ),
+        )
+
+
+async def test_ramp_create_order_unwraps_the_envelope() -> None:
+    requests: list[httpx.Request] = []
+    swig = _ramp_client(
+        lambda request: {"order": _buy_order("RAMP_ORDER_STATUS_AWAITING_CUSTOMER")},
+        requests,
+    )
+
+    order = await swig.ramp.create_order(
+        request_id="request-1",
+        configuration_id="018f-config",
+        environment="sandbox",
+        context=RampOrderContext(
+            customer_id="customer-1",
+            swig_config_address="swig-config",
+            location=RampLocation(country_code="US"),
+        ),
+        route=RampRoute(provider="PROVIDER", payment_method="CARD"),
+        order=RampBuyOrderRequest(
+            spend=FiatAmountInput(currency_code="USD", minor_units="10000"),
+            receive=SplTokenAsset(mint="MINT"),
+        ),
+    )
+
+    assert order.type == "buy"
+    assert order.status == "awaiting-customer"
+    assert order.launch_url == "https://provider.test/session"
+    body = json.loads(requests[0].content)
+    assert body["requestId"] == "request-1"
+    assert body["context"] == {
+        "customerId": "customer-1",
+        "swigConfigAddress": "swig-config",
+        "network": "NETWORK_DEVNET",
+        "location": {"countryCode": "US"},
+    }
+
+
+async def test_ramp_create_order_retries_a_transient_failure() -> None:
+    attempts = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
-        if request.url.path.endswith("/options"):
-            return httpx.Response(
-                200,
-                json={
-                    "data": {
-                        "countries": [
-                            {
-                                "country_code": "US",
-                                "country_name": "United States",
-                                "subdivisions": [
-                                    {
-                                        "subdivision_code": "US-CA",
-                                        "subdivision_name": "California",
-                                    }
-                                ],
-                            }
-                        ],
-                        "fiat_currency_codes": ["USD"],
-                        "payment_method_types": ["CARD"],
-                        "crypto_currency_codes": ["USDC_SOLANA"],
-                    }
-                },
-            )
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(503)
         return httpx.Response(
             200,
-            json={
-                "data": {
-                    "quotes": [
-                        {
-                            "quote_id": "quote-123",
-                            "service_provider": "TRANSAK",
-                            "payment_method_type": "CARD",
-                            "source_amount": "100",
-                            "source_currency_code": "USD",
-                            "destination_amount": "99",
-                            "destination_currency_code": "USDC_SOLANA",
-                            "exchange_rate": "0.99",
-                            "total_fee": "1",
-                        }
-                    ]
-                }
-            },
+            json={"data": {"order": _buy_order("RAMP_ORDER_STATUS_AWAITING_CUSTOMER")}},
         )
 
     swig = SwigClient(
         api_key="secret",
         base_url="https://example.test",
         network="devnet",
+        retry_options=RetryOptions(max_retries=1, retry_delay=0),
         transport=httpx.MockTransport(handler),
     )
-    options = await swig.ramp.onramp.get_options(
-        organization_meld_configuration_id="config-123",
+
+    order = await swig.ramp.create_order(
+        request_id="request-1",
+        configuration_id="018f-config",
         environment="sandbox",
-        country_code="US",
-    )
-    quote = await swig.ramp.onramp.quote(
-        QuoteRampArgs(
-            organization_meld_configuration_id="config-123",
-            environment="sandbox",
-            external_customer_id="customer-123",
-            swig_config_address="swig-123",
-            source_amount="100",
-            source_currency_code="USD",
-            destination_currency_code="USDC_SOLANA",
-            country_code="US",
-        )
+        context=RampOrderContext(
+            customer_id="customer-1",
+            swig_config_address="swig-config",
+            location=RampLocation(country_code="US"),
+        ),
+        route=RampRoute(provider="PROVIDER", payment_method="CARD"),
+        order=RampBuyOrderRequest(
+            spend=FiatAmountInput(currency_code="USD", minor_units="10000"),
+            receive=SplTokenAsset(mint="MINT"),
+        ),
     )
 
-    assert options.countries[0].subdivisions[0].subdivision_code == "US-CA"
-    assert options.crypto_currency_codes == ("USDC_SOLANA",)
-    assert quote.quotes[0].quote_id == "quote-123"
-    assert requests[0].url.path == "/wallet/api/ramp/onramp/options"
-    assert requests[0].url.params["organizationMeldConfigurationId"] == "config-123"
-    assert requests[0].url.params["environment"] == "MELD_ENVIRONMENT_SANDBOX"
-    assert requests[1].url.path == "/wallet/api/ramp/onramp/quote"
-    assert json.loads(requests[1].content)["network"] == "NETWORK_DEVNET"
+    assert order.id == "order-1"
+    assert attempts == 2
 
 
-async def test_ramp_rejects_an_invalid_environment_at_runtime() -> None:
+async def test_ramp_missing_order_envelope_is_rejected() -> None:
+    swig = _ramp_client(lambda request: {})
+
+    with pytest.raises(ValueError, match="missing order"):
+        await swig.ramp.get_order(order_id="order-1")
+
+
+async def test_ramp_encodes_the_order_id_in_the_path() -> None:
+    requests: list[httpx.Request] = []
+    swig = _ramp_client(
+        lambda request: {"order": _buy_order("RAMP_ORDER_STATUS_SETTLED")}, requests
+    )
+
+    await swig.ramp.get_order(order_id="order/123")
+
+    assert (
+        requests[0]
+        .url.raw_path.decode()
+        .endswith("/wallet/api/ramp/orders/order%2F123")
+    )
+
+
+async def test_ramp_rejects_an_unrecognised_status() -> None:
+    swig = _ramp_client(
+        lambda request: {"order": _buy_order("RAMP_ORDER_STATUS_CHARGEBACK")}
+    )
+
+    with pytest.raises(ValueError, match="invalid status"):
+        await swig.ramp.get_order(order_id="order-1")
+
+
+async def test_ramp_decodes_an_unspecified_status() -> None:
+    swig = _ramp_client(
+        lambda request: {"order": _buy_order("RAMP_ORDER_STATUS_UNSPECIFIED")}
+    )
+
+    order = await swig.ramp.get_order(order_id="order-1")
+
+    assert order.status == "unspecified"
+
+
+async def test_ramp_sell_order_without_deposit_or_transfer() -> None:
+    swig = _ramp_client(
+        lambda request: {
+            "order": {
+                "id": "order-1",
+                "status": "RAMP_ORDER_STATUS_AWAITING_CUSTOMER",
+                "createdAt": "2026-09-01T00:00:00Z",
+                "updatedAt": "2026-09-01T00:00:00Z",
+                "sell": {"quote": SELL_QUOTE["sell"]},
+            }
+        }
+    )
+
+    order = await swig.ramp.get_order(order_id="order-1")
+
+    assert isinstance(order, RampSellOrder)
+    assert order.deposit is None
+    assert order.transfer is None
+
+
+async def test_ramp_prepare_transfer_decodes_the_envelope() -> None:
+    requests: list[httpx.Request] = []
+    swig = _ramp_client(
+        lambda request: {
+            "preparedTransfer": {
+                "transfer": {
+                    "transferId": "transfer-1",
+                    "state": "TRANSFER_STATE_PREPARED",
+                    "expiresAt": "2026-09-01T00:01:00Z",
+                },
+                "preparedTransaction": {
+                    "transaction": "prepared-base64",
+                    "transactionEncoding": "TRANSACTION_ENCODING_BASE64",
+                    "network": "NETWORK_DEVNET",
+                },
+                "deposit": {
+                    "address": "deposit-address",
+                    "amount": {"asset": {"sol": {}}, "baseUnits": "1000000000"},
+                },
+            }
+        },
+        requests,
+    )
+
+    prepared = await swig.ramp.prepare_transfer(
+        order_id="order-1",
+        requester_authority={"ed25519": {"publicKey": "requester"}},
+        fee_payer="payer",
+    )
+
+    assert requests[0].url.path == "/wallet/api/ramp/orders/order-1/transfer/prepare"
+    assert json.loads(requests[0].content) == {
+        "requesterAuthority": {"ed25519": {"publicKey": "requester"}},
+        "feePayer": "payer",
+    }
+    assert prepared.transfer.state == "prepared"
+    assert prepared.prepared_transaction.transaction == "prepared-base64"
+    assert prepared.deposit.amount.asset == NativeSolAsset()
+
+
+async def test_ramp_submit_sends_an_empty_signed_transaction_by_default() -> None:
+    requests: list[httpx.Request] = []
+    swig = _ramp_client(
+        lambda request: {
+            "transfer": {
+                "transferId": "transfer-1",
+                "state": "TRANSFER_STATE_LANDED",
+                "expiresAt": "2026-09-01T00:01:00Z",
+                "solanaSignature": "signature",
+            }
+        },
+        requests,
+    )
+
+    transfer = await swig.ramp.submit_transfer(
+        order_id="order-1", transfer_id="transfer-1"
+    )
+
+    assert json.loads(requests[0].content) == {
+        "transferId": "transfer-1",
+        "signedTransaction": "",
+    }
+    assert transfer.state == "landed"
+    assert transfer.solana_signature == "signature"
+
+
+async def test_ramp_submit_transfer_does_not_retry() -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(503)
+
     swig = SwigClient(
         api_key="secret",
         base_url="https://example.test",
-        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={})),
+        network="devnet",
+        retry_options=RetryOptions(max_retries=1, retry_delay=0),
+        transport=httpx.MockTransport(handler),
     )
 
-    try:
-        await swig.ramp.onramp.get_options(
-            organization_meld_configuration_id="config-123",
-            environment="staging",  # type: ignore[arg-type]
+    with pytest.raises(SwigDeveloperSdkError) as exc_info:
+        await swig.ramp.submit_transfer(
+            order_id="order-1",
+            transfer_id="transfer-1",
         )
-    except ValueError as error:
-        assert str(error) == 'environment must be "sandbox" or "production"'
-    else:
-        raise AssertionError("invalid ramp environment was accepted")
+
+    assert exc_info.value.status_code == 503
+    assert attempts == 1
+
+
+async def test_ramp_rejects_an_invalid_environment_at_runtime() -> None:
+    swig = _ramp_client(lambda request: {})
+
+    with pytest.raises(ValueError, match="sandbox"):
+        await swig.ramp.get_options(
+            configuration_id="018f-config",
+            environment="staging",  # type: ignore[arg-type]
+            direction="buy",
+        )
 
 
 async def test_wallet_reads_preserve_asset_kind() -> None:
@@ -264,66 +632,6 @@ async def test_wallet_reads_preserve_asset_kind() -> None:
 
     assert balances.balances[0].asset_kind == "token"
     assert transactions.transactions[0].asset_kind == "native-sol"
-
-
-async def test_offramp_prepare_and_submit_contract() -> None:
-    requests: list[httpx.Request] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
-        if request.url.path.endswith("/prepare"):
-            return httpx.Response(
-                200,
-                json={
-                    "data": {
-                        "authorization_id": "authorization-123",
-                        "prepared_transaction": {
-                            "transaction": "prepared",
-                            "signature_requests": [],
-                            "transaction_encoding": "TRANSACTION_ENCODING_BASE64",
-                            "network": "NETWORK_MAINNET",
-                        },
-                        "display": {
-                            "source_wallet_address": "source-wallet",
-                            "destination_wallet_address": "destination-wallet",
-                            "source_amount": "10",
-                            "source_currency_code": "USDC_SOLANA",
-                            "destination_amount": "9.75",
-                            "destination_currency_code": "USD",
-                            "service_provider": "TRANSAK",
-                        },
-                    }
-                },
-            )
-        return httpx.Response(
-            200,
-            json={"data": {"solana_signature": "solana-signature"}},
-        )
-
-    swig = SwigClient(
-        api_key="secret",
-        base_url="https://example.test",
-        network="mainnet",
-        transport=httpx.MockTransport(handler),
-    )
-    prepared = await swig.ramp.offramp.prepare_authorization(
-        session_id="session/123",
-        requester_authority={"ed25519": {"publicKey": "requester"}},
-        environment="production",
-        fee_payer="payer",
-    )
-    submitted = await swig.ramp.offramp.submit_authorization(
-        session_id="session/123",
-        authorization_id=prepared.authorization_id,
-        signed_transaction="signed-base64",
-        environment="production",
-    )
-
-    assert prepared.prepared_transaction.transaction == "prepared"
-    assert prepared.display.destination_wallet_address == "destination-wallet"
-    assert submitted.solana_signature == "solana-signature"
-    assert requests[0].url.raw_path.decode().endswith("/session/session%2F123/prepare")
-    assert json.loads(requests[1].content)["authorizationId"] == "authorization-123"
 
 
 async def test_paymaster_idp_balance_uses_typed_query() -> None:

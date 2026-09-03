@@ -168,7 +168,7 @@ async def test_proxy_prepares_x402_without_requiring_a_fee_payer() -> None:
     assert requests[0].url.path == "/transaction/payment/x402/prepare"
 
 
-async def test_proxy_exposes_current_onramp_options_contract() -> None:
+async def test_proxy_exposes_the_ramp_options_contract() -> None:
     requests: list[httpx.Request] = []
 
     def backend(request: httpx.Request) -> httpx.Response:
@@ -178,9 +178,15 @@ async def test_proxy_exposes_current_onramp_options_contract() -> None:
             json={
                 "data": {
                     "countries": [],
-                    "fiat_currency_codes": ["USD"],
-                    "payment_method_types": ["CARD"],
-                    "crypto_currency_codes": ["USDC_SOLANA"],
+                    "fiatCurrencies": [{"currencyCode": "USD", "exponent": 2}],
+                    "paymentMethods": ["CARD"],
+                    "assets": [
+                        {
+                            "asset": {"token": {"mint": "MINT"}},
+                            "name": "USD Coin",
+                            "decimals": 6,
+                        }
+                    ],
                 }
             },
         )
@@ -194,46 +200,47 @@ async def test_proxy_exposes_current_onramp_options_contract() -> None:
     )
     response = await handler.handle(
         method="GET",
-        path="/api/swig/ramp/onramp/options",
+        path="/api/swig/ramp/options",
         query={
-            "organizationMeldConfigurationId": "config-123",
+            "configurationId": "config-123",
             "environment": "sandbox",
+            "direction": "buy",
             "countryCode": "US",
         },
     )
 
     assert response.status == 200
-    assert response.body["cryptoCurrencyCodes"] == ["USDC_SOLANA"]
-    assert requests[0].url.path == "/wallet/api/ramp/onramp/options"
-    assert requests[0].url.params["organizationMeldConfigurationId"] == "config-123"
-    assert requests[0].url.params["environment"] == "MELD_ENVIRONMENT_SANDBOX"
+    assert response.body["assets"][0]["asset"] == {"type": "token", "mint": "MINT"}
+    assert response.body["assets"][0]["decimals"] == 6
+    assert requests[0].url.path == "/wallet/api/ramp/options"
+    assert requests[0].url.params["configurationId"] == "config-123"
+    assert requests[0].url.params["environment"] == "RAMP_ENVIRONMENT_SANDBOX"
+    assert requests[0].url.params["direction"] == "RAMP_DIRECTION_BUY"
 
 
-async def test_proxy_exposes_offramp_prepare_contract() -> None:
-    requests: list[httpx.Request] = []
-
+async def test_proxy_quotes_returns_an_object_on_success() -> None:
     def backend(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
         return httpx.Response(
             200,
             json={
                 "data": {
-                    "authorization_id": "authorization-123",
-                    "prepared_transaction": {
-                        "transaction": "prepared",
-                        "signature_requests": [],
-                        "transaction_encoding": "TRANSACTION_ENCODING_BASE64",
-                        "network": "NETWORK_MAINNET",
-                    },
-                    "display": {
-                        "source_wallet_address": "source",
-                        "destination_wallet_address": "destination",
-                        "source_amount": "10",
-                        "source_currency_code": "USDC_SOLANA",
-                        "destination_amount": "9.75",
-                        "destination_currency_code": "USD",
-                        "service_provider": "TRANSAK",
-                    },
+                    "quotes": [
+                        {
+                            "route": {"provider": "P", "paymentMethod": "CARD"},
+                            "buy": {
+                                "spend": {"currencyCode": "USD", "minorUnits": "10000"},
+                                "receive": {
+                                    "asset": {"token": {"mint": "MINT"}},
+                                    "baseUnits": "95010000",
+                                },
+                                "totalFee": {
+                                    "currencyCode": "USD",
+                                    "minorUnits": "499",
+                                },
+                                "exchangeRate": "1.053",
+                            },
+                        }
+                    ]
                 }
             },
         )
@@ -247,20 +254,243 @@ async def test_proxy_exposes_offramp_prepare_contract() -> None:
     )
     response = await handler.handle(
         method="POST",
-        path="/api/swig/ramp/offramp/session/session-123/prepare",
+        path="/api/swig/ramp/quotes",
         body={
-            "requesterAuthority": {"ed25519": {"publicKey": "requester"}},
-            "environment": "production",
+            "configurationId": "config-123",
+            "environment": "sandbox",
+            "location": {"countryCode": "US"},
+            # A browser sends a JSON number, which the SDK's Amount type allows.
+            "buy": {
+                "spend": {"currencyCode": "USD", "minorUnits": 10000},
+                "receive": {"token": {"mint": "MINT"}},
+            },
+        },
+    )
+
+    assert response.status == 200
+    assert response.body["quotes"][0]["route"]["provider"] == "P"
+    assert response.body["quotes"][0]["details"]["type"] == "buy"
+
+
+async def test_proxy_creates_an_order() -> None:
+    requests: list[httpx.Request] = []
+
+    def backend(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "order": {
+                        "id": "order-1",
+                        "status": "RAMP_ORDER_STATUS_AWAITING_CUSTOMER",
+                        "createdAt": "2026-09-01T00:00:00Z",
+                        "updatedAt": "2026-09-01T00:00:00Z",
+                        "sell": {
+                            "quote": {
+                                "sell": {
+                                    "asset": {"sol": {}},
+                                    "baseUnits": "1000000000",
+                                },
+                                "receive": {
+                                    "currencyCode": "USD",
+                                    "minorUnits": "15000",
+                                },
+                                "totalFee": {
+                                    "currencyCode": "USD",
+                                    "minorUnits": "300",
+                                },
+                                "exchangeRate": "150.00",
+                            }
+                        },
+                    }
+                }
+            },
+        )
+
+    handler = create_swig_proxy_handler(
+        SwigProxyConfig(
+            api_key="secret",
+            transaction_api_url="https://backend.test",
+            network="mainnet",
+            transport=httpx.MockTransport(backend),
+        )
+    )
+    response = await handler.handle(
+        method="POST",
+        path="/api/swig/ramp/orders",
+        body={
+            "requestId": "request-1",
+            "configurationId": "config-123",
+            "environment": "sandbox",
+            "context": {
+                "customerId": "customer-1",
+                "swigConfigAddress": "swig-config",
+                "location": {"countryCode": "US"},
+            },
+            "route": {"provider": "P", "paymentMethod": "BANK"},
+            "sell": {
+                "sell": {"asset": {"sol": {}}, "baseUnits": 1000000000},
+                "receiveFiatCurrencyCode": "USD",
+            },
+        },
+    )
+
+    assert response.status == 200
+    assert response.body["id"] == "order-1"
+    sent = json.loads(requests[0].content)
+    # A JSON number is canonicalized, and native SOL keeps its empty message.
+    assert sent["sell"]["sell"]["baseUnits"] == "1000000000"
+    assert sent["sell"]["sell"]["asset"] == {"sol": {}}
+
+
+async def test_proxy_submits_a_transfer() -> None:
+    requests: list[httpx.Request] = []
+
+    def backend(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "transfer": {
+                        "transferId": "transfer-1",
+                        "state": "TRANSFER_STATE_LANDED",
+                        "expiresAt": "2026-09-01T00:01:00Z",
+                    }
+                }
+            },
+        )
+
+    handler = create_swig_proxy_handler(
+        SwigProxyConfig(
+            api_key="secret",
+            transaction_api_url="https://backend.test",
+            transport=httpx.MockTransport(backend),
+        )
+    )
+    response = await handler.handle(
+        method="POST",
+        path="/api/swig/ramp/orders/order-1/transfer/submit",
+        body={"transferId": "transfer-1"},
+    )
+
+    assert response.status == 200
+    assert response.body["state"] == "landed"
+    # Omitted bytes resolve an attempt that was already broadcast.
+    assert json.loads(requests[0].content)["signedTransaction"] == ""
+
+
+async def test_proxy_matches_transfer_routes_with_participant_set_authority() -> None:
+    requests: list[httpx.Request] = []
+
+    def backend(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "preparedTransfer": {
+                        "transfer": {
+                            "transferId": "transfer-1",
+                            "state": "TRANSFER_STATE_PREPARED",
+                            "expiresAt": "2026-09-01T00:01:00Z",
+                        },
+                        "preparedTransaction": {
+                            "transaction": "prepared-base64",
+                            "transactionEncoding": "TRANSACTION_ENCODING_BASE64",
+                            "network": "NETWORK_DEVNET",
+                        },
+                        "deposit": {
+                            "address": "deposit-address",
+                            "amount": {
+                                "asset": {"sol": {}},
+                                "baseUnits": "1000000000",
+                            },
+                        },
+                    }
+                }
+            },
+        )
+
+    handler = create_swig_proxy_handler(
+        SwigProxyConfig(
+            api_key="secret",
+            transaction_api_url="https://backend.test",
+            transport=httpx.MockTransport(backend),
+        )
+    )
+    response = await handler.handle(
+        method="POST",
+        path="/api/swig/ramp/orders/order%2F123/transfer/prepare",
+        body={
+            "requesterAuthority": {
+                "participantSet": {"address": "participant-set", "roleId": 3}
+            },
             "feePayer": "payer",
         },
     )
 
     assert response.status == 200
-    assert response.body["authorizationId"] == "authorization-123"
-    assert requests[0].url.path.endswith("/session/session-123/prepare")
-    assert json.loads(requests[0].content)["environment"] == (
-        "MELD_ENVIRONMENT_PRODUCTION"
+    assert (
+        requests[0].url.raw_path.decode()
+        == "/wallet/api/ramp/orders/order%2F123/transfer/prepare"
     )
+    assert json.loads(requests[0].content)["requesterAuthority"] == {
+        "participantSet": {
+            "participantSetAddress": "participant-set",
+            "roleId": 3,
+        }
+    }
+    assert response.body["deposit"]["amount"]["asset"] == {"type": "sol"}
+
+
+async def test_proxy_preserves_uint64_amounts_as_strings() -> None:
+    def backend(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "order": {
+                        "id": "order-1",
+                        "status": "RAMP_ORDER_STATUS_SETTLED",
+                        "createdAt": "2026-09-01T00:00:00Z",
+                        "updatedAt": "2026-09-01T00:00:00Z",
+                        "sell": {
+                            "quote": {
+                                "sell": {
+                                    "asset": {"sol": {}},
+                                    "baseUnits": "18446744073709551615",
+                                },
+                                "receive": {
+                                    "currencyCode": "USD",
+                                    "minorUnits": "15000",
+                                },
+                                "totalFee": {
+                                    "currencyCode": "USD",
+                                    "minorUnits": "300",
+                                },
+                                "exchangeRate": "150.00",
+                            }
+                        },
+                    }
+                }
+            },
+        )
+
+    handler = create_swig_proxy_handler(
+        SwigProxyConfig(
+            api_key="secret",
+            transaction_api_url="https://backend.test",
+            transport=httpx.MockTransport(backend),
+        )
+    )
+    response = await handler.handle(
+        method="GET", path="/api/swig/ramp/orders/order-1", query={}
+    )
+
+    assert response.status == 200
+    assert response.body["quote"]["sell"]["baseUnits"] == "18446744073709551615"
 
 
 async def test_proxy_reads_wallet_roles() -> None:
