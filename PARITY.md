@@ -58,8 +58,10 @@ by the buy or sell order, not by the client you call.
 | Transfer submission | `swig.ramp.submitTransfer` | `swig.ramp.submit_transfer` | same empty `signedTransaction` resolution of an already-broadcast attempt |
 
 Amounts are integers in the smallest unit and cross the wire as decimal
-strings in both languages, so a value above 2^53 survives. Crypto assets are a
-two-case type — native SOL or an SPL mint — encoded as `{"sol": {}}` or
+strings in both languages, so a value above 2^53 survives. TypeScript callers
+must use a `bigint` or decimal string above the safe-integer range; Python
+integers are arbitrary precision. Crypto assets are a two-case type — native
+SOL or an SPL mint — encoded as `{"sol": {}}` or
 `{"token": {"mint": ...}}` and decoded by key presence in both languages.
 Status and transfer-state enums are decoded from their wire names through an
 explicit table; an unrecognized value is refused rather than guessed.

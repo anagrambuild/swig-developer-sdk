@@ -125,10 +125,10 @@ accepted the bundle; it likewise may still be pending.
 ## Ramp API
 
 One service covers both directions. Direction is carried by the buy or sell
-order rather than a parallel field, so the two cannot disagree. Every request
-requires a `configurationId` and a `sandbox` or `production` ramp environment;
-order reads and transfer actions identify the order in the route path and take
-no environment, because the environment is a property of the stored order.
+order rather than a parallel field, so the two cannot disagree. Options,
+quotes, and order creation require a `configurationId` and a `sandbox` or
+`production` ramp environment. Order reads and transfer actions identify the
+stored order in the route path and require neither field.
 
 | Method | Route |
 | --- | --- |
