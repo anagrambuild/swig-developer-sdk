@@ -492,6 +492,23 @@ def _read_authority(value: object) -> WalletAuthority | None:
         zk_proof = _optional_string(proof.get("zkProof"))
         if role_id is not None and zk_proof:
             return {"programExecProof": {"roleId": role_id, "zkProof": zk_proof}}
+    participant_set = body.get("participantSet")
+    if isinstance(participant_set, Mapping):
+        address = _optional_string(
+            participant_set.get("address", participant_set.get("participantSetAddress"))
+        )
+        raw_role_id = participant_set.get("roleId")
+        role_id = _optional_int(raw_role_id)
+        if not address:
+            raise SwigProxyRouteError("participantSet authority requires address")
+        if raw_role_id is not None and role_id is None:
+            raise SwigProxyRouteError(
+                "participantSet authority roleId must be an integer"
+            )
+        authority: dict[str, object] = {"address": address}
+        if role_id is not None:
+            authority["roleId"] = role_id
+        return {"participantSet": authority}
     raise SwigProxyRouteError("authority must include a supported authority")
 
 
