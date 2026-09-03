@@ -218,6 +218,169 @@ async def test_proxy_exposes_the_ramp_options_contract() -> None:
     assert requests[0].url.params["direction"] == "RAMP_DIRECTION_BUY"
 
 
+async def test_proxy_quotes_returns_an_object_on_success() -> None:
+    def backend(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "quotes": [
+                        {
+                            "route": {"provider": "P", "paymentMethod": "CARD"},
+                            "buy": {
+                                "spend": {"currencyCode": "USD", "minorUnits": "10000"},
+                                "receive": {
+                                    "asset": {"token": {"mint": "MINT"}},
+                                    "baseUnits": "95010000",
+                                },
+                                "totalFee": {
+                                    "currencyCode": "USD",
+                                    "minorUnits": "499",
+                                },
+                                "exchangeRate": "1.053",
+                            },
+                        }
+                    ]
+                }
+            },
+        )
+
+    handler = create_swig_proxy_handler(
+        SwigProxyConfig(
+            api_key="secret",
+            transaction_api_url="https://backend.test",
+            transport=httpx.MockTransport(backend),
+        )
+    )
+    response = await handler.handle(
+        method="POST",
+        path="/api/swig/ramp/quotes",
+        body={
+            "configurationId": "config-123",
+            "environment": "sandbox",
+            "location": {"countryCode": "US"},
+            # A browser sends a JSON number, which the SDK's Amount type allows.
+            "buy": {
+                "spend": {"currencyCode": "USD", "minorUnits": 10000},
+                "receive": {"token": {"mint": "MINT"}},
+            },
+        },
+    )
+
+    assert response.status == 200
+    assert response.body["quotes"][0]["route"]["provider"] == "P"
+    assert response.body["quotes"][0]["details"]["type"] == "buy"
+
+
+async def test_proxy_creates_an_order() -> None:
+    requests: list[httpx.Request] = []
+
+    def backend(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "order": {
+                        "id": "order-1",
+                        "status": "RAMP_ORDER_STATUS_AWAITING_CUSTOMER",
+                        "createdAt": "2026-09-01T00:00:00Z",
+                        "updatedAt": "2026-09-01T00:00:00Z",
+                        "sell": {
+                            "quote": {
+                                "sell": {
+                                    "asset": {"sol": {}},
+                                    "baseUnits": "1000000000",
+                                },
+                                "receive": {
+                                    "currencyCode": "USD",
+                                    "minorUnits": "15000",
+                                },
+                                "totalFee": {
+                                    "currencyCode": "USD",
+                                    "minorUnits": "300",
+                                },
+                                "exchangeRate": "150.00",
+                            }
+                        },
+                    }
+                }
+            },
+        )
+
+    handler = create_swig_proxy_handler(
+        SwigProxyConfig(
+            api_key="secret",
+            transaction_api_url="https://backend.test",
+            network="mainnet",
+            transport=httpx.MockTransport(backend),
+        )
+    )
+    response = await handler.handle(
+        method="POST",
+        path="/api/swig/ramp/orders",
+        body={
+            "requestId": "request-1",
+            "configurationId": "config-123",
+            "environment": "sandbox",
+            "context": {
+                "customerId": "customer-1",
+                "swigConfigAddress": "swig-config",
+                "location": {"countryCode": "US"},
+            },
+            "route": {"provider": "P", "paymentMethod": "BANK"},
+            "sell": {
+                "sell": {"asset": {"sol": {}}, "baseUnits": 1000000000},
+                "receiveFiatCurrencyCode": "USD",
+            },
+        },
+    )
+
+    assert response.status == 200
+    assert response.body["id"] == "order-1"
+    sent = json.loads(requests[0].content)
+    # A JSON number is canonicalized, and native SOL keeps its empty message.
+    assert sent["sell"]["sell"]["baseUnits"] == "1000000000"
+    assert sent["sell"]["sell"]["asset"] == {"sol": {}}
+
+
+async def test_proxy_submits_a_transfer() -> None:
+    requests: list[httpx.Request] = []
+
+    def backend(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "transfer": {
+                        "transferId": "transfer-1",
+                        "state": "TRANSFER_STATE_LANDED",
+                        "expiresAt": "2026-09-01T00:01:00Z",
+                    }
+                }
+            },
+        )
+
+    handler = create_swig_proxy_handler(
+        SwigProxyConfig(
+            api_key="secret",
+            transaction_api_url="https://backend.test",
+            transport=httpx.MockTransport(backend),
+        )
+    )
+    response = await handler.handle(
+        method="POST",
+        path="/api/swig/ramp/orders/order-1/transfer/submit",
+        body={"transferId": "transfer-1"},
+    )
+
+    assert response.status == 200
+    assert response.body["state"] == "landed"
+    # Omitted bytes resolve an attempt that was already broadcast.
+    assert json.loads(requests[0].content)["signedTransaction"] == ""
+
+
 async def test_proxy_matches_the_templated_transfer_routes() -> None:
     requests: list[httpx.Request] = []
 

@@ -389,9 +389,9 @@ def _options_path(
         "environment": _environment_wire(environment),
         "direction": _direction_wire(direction),
     }
-    if country_code is not None:
+    if country_code:
         query["countryCode"] = country_code
-    if fiat_currency_code is not None:
+    if fiat_currency_code:
         query["fiatCurrencyCode"] = fiat_currency_code
     return f"/wallet/api/ramp/options?{urlencode(query)}"
 
@@ -451,10 +451,6 @@ def _direction_wire(direction: RampDirection) -> str:
     if direction == "sell":
         return "RAMP_DIRECTION_SELL"
     raise ValueError('direction must be "buy" or "sell"')
-
-
-def normalize_ramp_options(response: object) -> RampOptions:
-    return _normalize_options(response)
 
 
 def _normalize_options(response: object) -> RampOptions:
