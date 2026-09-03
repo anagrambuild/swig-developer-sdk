@@ -10,6 +10,7 @@ from .common import (
     Network,
     WalletAuthority,
     normalize_amount,
+    require_network,
     to_proto_network,
     wallet_authority_to_wire,
 )
@@ -298,9 +299,7 @@ class RampClient:
         route: RampRoute,
         order: RampOrderRequest,
     ) -> RampOrder:
-        network = context.network or self._default_network
-        if network is None:
-            raise ValueError("network is required")
+        network = require_network(context.network, self._default_network)
         # request_id makes a replay return the stored order, so a retry is safe.
         return _normalize_order_response(
             await self._http.post(
@@ -464,7 +463,7 @@ def _normalize_options(response: object) -> RampOptions:
         countries=tuple(_normalize_country(item) for item in countries),
         fiat_currencies=tuple(_normalize_fiat_currency(item) for item in currencies),
         payment_methods=_string_tuple(
-            _pick(body, "paymentMethods", "payment_methods") or []
+            _pick(body, "paymentMethods", "payment_methods") or [], "paymentMethods"
         ),
         assets=tuple(_normalize_asset_option(item) for item in assets),
     )
@@ -731,10 +730,10 @@ def _sequence(value: object, field: str) -> Sequence[object]:
     raise ValueError(f"Ramp response has invalid {field}")
 
 
-def _string_tuple(value: object) -> tuple[str, ...]:
-    sequence = _sequence(value, "string list")
+def _string_tuple(value: object, field: str) -> tuple[str, ...]:
+    sequence = _sequence(value, field)
     if not all(isinstance(item, str) for item in sequence):
-        raise ValueError("Ramp response has invalid string list")
+        raise ValueError(f"Ramp response has invalid {field}")
     return tuple(cast(str, item) for item in sequence)
 
 
@@ -763,15 +762,15 @@ def _optional_string(value: object) -> str | None:
 
 def _units_field(value: object, field: str) -> str:
     """uint64 crosses the wire as a decimal string; keeping it one avoids 2^53."""
-    if not isinstance(value, str) or not value.isdigit():
+    if not isinstance(value, str) or not (value.isascii() and value.isdigit()):
         raise ValueError(f"Ramp response has invalid {field}")
     return value
 
 
 def _number_field(value: object, field: str) -> int:
     if isinstance(value, bool) or not isinstance(value, (int, str)):
-        raise ValueError(f"Ramp response is missing {field}")
+        raise ValueError(f"Ramp response has invalid {field}")
     try:
         return int(value)
     except ValueError as error:
-        raise ValueError(f"Ramp response is missing {field}") from error
+        raise ValueError(f"Ramp response has invalid {field}") from error
