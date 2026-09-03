@@ -20,6 +20,21 @@ function jsonFetch(
   }) as typeof fetch;
 }
 
+/** Like jsonFetch, but the handler owns the Response so a test can drive a 5xx. */
+function replyFetch(
+  handler: (request: CapturedRequest) => Response,
+): typeof fetch {
+  return (async (input, init) => {
+    const request = new Request(input, init);
+    const text = await request.text();
+    return handler({
+      url: request.url,
+      method: request.method,
+      ...(text ? { body: JSON.parse(text) } : {}),
+    });
+  }) as typeof fetch;
+}
+
 function client(handler: (request: CapturedRequest) => unknown) {
   return new SwigClient({
     apiKey: 'sk_test',
@@ -396,6 +411,103 @@ describe('RampClient', () => {
     expect(prepared.transfer.state).toBe('prepared');
     expect(prepared.preparedTransaction.transaction).toBe('prepared-base64');
     expect(prepared.deposit.amount.asset).toEqual({ type: 'sol' });
+  });
+
+  test('retries createOrder on a transient failure', async () => {
+    let attempts = 0;
+    const swig = new SwigClient({
+      apiKey: 'sk_test',
+      baseUrl: 'http://localhost:8080',
+      network: 'devnet',
+      retryOptions: { maxRetries: 1, retryDelay: 0 },
+      fetch: replyFetch(() => {
+        attempts += 1;
+        if (attempts === 1) return new Response('', { status: 503 });
+        return Response.json({
+          order: buyOrder('RAMP_ORDER_STATUS_AWAITING_CUSTOMER'),
+        });
+      }),
+    });
+
+    const order = await swig.ramp.createOrder({
+      requestId: 'request-1',
+      configurationId: '018f-config',
+      environment: 'sandbox',
+      context: {
+        customerId: 'customer-1',
+        swigConfigAddress: 'swig-config',
+        location: { countryCode: 'US' },
+      },
+      route: { provider: 'PROVIDER', paymentMethod: 'CARD' },
+      order: {
+        type: 'buy',
+        spend: { currencyCode: 'USD', minorUnits: '10000' },
+        receive: { type: 'token', mint: 'MINT' },
+      },
+    });
+
+    expect(order.id).toBe('order-1');
+    expect(attempts).toBe(2);
+  });
+
+  test('does not retry submitTransfer', async () => {
+    let attempts = 0;
+    const swig = new SwigClient({
+      apiKey: 'sk_test',
+      baseUrl: 'http://localhost:8080',
+      network: 'devnet',
+      retryOptions: { maxRetries: 1, retryDelay: 0 },
+      fetch: replyFetch(() => {
+        attempts += 1;
+        return new Response('', { status: 503 });
+      }),
+    });
+
+    await expect(
+      swig.ramp.submitTransfer({
+        orderId: 'order-1',
+        transferId: 'transfer-1',
+      }),
+    ).rejects.toThrow();
+    expect(attempts).toBe(1);
+  });
+
+  test('sends the participant set authority in its wire shape', async () => {
+    const calls: CapturedRequest[] = [];
+    const swig = client((request) => {
+      calls.push(request);
+      return {
+        preparedTransfer: {
+          transfer: {
+            transferId: 'transfer-1',
+            state: 'TRANSFER_STATE_PREPARED',
+            expiresAt: '2026-09-01T00:01:00Z',
+          },
+          preparedTransaction: {
+            transaction: 'prepared-base64',
+            transactionEncoding: 'TRANSACTION_ENCODING_BASE64',
+            network: 'NETWORK_DEVNET',
+          },
+          deposit: {
+            address: 'deposit-address',
+            amount: { asset: { sol: {} }, baseUnits: '1000000000' },
+          },
+        },
+      };
+    });
+
+    await swig.ramp.prepareTransfer({
+      orderId: 'order-1',
+      requesterAuthority: { participantSet: { address: 'PSET', roleId: 3 } },
+      feePayer: 'payer',
+    });
+
+    expect(calls[0]?.body).toEqual({
+      requesterAuthority: {
+        participantSet: { participantSetAddress: 'PSET', roleId: 3 },
+      },
+      feePayer: 'payer',
+    });
   });
 
   test('sends an empty signed transaction when none is given', async () => {

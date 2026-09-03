@@ -53,6 +53,7 @@ import {
   normalizeAmount,
   normalizePreparedTransaction,
 } from '../wallets/normalizers.js';
+import { walletAuthorityRequest } from '../wallets/requests.js';
 
 export class RampClient {
   constructor(
@@ -94,7 +95,7 @@ export class RampClient {
     const response = await this.http.post<PrepareRampTransferResponseWire>(
       `${orderPath(args.orderId)}/transfer/prepare`,
       {
-        requesterAuthority: args.requesterAuthority,
+        requesterAuthority: walletAuthorityRequest(args.requesterAuthority),
         feePayer: args.feePayer,
       },
     );
@@ -228,7 +229,7 @@ function directionWire(direction: RampDirection): string {
   }
 }
 
-export function normalizeRampOptions(response: RampOptionsWire): RampOptions {
+function normalizeRampOptions(response: RampOptionsWire): RampOptions {
   return {
     countries: (response.countries ?? []).map(normalizeCountry),
     fiatCurrencies: (
@@ -279,9 +280,7 @@ function normalizeAssetOption(asset: RampAssetOptionWire): RampAssetOption {
   };
 }
 
-export function normalizeRampQuotes(
-  response: GetRampQuotesResponseWire,
-): RampQuote[] {
+function normalizeRampQuotes(response: GetRampQuotesResponseWire): RampQuote[] {
   return (response.quotes ?? []).map(normalizeQuote);
 }
 
@@ -335,7 +334,7 @@ function normalizeRoute(route?: RampRouteWire): RampRoute {
   };
 }
 
-export function normalizeRampOrderResponse(
+function normalizeRampOrderResponse(
   response: RampOrderResponseWire,
 ): RampOrder {
   return normalizeOrder(requiredField(response.order, 'order'));
@@ -399,9 +398,7 @@ function normalizePreparedRampTransfer(
   };
 }
 
-export function normalizeRampTransfer(
-  transfer: RampTransferWire,
-): RampTransfer {
+function normalizeRampTransfer(transfer: RampTransferWire): RampTransfer {
   return {
     transferId: requiredString(
       transfer.transferId ?? transfer.transfer_id,
