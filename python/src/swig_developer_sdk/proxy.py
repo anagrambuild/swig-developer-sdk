@@ -176,17 +176,15 @@ class SwigProxyHandler:
                 )
             return {"prepared": created}
         if route == "ramp/quotes":
-            return cast(
-                Mapping[str, object],
-                _to_wire(
-                    await swig.ramp.get_quotes(
-                        configuration_id=_required_string(body, "configurationId"),
-                        environment=_read_ramp_environment(body.get("environment")),
-                        location=_read_ramp_location(body.get("location")),
-                        order=_read_ramp_order(body),
-                    )
-                ),
+            # The client returns the quotes themselves; the proxy answers with an
+            # object, so they are wrapped the way the backend wraps them.
+            quotes = await swig.ramp.get_quotes(
+                configuration_id=_required_string(body, "configurationId"),
+                environment=_read_ramp_environment(body.get("environment")),
+                location=_read_ramp_location(body.get("location")),
+                order=_read_ramp_order(body),
             )
+            return {"quotes": _to_wire(quotes)}
         if route == "ramp/orders":
             return cast(
                 Mapping[str, object],
@@ -603,6 +601,15 @@ def _read_ramp_asset(value: object) -> CryptoAsset:
     raise SwigProxyRouteError("asset must be sol or token")
 
 
+def _read_ramp_amount(value: object, field: str) -> str:
+    """Amount is int | str in the SDK, so a JSON number is valid here."""
+    if isinstance(value, str) and value:
+        return value
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    raise SwigProxyRouteError(f"{field} must be an integer or a decimal string")
+
+
 def _read_ramp_order(body: Mapping[str, object]) -> RampOrderRequest:
     buy = body.get("buy")
     if isinstance(buy, Mapping):
@@ -612,7 +619,7 @@ def _read_ramp_order(body: Mapping[str, object]) -> RampOrderRequest:
         return RampBuyOrderRequest(
             spend=FiatAmountInput(
                 currency_code=_required_string(spend, "currencyCode"),
-                minor_units=_required_string(spend, "minorUnits"),
+                minor_units=_read_ramp_amount(spend.get("minorUnits"), "minorUnits"),
             ),
             receive=_read_ramp_asset(buy.get("receive")),
         )
@@ -624,7 +631,7 @@ def _read_ramp_order(body: Mapping[str, object]) -> RampOrderRequest:
         return RampSellOrderRequest(
             sell=CryptoAmountInput(
                 asset=_read_ramp_asset(inner.get("asset")),
-                base_units=_required_string(inner, "baseUnits"),
+                base_units=_read_ramp_amount(inner.get("baseUnits"), "baseUnits"),
             ),
             receive_fiat_currency_code=_required_string(
                 sell, "receiveFiatCurrencyCode"
