@@ -462,6 +462,8 @@ A sell waits for `awaiting-transfer` and a `deposit`, then moves the crypto from
 the Swig. Your application owns the signing step.
 
 ```typescript
+import { signPreparedTransaction } from '@swig-wallet/developer-sdk/signers';
+
 const prepared = await swig.ramp.prepareTransfer({
   orderId: order.id,
   requesterAuthority: { ed25519: { publicKey: requester } },
