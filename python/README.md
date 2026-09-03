@@ -5,7 +5,7 @@ Python SDK for preparing Swig wallet operations on a server, with a separate
 module inserts signatures with `solders` and makes no hosted API requests. No
 signing material is sent to the API.
 
-- Version: `0.8.0`
+- Version: `0.9.0`
 - Source: <https://github.com/anagrambuild/swig-developer-sdk>
 - Default API base URL: `https://api.onswig.com`
 
@@ -59,6 +59,8 @@ swig = SwigClient(
   or submission request can duplicate work.
 - Sponsorship `POST` requests retry only when `idempotency_key` is set. A
   matching retry returns the original paymaster response.
+- Ramp order creation retries because its required `request_id` makes replay
+  safe. Transfer preparation and submission do not retry automatically.
 - `4xx` responses raise `SwigDeveloperSdkError` immediately.
 
 ## Create a wallet
@@ -305,10 +307,11 @@ policy = await swig.wallets.get_policy(policy_id)
 ## Fiat ramps
 
 `swig.ramp` covers both directions. Direction is carried by the buy or sell
-order you pass, so there is no separate on-ramp or off-ramp client. Every call
-requires a `configuration_id` and an `environment` of `"sandbox"` or
-`"production"`; `get_order`, `prepare_transfer`, and `submit_transfer` identify
-the order in the route and take no environment.
+order you pass, so there is no separate on-ramp or off-ramp client.
+`get_options`, `get_quotes`, and `create_order` require a `configuration_id` and
+an `environment` of `"sandbox"` or `"production"`. `get_order`,
+`prepare_transfer`, and `submit_transfer` use the stored order and require
+neither field.
 
 Amounts are integers in the smallest unit the thing has — `minor_units` for
 fiat (cents for USD, whole yen for JPY) and `base_units` for crypto. They cross
@@ -391,13 +394,18 @@ A sell waits for `awaiting-transfer` and a `deposit`, then moves the crypto out
 of the Swig. Your application owns the signing step.
 
 ```python
+from swig_developer_sdk.signers import sign_prepared_transaction
+
 prepared = await swig.ramp.prepare_transfer(
     order_id=order.id,
     requester_authority={"ed25519": {"publicKey": requester}},
     fee_payer=fee_payer,
 )
 
-signed = sign_prepared_transaction(prepared.prepared_transaction, signer)
+signed = await sign_prepared_transaction(
+    prepared.prepared_transaction,
+    sign_transaction=sign_transaction,
+)
 
 transfer = await swig.ramp.submit_transfer(
     order_id=order.id,

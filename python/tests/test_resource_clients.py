@@ -20,10 +20,12 @@ from swig_developer_sdk import (
     RampSellOrder,
     RampSellOrderRequest,
     RampSellQuote,
+    RetryOptions,
     SplTokenAsset,
     SponsorSignedTransactionArgs,
     SponsorSignedTransactionBundleArgs,
     SwigClient,
+    SwigDeveloperSdkError,
 )
 
 
@@ -354,6 +356,47 @@ async def test_ramp_create_order_unwraps_the_envelope() -> None:
     }
 
 
+async def test_ramp_create_order_retries_a_transient_failure() -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(503)
+        return httpx.Response(
+            200,
+            json={"data": {"order": _buy_order("RAMP_ORDER_STATUS_AWAITING_CUSTOMER")}},
+        )
+
+    swig = SwigClient(
+        api_key="secret",
+        base_url="https://example.test",
+        network="devnet",
+        retry_options=RetryOptions(max_retries=1, retry_delay=0),
+        transport=httpx.MockTransport(handler),
+    )
+
+    order = await swig.ramp.create_order(
+        request_id="request-1",
+        configuration_id="018f-config",
+        environment="sandbox",
+        context=RampOrderContext(
+            customer_id="customer-1",
+            swig_config_address="swig-config",
+            location=RampLocation(country_code="US"),
+        ),
+        route=RampRoute(provider="PROVIDER", payment_method="CARD"),
+        order=RampBuyOrderRequest(
+            spend=FiatAmountInput(currency_code="USD", minor_units="10000"),
+            receive=SplTokenAsset(mint="MINT"),
+        ),
+    )
+
+    assert order.id == "order-1"
+    assert attempts == 2
+
+
 async def test_ramp_missing_order_envelope_is_rejected() -> None:
     swig = _ramp_client(lambda request: {})
 
@@ -479,6 +522,32 @@ async def test_ramp_submit_sends_an_empty_signed_transaction_by_default() -> Non
     }
     assert transfer.state == "landed"
     assert transfer.solana_signature == "signature"
+
+
+async def test_ramp_submit_transfer_does_not_retry() -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(503)
+
+    swig = SwigClient(
+        api_key="secret",
+        base_url="https://example.test",
+        network="devnet",
+        retry_options=RetryOptions(max_retries=1, retry_delay=0),
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(SwigDeveloperSdkError) as exc_info:
+        await swig.ramp.submit_transfer(
+            order_id="order-1",
+            transfer_id="transfer-1",
+        )
+
+    assert exc_info.value.status_code == 503
+    assert attempts == 1
 
 
 async def test_ramp_rejects_an_invalid_environment_at_runtime() -> None:

@@ -381,7 +381,7 @@ async def test_proxy_submits_a_transfer() -> None:
     assert json.loads(requests[0].content)["signedTransaction"] == ""
 
 
-async def test_proxy_matches_the_templated_transfer_routes() -> None:
+async def test_proxy_matches_transfer_routes_with_participant_set_authority() -> None:
     requests: list[httpx.Request] = []
 
     def backend(request: httpx.Request) -> httpx.Response:
@@ -424,7 +424,9 @@ async def test_proxy_matches_the_templated_transfer_routes() -> None:
         method="POST",
         path="/api/swig/ramp/orders/order%2F123/transfer/prepare",
         body={
-            "requesterAuthority": {"ed25519": {"publicKey": "requester"}},
+            "requesterAuthority": {
+                "participantSet": {"address": "participant-set", "roleId": 3}
+            },
             "feePayer": "payer",
         },
     )
@@ -434,6 +436,12 @@ async def test_proxy_matches_the_templated_transfer_routes() -> None:
         requests[0].url.raw_path.decode()
         == "/wallet/api/ramp/orders/order%2F123/transfer/prepare"
     )
+    assert json.loads(requests[0].content)["requesterAuthority"] == {
+        "participantSet": {
+            "participantSetAddress": "participant-set",
+            "roleId": 3,
+        }
+    }
     assert response.body["deposit"]["amount"]["asset"] == {"type": "sol"}
 
 
