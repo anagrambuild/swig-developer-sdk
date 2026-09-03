@@ -1,5 +1,33 @@
 # @swig-wallet/developer-sdk
 
+## 0.10.0
+
+### Major Changes
+
+- Replace the direction-specific `swig.ramp.onramp` and `swig.ramp.offramp`
+  clients with a single `swig.ramp` client covering both directions:
+  `getOptions`, `getQuotes`, `createOrder`, `getOrder`, `prepareTransfer`, and
+  `submitTransfer`. Sessions are now orders, and direction is carried by the
+  `buy` or `sell` order rather than by the client you call.
+- `organizationMeldConfigurationId` becomes `configurationId`, and the
+  environment is a ramp environment rather than a MELD one. `getOrder`,
+  `prepareTransfer`, and `submitTransfer` no longer take an environment; it is
+  a property of the stored order.
+- `getQuotes` returns a `route` plus a `details` arm rather than a flat quote.
+- Quotes no longer carry an id and must not be cached. `createOrder` takes the
+  chosen `route` plus a caller-generated `requestId` idempotency key, and
+  re-prices the route server-side. Repeating a `requestId` returns the stored
+  order.
+- Amounts are integers in the smallest unit — `minorUnits` for fiat,
+  `baseUnits` for crypto — and cross the wire as decimal strings, so a value
+  above 2^53 survives. Number inputs must be safe integers; use a `bigint` or
+  decimal string for larger values. Crypto is a `CryptoAsset` of
+  `{ type: 'sol' }` or `{ type: 'token', mint }` rather than a currency code.
+- `prepareAuthorization` and `submitAuthorization` become `prepareTransfer` and
+  `submitTransfer`, keyed by `orderId` and `transferId`. Calling
+  `submitTransfer` without `signedTransaction` resolves an attempt that was
+  already broadcast.
+
 ## 0.9.0
 
 ### Major Changes
