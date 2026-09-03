@@ -3,7 +3,7 @@
 Python mirrors the TypeScript server SDK by behavior and client hierarchy
 except for features explicitly marked as pending. Python uses snake_case names
 and keyword arguments; TypeScript uses camelCase and options objects.
-TypeScript is version `0.9.0`, Python is version `0.8.0`, and both default to
+TypeScript is version `0.10.0`, Python is version `0.9.0`, and both default to
 `https://api.onswig.com`.
 
 ## Client surface
@@ -45,17 +45,26 @@ Sponsor responses report submission acceptance, not confirmation or finality.
 
 ## Ramp
 
-Both SDKs expose direction-specific clients. There is no generic ramp client.
+Both SDKs expose one ramp client covering both directions. Direction is carried
+by the buy or sell order, not by the client you call.
 
 | Surface | TypeScript | Python | Parity target |
 | --- | --- | --- | --- |
-| Onramp options | `swig.ramp.onramp.getOptions` | `swig.ramp.onramp.get_options` | same query and normalization |
-| Onramp quote | `swig.ramp.onramp.quote` | `swig.ramp.onramp.quote` | same required fields and MELD environment encoding |
-| Onramp session | `swig.ramp.onramp.createSession`, `getSession` | `create_session`, `get_session` | same session id, launch URL, and status enum mapping |
-| Offramp options | `swig.ramp.offramp.getOptions` | `swig.ramp.offramp.get_options` | same crypto-currency normalization |
-| Offramp quote | `swig.ramp.offramp.quote` | `swig.ramp.offramp.quote` | same required fields and MELD environment encoding |
-| Offramp session | `swig.ramp.offramp.createSession`, `getSession` | `create_session`, `get_session` | same session fields and status enum mapping |
-| Offramp authorization | `swig.ramp.offramp.prepareAuthorization`, `submitAuthorization` | `prepare_authorization`, `submit_authorization` | same prepared transfer, display fields, and Solana signature |
+| Options | `swig.ramp.getOptions` | `swig.ramp.get_options` | same query, direction encoding, and four normalized lists |
+| Quotes | `swig.ramp.getQuotes` | `swig.ramp.get_quotes` | same order oneof on the wire and same route plus details result |
+| Order creation | `swig.ramp.createOrder` | `swig.ramp.create_order` | same `requestId` idempotency key, same retry on a 5xx, same normalized order |
+| Order read | `swig.ramp.getOrder` | `swig.ramp.get_order` | same path encoding and same status enum mapping |
+| Transfer preparation | `swig.ramp.prepareTransfer` | `swig.ramp.prepare_transfer` | same prepared transaction, transfer, and deposit |
+| Transfer submission | `swig.ramp.submitTransfer` | `swig.ramp.submit_transfer` | same empty `signedTransaction` resolution of an already-broadcast attempt |
+
+Amounts are integers in the smallest unit and cross the wire as decimal
+strings in both languages, so a value above 2^53 survives. TypeScript callers
+must use a `bigint` or decimal string above the safe-integer range; Python
+integers are arbitrary precision. Crypto assets are a two-case type — native
+SOL or an SPL mint — encoded as `{"sol": {}}` or
+`{"token": {"mint": ...}}` and decoded by key presence in both languages.
+Status and transfer-state enums are decoded from their wire names through an
+explicit table; an unrecognized value is refused rather than guessed.
 
 ## Signing
 
