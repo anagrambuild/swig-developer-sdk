@@ -28,6 +28,7 @@ import type {
   RampEnvironment,
   RampFiatCurrencyOption,
   RampFiatCurrencyOptionWire,
+  RampLocation,
   RampOptions,
   RampOptionsWire,
   RampOrder,
@@ -52,6 +53,7 @@ import type {
 import {
   normalizeAmount,
   normalizePreparedTransaction,
+  toProtoNetwork,
 } from '../wallets/normalizers.js';
 import { walletAuthorityRequest } from '../wallets/requests.js';
 
@@ -156,7 +158,7 @@ function orderRequest(args: CreateRampOrderArgs, defaultNetwork?: Network) {
     context: {
       customerId: args.context.customerId,
       swigConfigAddress: args.context.swigConfigAddress,
-      network: network === 'mainnet' ? 'NETWORK_MAINNET' : 'NETWORK_DEVNET',
+      network: toProtoNetwork(network),
       location: locationRequest(args.context.location),
     },
     route: {
@@ -167,13 +169,12 @@ function orderRequest(args: CreateRampOrderArgs, defaultNetwork?: Network) {
   };
 }
 
-function locationRequest(location: {
-  countryCode: string;
-  subdivisionCode?: string;
-}) {
+function locationRequest(location: RampLocation) {
   return {
     countryCode: location.countryCode,
-    ...optionalString('subdivisionCode', location.subdivisionCode),
+    ...(location.subdivisionCode
+      ? { subdivisionCode: location.subdivisionCode }
+      : {}),
   };
 }
 
@@ -272,11 +273,12 @@ function normalizeFiatCurrency(
 }
 
 function normalizeAssetOption(asset: RampAssetOptionWire): RampAssetOption {
+  const iconUrl = asset.iconUrl ?? asset.icon_url;
   return {
     asset: normalizeAsset(asset.asset),
     name: requiredString(asset.name, 'name'),
     decimals: numberField(asset.decimals, 'decimals'),
-    ...optionalString('iconUrl', asset.iconUrl ?? asset.icon_url),
+    ...(iconUrl ? { iconUrl } : {}),
   };
 }
 
@@ -349,26 +351,22 @@ function normalizeOrder(order: RampOrderWire): RampOrder {
   };
 
   if (order.buy) {
+    const buyLaunchUrl = order.buy.launchUrl ?? order.buy.launch_url;
     return {
       ...base,
       type: 'buy',
       quote: normalizeBuyQuote(requiredField(order.buy.quote, 'quote')),
-      ...optionalString(
-        'launchUrl',
-        order.buy.launchUrl ?? order.buy.launch_url,
-      ),
+      ...(buyLaunchUrl ? { launchUrl: buyLaunchUrl } : {}),
     };
   }
 
   if (order.sell) {
+    const sellLaunchUrl = order.sell.launchUrl ?? order.sell.launch_url;
     return {
       ...base,
       type: 'sell',
       quote: normalizeSellQuote(requiredField(order.sell.quote, 'quote')),
-      ...optionalString(
-        'launchUrl',
-        order.sell.launchUrl ?? order.sell.launch_url,
-      ),
+      ...(sellLaunchUrl ? { launchUrl: sellLaunchUrl } : {}),
       ...(order.sell.deposit
         ? { deposit: normalizeDeposit(order.sell.deposit) }
         : {}),
@@ -399,6 +397,7 @@ function normalizePreparedRampTransfer(
 }
 
 function normalizeRampTransfer(transfer: RampTransferWire): RampTransfer {
+  const solanaSignature = transfer.solanaSignature ?? transfer.solana_signature;
   return {
     transferId: requiredString(
       transfer.transferId ?? transfer.transfer_id,
@@ -409,10 +408,7 @@ function normalizeRampTransfer(transfer: RampTransferWire): RampTransfer {
       transfer.expiresAt ?? transfer.expires_at,
       'expiresAt',
     ),
-    ...optionalString(
-      'solanaSignature',
-      transfer.solanaSignature ?? transfer.solana_signature,
-    ),
+    ...(solanaSignature ? { solanaSignature } : {}),
   };
 }
 
@@ -522,15 +518,15 @@ function numberField(
   value: number | string | undefined,
   field: string,
 ): number {
-  const parsed = typeof value === 'string' ? Number(value) : value;
-  if (typeof parsed !== 'number' || !Number.isFinite(parsed)) {
-    throw new Error(`Ramp response is missing ${field}`);
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
   }
-  return parsed;
-}
-
-function optionalString<TKey extends string>(key: TKey, value: unknown) {
-  return typeof value === 'string' && value.length > 0
-    ? ({ [key]: value } as Record<TKey, string>)
-    : {};
+  // A blank string is not a number, matching readNumber in wallets.
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  throw new Error(`Ramp response is missing ${field}`);
 }
