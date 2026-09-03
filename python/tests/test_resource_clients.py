@@ -228,7 +228,7 @@ async def test_ramp_quotes_send_a_buy_order_oneof() -> None:
     assert quotes[0].details.type == "buy"
 
 
-async def test_native_sol_survives_compact() -> None:
+async def test_ramp_native_sol_survives_compact() -> None:
     requests: list[httpx.Request] = []
     swig = _ramp_client(lambda request: {"quotes": [SELL_QUOTE]}, requests)
 
