@@ -20,8 +20,9 @@
   order.
 - Amounts are integers in the smallest unit — `minorUnits` for fiat,
   `baseUnits` for crypto — and cross the wire as decimal strings, so a value
-  above 2^53 survives. Crypto is a `CryptoAsset` of `{ type: 'sol' }` or
-  `{ type: 'token', mint }` rather than a currency code.
+  above 2^53 survives. Number inputs must be safe integers; use a `bigint` or
+  decimal string for larger values. Crypto is a `CryptoAsset` of
+  `{ type: 'sol' }` or `{ type: 'token', mint }` rather than a currency code.
 - `prepareAuthorization` and `submitAuthorization` become `prepareTransfer` and
   `submitTransfer`, keyed by `orderId` and `transferId`. Calling
   `submitTransfer` without `signedTransaction` resolves an attempt that was
