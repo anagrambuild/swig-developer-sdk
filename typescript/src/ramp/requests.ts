@@ -8,7 +8,9 @@ import type {
   RampLocation,
   RampOrderRequest,
 } from '../types/index.js';
-import { normalizeAmount, toProtoNetwork } from '../wallets/normalizers.js';
+import { toProtoNetwork } from '../wallets/normalizers.js';
+
+const MAX_UINT64 = 18_446_744_073_709_551_615n;
 
 export function quotesRequest(args: GetRampQuotesArgs) {
   return {
@@ -59,7 +61,7 @@ function orderRequestBody(order: RampOrderRequest) {
       buy: {
         spend: {
           currencyCode: order.spend.currencyCode,
-          minorUnits: normalizeAmount(order.spend.minorUnits),
+          minorUnits: normalizeRampAmount(order.spend.minorUnits),
         },
         receive: assetRequest(order.receive),
       },
@@ -69,11 +71,31 @@ function orderRequestBody(order: RampOrderRequest) {
     sell: {
       sell: {
         asset: assetRequest(order.sell.asset),
-        baseUnits: normalizeAmount(order.sell.baseUnits),
+        baseUnits: normalizeRampAmount(order.sell.baseUnits),
       },
       receiveFiatCurrencyCode: order.receiveFiatCurrencyCode,
     },
   };
+}
+
+function normalizeRampAmount(amount: string | number | bigint): string {
+  if (
+    typeof amount === 'number' &&
+    (!Number.isSafeInteger(amount) || amount < 0)
+  ) {
+    throw new Error(
+      'Ramp amount numbers must be non-negative safe integers; use a bigint or decimal string for larger values',
+    );
+  }
+
+  const normalized = amount.toString();
+  if (!/^\d+$/.test(normalized)) {
+    throw new Error('Ramp amounts must be non-negative decimal integers');
+  }
+  if (BigInt(normalized) > MAX_UINT64) {
+    throw new Error('Ramp amounts must fit in an unsigned 64-bit integer');
+  }
+  return normalized;
 }
 
 /** Native SOL is an empty message, so it is `{ sol: {} }` on the wire. */
