@@ -3,7 +3,7 @@
 API-key SDK for preparing Swig wallet operations on a server, with a separate
 entrypoint for application-owned signing.
 
-- Version: `0.9.0`
+- Version: `0.10.0`
 - Source: <https://github.com/anagrambuild/swig-developer-sdk>
 - Default API base URL: `https://api.onswig.com`
 
