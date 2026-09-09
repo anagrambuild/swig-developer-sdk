@@ -5,7 +5,7 @@ Python SDK for preparing Swig wallet operations on a server, with a separate
 module inserts signatures with `solders` and makes no hosted API requests. No
 signing material is sent to the API.
 
-- Version: `0.8.0`
+- Version: `0.9.0`
 - Source: <https://github.com/anagrambuild/swig-developer-sdk>
 - Default API base URL: `https://api.onswig.com`
 

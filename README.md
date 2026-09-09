@@ -7,8 +7,8 @@ Canonical source: <https://github.com/anagrambuild/swig-developer-sdk>
 
 | Package | Language | Version | Directory |
 | --- | --- | --- | --- |
-| `@swig-wallet/developer-sdk` | TypeScript | `0.9.0` | [`typescript`](./typescript) |
-| `swig-developer-sdk` | Python | `0.8.0` | [`python`](./python) |
+| `@swig-wallet/developer-sdk` | TypeScript | `0.10.0` | [`typescript`](./typescript) |
+| `swig-developer-sdk` | Python | `0.9.0` | [`python`](./python) |
 
 Both packages target the public API base URL `https://api.onswig.com`.
 
