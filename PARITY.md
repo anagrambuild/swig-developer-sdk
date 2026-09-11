@@ -52,10 +52,10 @@ by the buy or sell order, not by the client you call.
 | --- | --- | --- | --- |
 | Options | `swig.ramp.getOptions` | `swig.ramp.get_options` | same query, direction encoding, and four normalized lists |
 | Quotes | `swig.ramp.getQuotes` | `swig.ramp.get_quotes` | same order oneof on the wire and same route plus details result |
-| Order creation | `swig.ramp.createOrder` | `swig.ramp.create_order` | same `requestId` idempotency key, same retry on a 5xx, same normalized order |
+| Order creation | `swig.ramp.createOrder` | `swig.ramp.create_order` | same `requestId` idempotency key, same order-context override of the client's network, same retry on a 5xx, same normalized order |
 | Order read | `swig.ramp.getOrder` | `swig.ramp.get_order` | same path encoding and same status enum mapping |
 | Transfer preparation | `swig.ramp.prepareTransfer` | `swig.ramp.prepare_transfer` | same prepared transaction, transfer, and deposit |
-| Transfer submission | `swig.ramp.submitTransfer` | `swig.ramp.submit_transfer` | same empty `signedTransaction` resolution of an already-broadcast attempt |
+| Transfer submission | `swig.ramp.submitTransfer` | `swig.ramp.submit_transfer` | same empty `signedTransaction` resolution of an already-broadcast attempt, and neither language retries it |
 
 Amounts are integers in the smallest unit and cross the wire as decimal
 strings in both languages, so a value above 2^53 survives. TypeScript callers

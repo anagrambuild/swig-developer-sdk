@@ -150,10 +150,17 @@ existing uint64 fields. A value too precise for the currency is refused rather
 than rounded. Crypto is a two-case asset: native SOL, encoded as an empty
 `{"sol": {}}`, or an SPL mint.
 
-Selling adds a transfer leg. Preparation returns the transfer, the prepared
-transaction, and the canonical deposit; the application signs and submits.
-The prepared transaction is handed over once, so submitting with an empty
-`signedTransaction` resolves an attempt that was already broadcast.
+Selling adds a transfer leg, and preparation is refused unless the order is an
+unfinished sell on `mainnet` whose deposit the provider has already assigned.
+Preparation returns the transfer, the prepared transaction, and the canonical
+deposit; the application signs and submits. The prepared transaction is handed
+over once, so submitting with an empty `signedTransaction` resolves an attempt
+that was already broadcast.
+
+Submission answers `landed` or it fails, and neither client retries it. The
+failure says which attempt the caller still owns: one that is still confirming
+resolves through the same call, while one that is dead or reverted frees the
+order for a fresh preparation.
 
 The previous direction-specific surface — `/wallet/api/ramp/{onramp,offramp}/*`
 with sessions, quote ids, `organizationMeldConfigurationId`, and the MELD
