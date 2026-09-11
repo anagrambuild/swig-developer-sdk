@@ -390,14 +390,67 @@ the order and keep it out of logs and analytics.
 
 ### Selling
 
-A sell waits for `awaiting-transfer` and a `deposit`, then moves the crypto out
-of the Swig. Your application owns the signing step.
+A sell is its own order, so quote the sell direction rather than reusing a buy.
+Create it on `mainnet`: a transfer prepared on any other network is refused
+with `ramp transfers settle on mainnet only`, and `RampOrderContext.network`
+wins over the client's default.
+
+```python
+sell_quotes = await swig.ramp.get_quotes(
+    configuration_id=configuration_id,
+    environment="sandbox",
+    location=RampLocation(country_code="US"),
+    order=RampSellOrderRequest(
+        sell=CryptoAmountInput(
+            asset=SplTokenAsset(mint=usdc_mint), base_units=10_000_000
+        ),
+        receive_fiat_currency_code="USD",
+    ),
+)
+
+sell_order = await swig.ramp.create_order(
+    request_id=str(uuid.uuid4()),
+    configuration_id=configuration_id,
+    environment="sandbox",
+    context=RampOrderContext(
+        customer_id=customer_id,
+        swig_config_address=swig_config_address,
+        network="mainnet",
+        location=RampLocation(country_code="US"),
+    ),
+    route=sell_quotes[0].route,
+    order=RampSellOrderRequest(
+        sell=CryptoAmountInput(
+            asset=SplTokenAsset(mint=usdc_mint), base_units=10_000_000
+        ),
+        receive_fiat_currency_code="USD",
+    ),
+)
+```
+
+Send the customer to `sell_order.launch_url` and let them finish the provider's
+checkout. The provider assigns the deposit there, so poll `get_order` until the
+order reaches `awaiting-transfer` and carries one; preparing earlier is refused
+with `the deposit address is not ready`.
+
+```python
+FINISHED = {"settled", "declined", "cancelled", "failed", "refunded"}
+
+current = await swig.ramp.get_order(order_id=sell_order.id)
+while isinstance(current, RampSellOrder) and current.deposit is None:
+    if current.status in FINISHED:
+        raise RuntimeError(f"sell order {current.status} before a deposit")
+    await asyncio.sleep(5)
+    current = await swig.ramp.get_order(order_id=sell_order.id)
+```
+
+Now move the crypto out of the Swig. Your application owns the signing step.
 
 ```python
 from swig_developer_sdk.signers import sign_prepared_transaction
 
 prepared = await swig.ramp.prepare_transfer(
-    order_id=order.id,
+    order_id=sell_order.id,
     requester_authority={"ed25519": {"publicKey": requester}},
     fee_payer=fee_payer,
 )
@@ -408,11 +461,18 @@ signed = await sign_prepared_transaction(
 )
 
 transfer = await swig.ramp.submit_transfer(
-    order_id=order.id,
+    order_id=sell_order.id,
     transfer_id=prepared.transfer.transfer_id,
     signed_transaction=signed.transaction,
 )
 ```
+
+`submit_transfer` never retries on its own, and a response only ever comes back
+`landed`. Keep `sell_order.id` and `prepared.transfer.transfer_id` so you can
+resolve the attempt you already made: `the transfer is still confirming` means
+it is alive and the same call settles it, while `the transfer did not land;
+prepare another` means it never will and the order is free again. Do not
+prepare a replacement until you have seen the second.
 
 The prepared transaction is handed over once. If you broadcast it and then lose
 it, call `submit_transfer` again without `signed_transaction` to resolve the
