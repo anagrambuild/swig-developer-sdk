@@ -462,14 +462,67 @@ provider. `refunded` can follow `settled`.
 
 ### Selling
 
-A sell waits for `awaiting-transfer` and a `deposit`, then moves the crypto from
-the Swig. Your application owns the signing step.
+A sell is its own order, so quote the sell direction rather than reusing a buy.
+Create it on `mainnet`: a transfer prepared on any other network is refused with
+`ramp transfers settle on mainnet only`, and `context.network` wins over the
+client's default.
+
+```typescript
+const sellQuotes = await swig.ramp.getQuotes({
+  configurationId,
+  environment: 'sandbox',
+  location: { countryCode: 'US' },
+  order: {
+    type: 'sell',
+    sell: { asset: { type: 'token', mint: usdcMint }, baseUnits: 10_000_000n },
+    receiveFiatCurrencyCode: 'USD',
+  },
+});
+
+const sellOrder = await swig.ramp.createOrder({
+  requestId: crypto.randomUUID(),
+  configurationId,
+  environment: 'sandbox',
+  context: {
+    customerId,
+    swigConfigAddress,
+    network: 'mainnet',
+    location: { countryCode: 'US' },
+  },
+  route: sellQuotes[0].route,
+  order: {
+    type: 'sell',
+    sell: { asset: { type: 'token', mint: usdcMint }, baseUnits: 10_000_000n },
+    receiveFiatCurrencyCode: 'USD',
+  },
+});
+```
+
+Send the customer to `sellOrder.launchUrl` and let them finish the provider's
+checkout. The provider assigns the deposit there, so poll `getOrder` until the
+order reaches `awaiting-transfer` and carries one; preparing earlier is refused
+with `the deposit address is not ready`.
+
+```typescript
+const finished = ['settled', 'declined', 'cancelled', 'failed', 'refunded'];
+
+let current = await swig.ramp.getOrder({ orderId: sellOrder.id });
+while (current.type === 'sell' && !current.deposit) {
+  if (finished.includes(current.status)) {
+    throw new Error(`sell order ${current.status} before a deposit`);
+  }
+  await new Promise((resolve) => setTimeout(resolve, 5_000));
+  current = await swig.ramp.getOrder({ orderId: sellOrder.id });
+}
+```
+
+Now move the crypto out of the Swig. Your application owns the signing step.
 
 ```typescript
 import { signPreparedTransaction } from '@swig-wallet/developer-sdk/signers';
 
 const prepared = await swig.ramp.prepareTransfer({
-  orderId: order.id,
+  orderId: sellOrder.id,
   requesterAuthority: { ed25519: { publicKey: requester } },
   feePayer,
 });
@@ -479,11 +532,18 @@ const signed = await signPreparedTransaction(prepared.preparedTransaction, {
 });
 
 const transfer = await swig.ramp.submitTransfer({
-  orderId: order.id,
+  orderId: sellOrder.id,
   transferId: prepared.transfer.transferId,
   signedTransaction: signed.transaction,
 });
 ```
+
+`submitTransfer` never retries on its own, and a response only ever comes back
+`landed`. Keep `sellOrder.id` and `prepared.transfer.transferId` so you can
+resolve the attempt you already made: `the transfer is still confirming` means
+it is alive and the same call settles it, while `the transfer did not land;
+prepare another` means it never will and the order is free again. Do not
+prepare a replacement until you have seen the second.
 
 The prepared transaction is handed over once. If you broadcast it and then lose
 it, call `submitTransfer` again without `signedTransaction` to resolve the
