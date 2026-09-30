@@ -3,7 +3,7 @@
 API-key SDK for preparing Swig wallet operations on a server, with a separate
 entrypoint for application-owned signing.
 
-- Version: `0.11.0`
+- Version: `0.11.1`
 - Source: <https://github.com/anagrambuild/swig-developer-sdk>
 - Default API base URL: `https://api.onswig.com`
 
@@ -383,7 +383,7 @@ automatically. After submission, wait for finality and reread the recipient
 before relying on it for sponsorship decisions.
 
 These methods require the backend rent-claimer routes. Python support is
-pending. See the [rent-claimer guide](https://docs.onswig.com/developer-sdk/rent-claimers)
+pending. See the [rent-claimer guide](https://build.onswig.com/developer-sdk/rent-claimers)
 for separate, complete server examples.
 
 ### Roles

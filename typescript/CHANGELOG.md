@@ -1,5 +1,12 @@
 # @swig-wallet/developer-sdk
 
+## 0.11.1
+
+### Patch Changes
+
+- Correct the rent-claimer guide link to the public documentation domain,
+  `build.onswig.com`. Runtime code is unchanged from 0.11.0.
+
 ## 0.11.0
 
 ### Major Changes
