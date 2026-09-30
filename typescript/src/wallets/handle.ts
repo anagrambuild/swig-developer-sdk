@@ -92,6 +92,10 @@ export class WalletHandle {
   getUsdBalance = (args?: WalletReadArgs): Promise<SwigUsdBalance> =>
     this.wallets.getUsdBalance(this, args);
 
+  /** Read the finalized on-chain rent recipient through the backend. Unset is null. */
+  getRentClaimer = (args?: WalletReadArgs): Promise<string | null> =>
+    this.wallets.getRentClaimer(this, args);
+
   listTokenBalances = (
     args?: WalletReadArgs,
   ): Promise<ListSwigTokenBalancesResult> =>

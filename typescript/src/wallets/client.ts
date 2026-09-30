@@ -108,6 +108,31 @@ export class WalletsClient {
     );
   };
 
+  getRentClaimer = async (
+    wallet: WalletHandle,
+    args: WalletReadArgs = {},
+  ): Promise<string | null> => {
+    const network = args.network ?? wallet.network ?? this.defaultNetwork;
+    if (!network) throw new Error('network is required');
+    const response = await this.http.get<{
+      rentClaimer?: string | null;
+      rent_claimer?: string | null;
+    }>(
+      `/transaction/wallet/${encodeURIComponent(wallet.swigConfigAddress)}/rent-claimer?network=${networkParam(network)}`,
+    );
+    if (!response || typeof response !== 'object' || Array.isArray(response)) {
+      throw new Error('Invalid rent-claimer response');
+    }
+    const rentClaimer = response.rentClaimer ?? response.rent_claimer ?? null;
+    if (
+      rentClaimer !== null &&
+      (typeof rentClaimer !== 'string' || !rentClaimer)
+    ) {
+      throw new Error('Invalid rent-claimer response');
+    }
+    return rentClaimer;
+  };
+
   getUsdBalance = async (
     wallet: WalletHandle,
     args: WalletReadArgs = {},
