@@ -1,6 +1,6 @@
 # @swig-wallet/developer-sdk
 
-## 0.10.0
+## 0.11.0
 
 ### Major Changes
 
@@ -27,6 +27,28 @@
   `submitTransfer`, keyed by `orderId` and `transferId`. Calling
   `submitTransfer` without `signedTransaction` resolves an attempt that was
   already broadcast.
+
+### Minor Changes
+
+- Add `wallet.getRentClaimer()` to read a V2 Swig's finalized rent recipient
+  through the backend API, returning a public key or `null` when unset.
+- Add `wallet.setRentClaimer(...)` to prepare an unsigned set-once transaction
+  through the backend API. The requester must be a direct Ed25519 role with
+  `All` or `CloseSwigAuthority`; the application signs and submits.
+
+### Patch Changes
+
+- Encode ParticipantSet requesters in ramp transfer preparation with the backend wire shape.
+- Reject malformed prepared transaction objects and non-string serialized
+  transaction values before returning them to callers.
+
+## 0.10.0
+
+### Minor Changes
+
+- Add typed role creation, ParticipantSet setup and approval compilation,
+  detached ParticipantSet signers, and x402 payment preparation. See the
+  [0.10.0 release notes](https://github.com/anagrambuild/swig-developer-sdk/releases/tag/typescript-v0.10.0).
 
 ## 0.9.0
 

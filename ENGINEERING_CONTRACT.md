@@ -10,7 +10,7 @@ migration. It is an engineering review artifact, not a product tutorial.
   `6fc9e22`, preserved with `git subtree split`.
 - Standalone repository: `anagrambuild/swig-developer-sdk`.
 - Public API base URL: `https://api.onswig.com`.
-- TypeScript package: `@swig-wallet/developer-sdk` version `0.10.0`.
+- TypeScript package: `@swig-wallet/developer-sdk` version `0.11.0`.
 - Python package: `swig-developer-sdk` version `0.9.0`.
 
 The `0.9.0` TypeScript release removes the browser proxy and framework adapter
@@ -43,11 +43,25 @@ Supported preparation routes:
 | --- | --- |
 | POST | `/transaction/prepare/batch` |
 | POST | `/transaction/wallet/create` |
+| POST | `/transaction/wallet/rent-claimer/set` |
 | POST | `/transaction/transfer/sol` |
 | POST | `/transaction/transfer/spl-token` |
 | POST | `/transaction/swap/jupiter` |
 | POST | `/transaction/prepare/custom` |
 | POST | `/transaction/payment/x402/prepare` |
+
+Rent-claimer reads use API-key
+`GET /transaction/wallet/{swig_address}/rent-claimer?network=NETWORK_MAINNET`
+(or `NETWORK_DEVNET`). The optional `rentClaimer` response field is absent only
+when valid finalized V2 state has no recipient. TypeScript normalizes that to
+`string | null`; malformed, missing, unsupported, and unavailable state fail.
+
+The setter fetches finalized state and prepares an unsigned transaction. It
+requires a matching direct Ed25519 role with `All` or `CloseSwigAuthority` and
+rejects an existing recipient. The response wraps the normal prepared
+transaction with kind `set-rent-claimer`; native requester and fee-payer
+signatures are still required even though `signatureRequests` is empty.
+The SDK performs HTTP transport only. Python support is pending.
 
 ParticipantSet setup and stateless approval compilation use:
 
