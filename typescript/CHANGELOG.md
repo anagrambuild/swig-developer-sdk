@@ -1,5 +1,20 @@
 # @swig-wallet/developer-sdk
 
+## 0.11.0
+
+### Minor Changes
+
+- Add `wallet.getRentClaimer()` to read a V2 Swig's finalized rent recipient
+  through the backend API, returning a public key or `null` when unset.
+- Add `wallet.setRentClaimer(...)` to prepare an unsigned set-once transaction
+  through the backend API. The requester must be a direct Ed25519 role with
+  `All` or `CloseSwigAuthority`; the application signs and submits.
+
+### Patch Changes
+
+- Reject malformed prepared transaction objects and non-string serialized
+  transaction values before returning them to callers.
+
 ## 0.10.0
 
 ### Major Changes

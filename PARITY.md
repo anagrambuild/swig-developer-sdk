@@ -3,7 +3,7 @@
 Python mirrors the TypeScript server SDK by behavior and client hierarchy
 except for features explicitly marked as pending. Python uses snake_case names
 and keyword arguments; TypeScript uses camelCase and options objects.
-TypeScript is version `0.10.0`, Python is version `0.9.0`, and both default to
+TypeScript is version `0.11.0`, Python is version `0.9.0`, and both default to
 `https://api.onswig.com`.
 
 ## Client surface
@@ -16,6 +16,7 @@ TypeScript is version `0.10.0`, Python is version `0.9.0`, and both default to
 | Grouped preparation | `wallet.prepare` | `wallet.prepare` | same operation wire shape and normalized response |
 | Transfers | `wallet.transfer.sol/token/splToken` | `wallet.transfer.sol/token/spl_token` | same endpoints and prepared transaction output |
 | Jupiter swap | `wallet.swap.jupiter` | `wallet.swap.jupiter` | same optional swap controls |
+| Rent-claimer preparation | `wallet.setRentClaimer` | pending | direct Ed25519 set-once preparation through the backend |
 | Custom transaction | `wallet.buildTransaction` | `wallet.build_transaction` | same custom preparation request and instruction shape |
 | Policy read | `swig.wallets.getPolicy` | `swig.wallets.get_policy` | same raw policy metadata |
 | ParticipantSet creation | `swig.participantSets.create` | `swig.participant_sets.create` | same standard authority members and prepared transaction |
@@ -30,6 +31,7 @@ TypeScript is version `0.10.0`, Python is version `0.9.0`, and both default to
 | USD balance | `wallet.getUsdBalance` | `wallet.get_usd_balance` | same required-field validation |
 | Token balances | `wallet.listTokenBalances` | `wallet.list_token_balances` | same normalization, totals, and `assetKind` discriminator |
 | Token transactions | `wallet.listTokenTransactions` | `wallet.list_token_transactions` | same `limit`, direction, and `assetKind` normalization |
+| Rent claimer | `wallet.getRentClaimer` | pending | finalized recipient read; `null` when unset |
 | Roles | `wallet.listRoles` | `wallet.list_roles` | same role, authority, and action normalization |
 
 ## Paymaster and submission

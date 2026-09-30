@@ -3,7 +3,7 @@
 API-key SDK for preparing Swig wallet operations on a server, with a separate
 entrypoint for application-owned signing.
 
-- Version: `0.10.0`
+- Version: `0.11.0`
 - Source: <https://github.com/anagrambuild/swig-developer-sdk>
 - Default API base URL: `https://api.onswig.com`
 
@@ -115,8 +115,8 @@ next:
 | `feePayerOnlyTransactions`    | send or sponsor without a client authority signature         |
 | `creationTransaction`         | the create transaction itself                                |
 
-A prepared transaction needs a client authority signature when
-`signatureRequests.length > 0`.
+Check `signatureRequests` for embedded authority signatures and the serialized
+transaction for required native Ed25519 signers.
 
 ## Attach to an existing wallet
 
@@ -346,6 +346,45 @@ const tokens = await wallet.listTokenBalances();
 const activity = await wallet.listTokenTransactions({ limit: 25 });
 // activity.transactions[].transactionSignature, direction, assetKind, uiAmount
 ```
+
+### Check the rent claimer
+
+```typescript
+const rentClaimer = await wallet.getRentClaimer({ network: 'mainnet' });
+// A recipient public key string, or null when unset.
+```
+
+The backend fetches finalized V2 Swig state. A missing, malformed, unsupported,
+or unavailable account produces an error, not `null`. The network may also be
+inherited from the wallet or client. This read needs no requester authority.
+
+### Prepare the rent-claimer setter
+
+```typescript
+const prepared = await wallet.setRentClaimer({
+  network: 'mainnet',
+  feePayer,
+  rentClaimer: rentRecipientPublicKey,
+  requesterAuthority: { ed25519: { publicKey: requesterPublicKey } },
+});
+```
+
+Use your fee payer, recipient, and requester public keys. The requester must
+match a direct Ed25519 role with `All` or `CloseSwigAuthority`;
+`ManageAuthority` alone is insufficient. An existing recipient is rejected,
+including one equal to the requested recipient. The zero public key, config
+PDA, and wallet-address PDA are invalid destinations.
+
+The backend builds the unsigned transaction, returned with kind
+`set-rent-claimer`. Your application signs with both the requester and fee
+payer, or one signature when they are the same key. `signatureRequests` is
+empty because these are native Ed25519 signatures. The POST is not retried
+automatically. After submission, wait for finality and reread the recipient
+before relying on it for sponsorship decisions.
+
+These methods require the backend rent-claimer routes. Python support is
+pending. See the [rent-claimer guide](https://docs.onswig.com/developer-sdk/rent-claimers)
+for separate, complete server examples.
 
 ### Roles
 
