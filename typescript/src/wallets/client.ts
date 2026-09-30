@@ -120,7 +120,7 @@ export class WalletsClient {
     }>(
       `/transaction/wallet/${encodeURIComponent(wallet.swigConfigAddress)}/rent-claimer?network=${networkParam(network)}`,
     );
-    if (!response || typeof response !== 'object') {
+    if (!response || typeof response !== 'object' || Array.isArray(response)) {
       throw new Error('Invalid rent-claimer response');
     }
     const rentClaimer = response.rentClaimer ?? response.rent_claimer ?? null;

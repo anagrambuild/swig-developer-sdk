@@ -83,6 +83,8 @@ describe('wallet.getRentClaimer', () => {
     for (const response of [
       null,
       'not-an-object',
+      [],
+      [{ rentClaimer: 'rent-vault' }],
       { rentClaimer: 42 },
       { rentClaimer: '' },
     ]) {
