@@ -168,4 +168,32 @@ describe('wallet.setRentClaimer', () => {
         .setRentClaimer(args),
     ).rejects.toThrow('missing transaction');
   });
+
+  test('rejects malformed prepared transaction objects and serialized values', async () => {
+    for (const prepared of [
+      42,
+      'not-an-object',
+      [],
+      { transaction: 42 },
+      { transaction: {} },
+      { transaction: [] },
+      { transaction: true },
+      { unsigned_transaction: 42 },
+      { unsignedTransaction: {} },
+    ]) {
+      const client = new SwigClient({
+        apiKey: 'test-key',
+        network: 'mainnet',
+        fetch: (async () =>
+          Response.json({ transaction: prepared })) as unknown as typeof fetch,
+      });
+      await expect(
+        client.wallets
+          .use('config', {
+            requesterAuthority: { ed25519: { publicKey: 'engine' } },
+          })
+          .setRentClaimer(args),
+      ).rejects.toThrow(/invalid prepared transaction|invalid transaction/i);
+    }
+  });
 });

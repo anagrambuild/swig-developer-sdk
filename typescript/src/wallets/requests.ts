@@ -8,6 +8,7 @@ import type {
   CreateWalletArgs,
   ExecuteRecoveryArgs,
   Network,
+  NetworkWire,
   PrepareArgs,
   PrepareOperation,
   SetRentClaimerArgs,
@@ -513,11 +514,19 @@ function resolveRequesterAuthority(
   return requesterAuthority;
 }
 
+interface SetRentClaimerRequest {
+  network: NetworkWire;
+  swigAddress: string;
+  feePayer: string;
+  requesterAuthority: Extract<WalletAuthority, { ed25519: unknown }>;
+  rentClaimer: string;
+}
+
 export function setRentClaimerRequest(
   wallet: WalletHandle,
   args: SetRentClaimerArgs,
   defaultNetwork?: Network,
-) {
+): SetRentClaimerRequest {
   const requesterAuthority = resolveRequesterAuthority(wallet, args);
   if (!('ed25519' in requesterAuthority)) {
     throw new Error(
@@ -530,7 +539,7 @@ export function setRentClaimerRequest(
     ),
     swigAddress: wallet.swigConfigAddress,
     feePayer: args.feePayer,
-    requesterAuthority: walletAuthorityRequest(requesterAuthority),
+    requesterAuthority,
     rentClaimer: args.rentClaimer,
   };
 }
