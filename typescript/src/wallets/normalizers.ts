@@ -47,12 +47,18 @@ import type {
 export function normalizePreparedTransaction(
   response: PreparedTransactionWire,
 ): PreparedTransaction {
+  if (!response || typeof response !== 'object' || Array.isArray(response)) {
+    throw new Error('Invalid prepared transaction response');
+  }
   const transaction =
     response.transaction ??
     response.unsignedTransaction ??
     response.unsigned_transaction;
-  if (!transaction) {
+  if (transaction === undefined || transaction === null || transaction === '') {
     throw new Error('Prepared transaction response is missing transaction');
+  }
+  if (typeof transaction !== 'string') {
+    throw new Error('Prepared transaction response has invalid transaction');
   }
 
   const participantSetApprovalPlan = normalizeParticipantSetApprovalPlan(
@@ -477,6 +483,10 @@ function normalizePreparedTransactionKind(
     case 'PREPARED_TRANSACTION_KIND_CREATE_PARTICIPANT_SET':
     case 4:
       return 'create-participant-set';
+    case 'set-rent-claimer':
+    case 'PREPARED_TRANSACTION_KIND_SET_RENT_CLAIMER':
+    case 6:
+      return 'set-rent-claimer';
     case 'x402-payment':
     case 'PREPARED_TRANSACTION_KIND_X402_PAYMENT':
     case 5:

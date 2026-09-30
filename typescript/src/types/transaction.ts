@@ -21,14 +21,16 @@ export type PreparedTransactionKind =
   | 'add-authority'
   | 'configure-recovery'
   | 'create-participant-set'
-  | 'x402-payment';
+  | 'x402-payment'
+  | 'set-rent-claimer';
 export type ProtoPreparedTransactionKind =
   | 'PREPARED_TRANSACTION_KIND_UNSPECIFIED'
   | 'PREPARED_TRANSACTION_KIND_CREATE_SWIG_WALLET'
   | 'PREPARED_TRANSACTION_KIND_ADD_AUTHORITY'
   | 'PREPARED_TRANSACTION_KIND_CONFIGURE_RECOVERY'
   | 'PREPARED_TRANSACTION_KIND_CREATE_PARTICIPANT_SET'
-  | 'PREPARED_TRANSACTION_KIND_X402_PAYMENT';
+  | 'PREPARED_TRANSACTION_KIND_X402_PAYMENT'
+  | 'PREPARED_TRANSACTION_KIND_SET_RENT_CLAIMER';
 export type PreparedTransactionKindWire =
   PreparedTransactionKind | ProtoPreparedTransactionKind | number;
 

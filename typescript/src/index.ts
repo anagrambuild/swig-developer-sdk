@@ -92,6 +92,7 @@ export type {
   RampTransferState,
   RecoverySetupPlan,
   RetryOptions,
+  SetRentClaimerArgs,
   SolanaAccountMeta,
   SolanaInstruction,
   SolanaInstructionInput,

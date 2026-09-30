@@ -212,3 +212,10 @@ export interface BuildTransactionArgs {
   addressLookupTableAccounts?: string[];
   network?: Network;
 }
+
+export interface SetRentClaimerArgs {
+  feePayer: string;
+  rentClaimer: string;
+  requesterAuthority?: Extract<WalletAuthority, { ed25519: unknown }>;
+  network?: Network;
+}

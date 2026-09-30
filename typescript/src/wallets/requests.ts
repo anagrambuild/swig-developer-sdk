@@ -8,8 +8,10 @@ import type {
   CreateWalletArgs,
   ExecuteRecoveryArgs,
   Network,
+  NetworkWire,
   PrepareArgs,
   PrepareOperation,
+  SetRentClaimerArgs,
   StartRecoveryArgs,
   SwapArgs,
   TransferArgs,
@@ -510,4 +512,34 @@ function resolveRequesterAuthority(
     throw new Error('requesterAuthority is required');
   }
   return requesterAuthority;
+}
+
+interface SetRentClaimerRequest {
+  network: NetworkWire;
+  swigAddress: string;
+  feePayer: string;
+  requesterAuthority: Extract<WalletAuthority, { ed25519: unknown }>;
+  rentClaimer: string;
+}
+
+export function setRentClaimerRequest(
+  wallet: WalletHandle,
+  args: SetRentClaimerArgs,
+  defaultNetwork?: Network,
+): SetRentClaimerRequest {
+  const requesterAuthority = resolveRequesterAuthority(wallet, args);
+  if (!('ed25519' in requesterAuthority)) {
+    throw new Error(
+      'rent claimer requires a direct Ed25519 requesterAuthority',
+    );
+  }
+  return {
+    network: toProtoNetwork(
+      resolveNetwork(args.network, wallet.network, defaultNetwork),
+    ),
+    swigAddress: wallet.swigConfigAddress,
+    feePayer: args.feePayer,
+    requesterAuthority,
+    rentClaimer: args.rentClaimer,
+  };
 }
