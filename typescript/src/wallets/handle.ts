@@ -13,6 +13,7 @@ import type {
   PreparedTransaction,
   PreparedTransactionsResult,
   PrepareRecoverySetupArgs,
+  SetRentClaimerArgs,
   StartRecoveryArgs,
   SwapArgs,
   SwigUsdBalance,
@@ -91,6 +92,10 @@ export class WalletHandle {
 
   getUsdBalance = (args?: WalletReadArgs): Promise<SwigUsdBalance> =>
     this.wallets.getUsdBalance(this, args);
+
+  /** Prepare the immutable setter through the backend. Caller signs and submits. */
+  setRentClaimer = (args: SetRentClaimerArgs): Promise<PreparedTransaction> =>
+    this.wallets.setRentClaimer(this, args);
 
   /** Read the finalized on-chain rent recipient through the backend. Unset is null. */
   getRentClaimer = (args?: WalletReadArgs): Promise<string | null> =>

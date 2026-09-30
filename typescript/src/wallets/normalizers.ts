@@ -477,6 +477,10 @@ function normalizePreparedTransactionKind(
     case 'PREPARED_TRANSACTION_KIND_CREATE_PARTICIPANT_SET':
     case 4:
       return 'create-participant-set';
+    case 'set-rent-claimer':
+    case 'PREPARED_TRANSACTION_KIND_SET_RENT_CLAIMER':
+    case 6:
+      return 'set-rent-claimer';
     case 'x402-payment':
     case 'PREPARED_TRANSACTION_KIND_X402_PAYMENT':
     case 5:

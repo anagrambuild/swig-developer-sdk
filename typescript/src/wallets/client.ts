@@ -30,6 +30,7 @@ import type {
   PrepareTransactionsResponseWire,
   PrepareX402PaymentOptions,
   RecoverySetupPlan,
+  SetRentClaimerArgs,
   StartRecoveryArgs,
   SwapArgs,
   SwigUsdBalance,
@@ -64,6 +65,7 @@ import {
   executeRecoveryRequest,
   isTokenTransfer,
   prepareRequest,
+  setRentClaimerRequest,
   startRecoveryRequest,
   swapRequest,
   transferSolRequest,
@@ -106,6 +108,22 @@ export class WalletsClient {
     return this.http.get<Policy>(
       `/wallet/policies/${encodeURIComponent(policyId)}`,
     );
+  };
+
+  setRentClaimer = async (
+    wallet: WalletHandle,
+    args: SetRentClaimerArgs,
+  ): Promise<PreparedTransaction> => {
+    const response = await this.http.post<{
+      transaction?: PreparedTransactionWire;
+    }>(
+      '/transaction/wallet/rent-claimer/set',
+      setRentClaimerRequest(wallet, args, this.defaultNetwork),
+    );
+    if (!response.transaction) {
+      throw new Error('Set rent claimer response is missing transaction');
+    }
+    return normalizePreparedTransaction(response.transaction);
   };
 
   getRentClaimer = async (
