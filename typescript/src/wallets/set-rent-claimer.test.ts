@@ -127,29 +127,32 @@ describe('wallet.setRentClaimer', () => {
     expect(calls).toBe(0);
   });
 
-  test('propagates setter rejection without retrying the POST', async () => {
-    let calls = 0;
-    const client = new SwigClient({
-      apiKey: 'test-key',
-      network: 'mainnet',
-      retryOptions: { maxRetries: 3 },
-      fetch: (async () => {
-        calls++;
-        return Response.json(
-          { message: 'rent claimer is already set' },
-          { status: 400 },
-        );
-      }) as unknown as typeof fetch,
-    });
-    await expect(
-      client.wallets
-        .use('config', {
-          requesterAuthority: { ed25519: { publicKey: 'engine' } },
-        })
-        .setRentClaimer(args),
-    ).rejects.toMatchObject({ statusCode: 400 });
-    expect(calls).toBe(1);
-  });
+  test.each([400, 503])(
+    'propagates HTTP %i without retrying the POST',
+    async (status) => {
+      let calls = 0;
+      const client = new SwigClient({
+        apiKey: 'test-key',
+        network: 'mainnet',
+        retryOptions: { maxRetries: 3 },
+        fetch: (async () => {
+          calls++;
+          return Response.json(
+            { message: 'rent claimer is already set' },
+            { status },
+          );
+        }) as unknown as typeof fetch,
+      });
+      await expect(
+        client.wallets
+          .use('config', {
+            requesterAuthority: { ed25519: { publicKey: 'engine' } },
+          })
+          .setRentClaimer(args),
+      ).rejects.toMatchObject({ statusCode: status });
+      expect(calls).toBe(1);
+    },
+  );
 
   test('rejects a backend response without a prepared transaction', async () => {
     const client = new SwigClient({
