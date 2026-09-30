@@ -23,7 +23,7 @@ function fixture(tail: Buffer = Buffer.alloc(0)) {
     [Buffer.from('swig-wallet-address'), config.toBuffer()],
     program,
   );
-  const data = Buffer.alloc(48 + 56 + 88 + tail.length);
+  const data = Buffer.alloc(48 + 56 + 104 + tail.length);
   data[0] = 1;
   data[1] = bump;
   id.copy(data, 2);
@@ -34,7 +34,7 @@ function fixture(tail: Buffer = Buffer.alloc(0)) {
   // One Ed25519 role and one session role, with different authority lengths.
   for (const [offset, type, length, end, roleId] of [
     [48, 1, 32, 56, 0],
-    [104, 2, 64, 144, 1],
+    [104, 2, 80, 160, 1],
   ]) {
     data.writeUInt16LE(type, offset);
     data.writeUInt16LE(length, offset + 2);
@@ -45,7 +45,7 @@ function fixture(tail: Buffer = Buffer.alloc(0)) {
     data.writeUInt16LE(7, offset + 16 + length); // All, no value bytes.
     data.writeUInt32LE(8, offset + 20 + length);
   }
-  tail.copy(data, 192);
+  tail.copy(data, 208);
   const account: AccountInfo<Buffer> = {
     data,
     owner: program,
