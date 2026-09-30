@@ -12,10 +12,12 @@ const TAIL_HEADER_LENGTH = 8;
 
 /**
  * Read a V2 Swig config's immutable rent recipient directly from Solana RPC.
- * Returns null only when the supported account layout has no rent-claimer
- * record. Missing, closed, malformed or unsupported accounts and RPC failures
- * throw. The header check follows the current V2 format; it is not a historical
- * account-generation proof because V1 and V2 share a header discriminator.
+ * Returns null when the validated tail has no rent-claimer record. Validates
+ * ownership, config identity, the V2 header shape, role/action boundaries and
+ * every tail record. It does not interpret each role's authority or permissions.
+ * Missing accounts, invalid framing/tails and RPC failures throw. The header
+ * check is not a historical account-generation proof because V1 and V2 share a
+ * header discriminator.
  * The connection selects the network; swigConfig is the config PDA, not the
  * wallet-address PDA. The default commitment is finalized.
  *
