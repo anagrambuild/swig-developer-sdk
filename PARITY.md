@@ -3,7 +3,7 @@
 Python mirrors the TypeScript server SDK by behavior and client hierarchy
 except for features explicitly marked as pending. Python uses snake_case names
 and keyword arguments; TypeScript uses camelCase and options objects.
-TypeScript is version `0.11.0`, Python is version `0.9.0`, and both default to
+TypeScript is version `0.11.1`, Python is version `0.9.0`, and both default to
 `https://api.onswig.com`.
 
 ## Client surface

@@ -10,7 +10,7 @@ migration. It is an engineering review artifact, not a product tutorial.
   `6fc9e22`, preserved with `git subtree split`.
 - Standalone repository: `anagrambuild/swig-developer-sdk`.
 - Public API base URL: `https://api.onswig.com`.
-- TypeScript package: `@swig-wallet/developer-sdk` version `0.11.0`.
+- TypeScript package: `@swig-wallet/developer-sdk` version `0.11.1`.
 - Python package: `swig-developer-sdk` version `0.9.0`.
 
 The `0.9.0` TypeScript release removes the browser proxy and framework adapter
