@@ -4,6 +4,7 @@ import httpx
 
 from .common import DEFAULT_BACKEND_URL, Network, RetryOptions
 from .core import HttpClient
+from .dex import DexClient
 from .participant_sets import ParticipantSetsClient
 from .paymaster import PaymasterClient
 from .ramp import RampClient
@@ -28,6 +29,7 @@ class SwigClient:
             retry=retry_options or RetryOptions(),
             transport=transport,
         )
+        self.dex = DexClient(http, network)
         self.paymaster = PaymasterClient(http, network)
         self.participant_sets = ParticipantSetsClient(http, network)
         self.ramp = RampClient(http, network)

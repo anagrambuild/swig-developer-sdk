@@ -1,0 +1,64 @@
+{
+  "positions": [
+    {
+      "swigConfigAddress": "8NkNvqXK6BfLAeqHvcwHWK6b6wybcraj2J3vZHm3LarX",
+      "swigVaultAddress": "4k9xWkFvjifracRGbBUHeKg2z8qzJBPwjqjCySu28Mej",
+      "protocol": "DEX_PROTOCOL_RAYDIUM_CLMM",
+      "dexPositionAddress": "BDk8oZeiUPjZMWhpiugc4MY1FvjLgXYu5fxfXGdwMqB7",
+      "open": {
+        "dexPoolAddress": "EYJkpMH4KJy8XDQyK59DM2xBUodvPkerDxKMCwyL1ber",
+        "state": {
+          "raydiumClmm": {
+            "liquidityRaw": "18817287959235504",
+            "tickLowerIndex": 0,
+            "tickUpperIndex": 1,
+            "tokenFeesOwed0": "0",
+            "tokenFeesOwed1": "0",
+            "rewardAmountsOwed": [
+              "0",
+              "0",
+              "0"
+            ]
+          }
+        }
+      },
+      "observedSlot": "454258554",
+      "sourceTransactionSignature": "2RVmaGZYw4wvKTnEz4ueYYjKYAWgA2dHdMeos9EJMrkEqDQCnBtk8hLGf5AkRw42b9H7K2aXC8KDXCtd9MmZ6L5j"
+    },
+    {
+      "swigConfigAddress": "8NkNvqXK6BfLAeqHvcwHWK6b6wybcraj2J3vZHm3LarX",
+      "swigVaultAddress": "4k9xWkFvjifracRGbBUHeKg2z8qzJBPwjqjCySu28Mej",
+      "protocol": "DEX_PROTOCOL_RAYDIUM_CLMM",
+      "dexPositionAddress": "GbqbbAaDmypYedYrm9srwvYmd54hAmzqqo527KCDwoXv",
+      "closed": {},
+      "observedSlot": "454258553",
+      "sourceTransactionSignature": "4KheMDLmCjiasYy7vHX6VxFJEJR3gH69QDAifUqkE91HSMqEVksDAcxEraEY1UVzoS28yEwdA3BBgHAoWZUaMuhX"
+    },
+    {
+      "swigConfigAddress": "8NkNvqXK6BfLAeqHvcwHWK6b6wybcraj2J3vZHm3LarX",
+      "swigVaultAddress": "4k9xWkFvjifracRGbBUHeKg2z8qzJBPwjqjCySu28Mej",
+      "protocol": "DEX_PROTOCOL_RAYDIUM_CLMM",
+      "dexPositionAddress": "H5v7baxxmcr6L4Sg8zkdArYsLAT5tbtfQYmdB7gie7wm",
+      "open": {
+        "dexPoolAddress": "EYJkpMH4KJy8XDQyK59DM2xBUodvPkerDxKMCwyL1ber",
+        "state": {
+          "raydiumClmm": {
+            "liquidityRaw": "11001375020588076",
+            "tickLowerIndex": 1,
+            "tickUpperIndex": 2,
+            "tokenFeesOwed0": "7970766",
+            "tokenFeesOwed1": "7971948",
+            "rewardAmountsOwed": [
+              "0",
+              "0",
+              "0"
+            ]
+          }
+        }
+      },
+      "observedSlot": "454258553",
+      "sourceTransactionSignature": "4KheMDLmCjiasYy7vHX6VxFJEJR3gH69QDAifUqkE91HSMqEVksDAcxEraEY1UVzoS28yEwdA3BBgHAoWZUaMuhX"
+    }
+  ],
+  "nextPageToken": ""
+}

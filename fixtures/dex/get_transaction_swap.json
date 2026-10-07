@@ -1,0 +1,58 @@
+{
+  "transaction": {
+    "swigConfigAddress": "4m3ptUjYAYLXJUDSKiTDemKUWht98UbEFPgEGvxHnkBz",
+    "transactionSignature": "AdSK8SeJFrC7w4E1vwkgVwMpRzaNN87GdTrfCXvMpLyTvXJuFoGTBLAnW6wJ2BM1w7PAwuTytvHcAf2bPFqJpRH",
+    "slot": "452163114",
+    "blockTime": "2026-10-01T03:14:39Z",
+    "actions": [
+      {
+        "actionIndex": 0,
+        "swigVaultAddress": "EnU8v4oYX6dzedmBm78MvJNzJUiJGmyaXyQiTcspPUAe",
+        "actingRoleId": 10,
+        "protocol": "DEX_PROTOCOL_ORCA_WHIRLPOOL",
+        "dexProgramAddress": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
+        "action": {
+          "swap": {
+            "protocolInstruction": "SwapV2",
+            "protocolActorAddress": "D5YqVMoSxnqeZAKAUUE1Dm3bmjtdxQ5DCF356ozqN9cM",
+            "dexPoolAddress": "Ckp1kwZqosaLU1h3zWtuaMBubyWM7LX3cxYezRVin7p2",
+            "input": {
+              "mintAddress": "So11111111111111111111111111111111111111112",
+              "amountRaw": "-12994222",
+              "decimals": 9
+            },
+            "output": {
+              "mintAddress": "6p6xgHyF7AeE6TZkSmFsko444wqoP15icUSqi2jfGiPN",
+              "amountRaw": "701624",
+              "decimals": 6
+            }
+          }
+        }
+      },
+      {
+        "actionIndex": 1,
+        "swigVaultAddress": "EnU8v4oYX6dzedmBm78MvJNzJUiJGmyaXyQiTcspPUAe",
+        "actingRoleId": 10,
+        "protocol": "DEX_PROTOCOL_ORCA_WHIRLPOOL",
+        "dexProgramAddress": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
+        "action": {
+          "swap": {
+            "protocolInstruction": "SwapV2",
+            "protocolActorAddress": "D5YqVMoSxnqeZAKAUUE1Dm3bmjtdxQ5DCF356ozqN9cM",
+            "dexPoolAddress": "ArisQNcbjXPJD7RgPRvysatX3xcfHPTbcTkfD8kDoZ9i",
+            "input": {
+              "mintAddress": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+              "amountRaw": "-1533219",
+              "decimals": 6
+            },
+            "output": {
+              "mintAddress": "HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr",
+              "amountRaw": "1353598",
+              "decimals": 6
+            }
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "transactions": [
+    {
+      "swigConfigAddress": "8NkNvqXK6BfLAeqHvcwHWK6b6wybcraj2J3vZHm3LarX",
+      "transactionSignature": "4nT1pQZcoX3ypGHGsM21EK6X7CFvdeNq7At8naf3mixX8JsvxztBecchqCWkn2JwErM9334s3NM5hpc2rYvSrjCJ",
+      "slot": "449776519",
+      "blockTime": "2026-09-23T17:52:56Z",
+      "actions": [
+        {
+          "actionIndex": 0,
+          "swigVaultAddress": "4k9xWkFvjifracRGbBUHeKg2z8qzJBPwjqjCySu28Mej",
+          "actingRoleId": 1,
+          "protocol": "DEX_PROTOCOL_RAYDIUM_CLMM",
+          "dexProgramAddress": "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
+          "action": {
+            "liquidityAdd": {
+              "protocolInstruction": "IncreaseLiquidityV2",
+              "protocolActorAddress": "4k9xWkFvjifracRGbBUHeKg2z8qzJBPwjqjCySu28Mej",
+              "dexPoolAddress": "EYJkpMH4KJy8XDQyK59DM2xBUodvPkerDxKMCwyL1ber",
+              "dexPositionAddress": "H5v7baxxmcr6L4Sg8zkdArYsLAT5tbtfQYmdB7gie7wm",
+              "deposits": [
+                {
+                  "mintAddress": "USDvUSpnhCr9yBgj3UyVrD239HRUv4RsHwH2FxsWuMk",
+                  "amountRaw": "-500000000000",
+                  "decimals": 6
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "swigConfigAddress": "8NkNvqXK6BfLAeqHvcwHWK6b6wybcraj2J3vZHm3LarX",
+      "transactionSignature": "2RVmaGZYw4wvKTnEz4ueYYjKYAWgA2dHdMeos9EJMrkEqDQCnBtk8hLGf5AkRw42b9H7K2aXC8KDXCtd9MmZ6L5j",
+      "slot": "449775094",
+      "blockTime": "2026-09-23T17:46:36Z",
+      "actions": [
+        {
+          "actionIndex": 0,
+          "swigVaultAddress": "4k9xWkFvjifracRGbBUHeKg2z8qzJBPwjqjCySu28Mej",
+          "actingRoleId": 1,
+          "protocol": "DEX_PROTOCOL_RAYDIUM_CLMM",
+          "dexProgramAddress": "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
+          "action": {
+            "positionOpen": {
+              "protocolInstruction": "OpenPositionWithToken22Nft",
+              "protocolActorAddress": "4k9xWkFvjifracRGbBUHeKg2z8qzJBPwjqjCySu28Mej",
+              "dexPoolAddress": "EYJkpMH4KJy8XDQyK59DM2xBUodvPkerDxKMCwyL1ber",
+              "dexPositionAddress": "BDk8oZeiUPjZMWhpiugc4MY1FvjLgXYu5fxfXGdwMqB7",
+              "deposits": [
+                {
+                  "mintAddress": "USDvUSpnhCr9yBgj3UyVrD239HRUv4RsHwH2FxsWuMk",
+                  "amountRaw": "-940793839009",
+                  "decimals": 6
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "nextPageToken": "eyJraW5kIjoidHJhbnNhY3Rpb25zIiwidiI6MSwibmV0d29yayI6Miwic3dpZ19jb25maWdfYWRkcmVzcyI6IjhOa052cVhLNkJmTEFlcUh2Y3dIV0s2YjZ3eWJjcmFqMkozdlpIbTNMYXJYIiwiZmlsdGVycyI6eyJzdGFydF9zbG90IjpudWxsLCJlbmRfc2xvdCI6bnVsbCwicHJvdG9jb2wiOm51bGwsImFjdGlvbl90eXBlIjpudWxsLCJzd2lnX3ZhdWx0X2FkZHJlc3MiOm51bGx9LCJzbG90Ijo0NDk3NzUwOTQsInRyYW5zYWN0aW9uX3NpZ25hdHVyZSI6IjJSVm1hR1pZdzR3dktUbkV6NHVlWVlqS1lBV2dBMmRIZE1lb3M5RUpNcmtFcURRQ25CdGs4aExHZjVBa1J3NDJiOUg3SzJhWEM4S0RYQ3RkOU1tWjZMNWoifQ"
+}
