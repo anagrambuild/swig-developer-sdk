@@ -1,5 +1,24 @@
 # @swig-wallet/developer-sdk
 
+## 0.12.0
+
+### Minor Changes
+
+- Add `swig.dex` for the DEX activity the backend indexed for a Swig your API
+  key's organization owns: `swig.dex.transactions.list` (newest first),
+  `swig.dex.transactions.get`, and `swig.dex.positions.list` (latest state per
+  position, Raydium CLMM today).
+- Filters are optional and combine: inclusive `startSlot`/`endSlot`,
+  `protocol`, `actionType` and `swigVaultAddress` for transactions, and
+  `positionStatus`, `protocol` and `swigVaultAddress` for positions. Pass
+  `nextPageToken` back as `pageToken` with the same filters.
+- Actions decode into a `DexAction` union keyed by `type`, and positions into
+  `DexOpenPosition` or `DexClosedPosition`. `amountRaw` stays a signed decimal
+  string for the action's `protocolActorAddress`, which is the router's account
+  on a routed trade.
+- Python 0.10.0 adds the same surface as `swig.dex.transactions.list/get` and
+  `swig.dex.positions.list`.
+
 ## 0.11.1
 
 ### Patch Changes

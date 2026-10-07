@@ -10,8 +10,8 @@ migration. It is an engineering review artifact, not a product tutorial.
   `6fc9e22`, preserved with `git subtree split`.
 - Standalone repository: `anagrambuild/swig-developer-sdk`.
 - Public API base URL: `https://api.onswig.com`.
-- TypeScript package: `@swig-wallet/developer-sdk` version `0.11.1`.
-- Python package: `swig-developer-sdk` version `0.9.0`.
+- TypeScript package: `@swig-wallet/developer-sdk` version `0.12.0`.
+- Python package: `swig-developer-sdk` version `0.10.0`.
 
 The `0.9.0` TypeScript release removes the browser proxy and framework adapter
 entrypoints. Application-owned signing helpers now use the dedicated
@@ -116,6 +116,41 @@ advertise them as usable integration flows.
 
 Token balances and token transactions carry `assetKind` in ProtoJSON. Both
 SDKs preserve it as `token`, `native-sol`, or `unspecified`.
+
+## DEX API
+
+| Method | Route | Authentication |
+| --- | --- | --- |
+| GET | `/wallet/swig/{swig_config_address}/dex/transactions` | API key |
+| GET | `/wallet/swig/{swig_config_address}/dex/transactions/{transaction_signature}` | API key |
+| GET | `/wallet/swig/{swig_config_address}/dex/positions` | API key |
+
+Source: `anagrambuild/swig-dev-portal` `ApiDexService`
+(`backend/proto/wallet/api_dex.proto`). The routes read the backend's DEX index
+only; they never call Solana, parse transactions, or write.
+
+- Ownership is the API key's organization: an unknown, inactive, or another
+  organization's Swig answers 404, as does a transaction the Swig did not act
+  in. `network` is required (`NETWORK_MAINNET` or `NETWORK_DEVNET`).
+- Transactions are newest first on `(slot, transactionSignature)`. Positions
+  are ordered by `(protocol, dexPositionAddress)`, never by state. Page size
+  defaults to 25 and is capped at 100.
+- Filters are optional and combine. Transactions: inclusive `startSlot` and
+  `endSlot`, and `protocol`, `actionType` and `swigVaultAddress` on one action;
+  a matching transaction keeps all of the Swig's actions. Positions:
+  `positionStatus`, `protocol` and `swigVaultAddress`. An explicit
+  `*_UNSPECIFIED` value is refused.
+- `nextPageToken` is opaque and bound to the endpoint, network, Swig and
+  filters; reusing it otherwise is refused. An empty token means the last page.
+- Only transactions the index interpreted are listed. Parser and indexer status
+  never cross the API.
+- Amounts are ProtoJSON decimal strings, signed for the action's
+  `protocolActorAddress`, which is the router's account on a routed trade. Both
+  SDKs keep them as strings. Slots are uint64 strings decoded to integers;
+  `actingRoleId` is a uint32 number.
+- Positions are open (pool plus decoded account state, Raydium CLMM today) or
+  closed (`{}`), decoded by key presence. `observedSlot` is the slot of the
+  on-chain read behind the state.
 
 ## Paymaster API
 

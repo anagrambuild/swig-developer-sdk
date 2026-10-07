@@ -5,7 +5,7 @@ Python SDK for preparing Swig wallet operations on a server, with a separate
 module inserts signatures with `solders` and makes no hosted API requests. No
 signing material is sent to the API.
 
-- Version: `0.9.0`
+- Version: `0.10.0`
 - Source: <https://github.com/anagrambuild/swig-developer-sdk>
 - Default API base URL: `https://api.onswig.com`
 
@@ -303,6 +303,67 @@ Policy metadata is a separate read:
 ```python
 policy = await swig.wallets.get_policy(policy_id)
 ```
+
+## DEX history and positions
+
+`swig.dex` reads the DEX activity the backend indexed for a Swig your API key's
+organization owns. Both reads are API-key `GET` requests, follow the retry
+policy, and never call Solana themselves.
+
+```python
+page = await swig.dex.transactions.list(
+    swig_config_address=swig_config_address,
+    network="mainnet",
+    page_size=25,
+    start_slot=357_000_000,
+    end_slot=358_000_000,
+    protocol="raydium-clmm",
+    action_type="swap",
+    swig_vault_address=swig_vault_address,
+)
+
+for transaction in page.transactions:
+    for executed in transaction.actions:
+        if executed.action.type == "swap":
+            print(executed.protocol, executed.action.input.amount_raw)
+
+if page.next_page_token:
+    next_page = await swig.dex.transactions.list(
+        swig_config_address=swig_config_address,
+        network="mainnet",
+        page_token=page.next_page_token,
+        # ...the same filters
+    )
+
+transaction = await swig.dex.transactions.get(
+    swig_config_address=swig_config_address,
+    network="mainnet",
+    transaction_signature=transaction_signature,
+)
+
+positions = await swig.dex.positions.list(
+    swig_config_address=swig_config_address,
+    network="mainnet",
+    position_status="open",
+)
+```
+
+Transactions come newest first. Every filter is optional and they combine:
+`start_slot` and `end_slot` are inclusive, and `protocol`, `action_type` and
+`swig_vault_address` select transactions with at least one matching action. A
+matching transaction still carries every DEX action the Swig executed in it. A
+page token is bound to the filters it was issued with.
+
+A position is the latest known on-chain state of a position held by the Swig's
+vault or one of its enabled sub-accounts: a `DexOpenPosition` with its pool and
+decoded account, or a `DexClosedPosition` once the account no longer exists.
+Latest state is currently recorded for Raydium CLMM positions only.
+
+`amount_raw` is a decimal integer string, signed for the action's
+`protocol_actor_address` (negative amounts left its accounts). That actor is the
+Swig vault on a direct call and the router's account on a routed trade, so a
+routed swap is one action per venue hop. A transaction the index could not
+interpret, or has not processed yet, is omitted, and `get` answers 404 for it.
 
 ## Fiat ramps
 
