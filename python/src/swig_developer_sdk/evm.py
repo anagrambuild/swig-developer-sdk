@@ -16,6 +16,11 @@ def create_secp256k1_evm_signing_fn(
     provider: Eip1193Provider,
     address: str,
 ) -> Secp256k1SigningFn:
+    """Adapt an application EIP-1193 provider into a Swig signing callback.
+
+    Calls personal_sign with the message and address. Invalid signatures raise
+    ValueError; provider errors propagate. This adapter makes no hosted API call."""
+
     async def sign(message: bytes) -> Secp256k1SigningResult:
         result = provider.request(
             {

@@ -2,60 +2,19 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
-from typing import TypeVar, cast
+from typing import cast
 
 import httpx
 
 from .common import JsonValue, RetryOptions
-
-T = TypeVar("T")
-
-
-class SwigDeveloperSdkError(Exception):
-    def __init__(
-        self,
-        message: str,
-        code: str,
-        status_code: int,
-        details: object | None = None,
-    ) -> None:
-        super().__init__(message)
-        self.code = code
-        self.status_code = status_code
-        self.details = details
-
-    @classmethod
-    def from_response(
-        cls,
-        response: httpx.Response,
-        body: object | None,
-    ) -> SwigDeveloperSdkError:
-        if isinstance(body, Mapping):
-            nested = body.get("error")
-            if isinstance(nested, Mapping):
-                details = nested.get("details")
-                return cls(
-                    _optional_string(nested.get("message"))
-                    or f"Request failed with status {response.status_code}",
-                    _optional_string(nested.get("code"))
-                    or f"HTTP_{response.status_code}",
-                    response.status_code,
-                    details if details is not None else body,
-                )
-            details = body.get("details")
-            return cls(
-                _optional_string(body.get("message"))
-                or f"Request failed with status {response.status_code}",
-                _optional_string(body.get("code")) or f"HTTP_{response.status_code}",
-                response.status_code,
-                details if details is not None else body,
-            )
-        return cls(
-            f"Request failed with status {response.status_code}",
-            f"HTTP_{response.status_code}",
-            response.status_code,
-            body,
-        )
+from .errors import (
+    SwigConnectionError,
+    SwigResponseError,
+    SwigTimeoutError,
+)
+from .errors import (
+    SwigDeveloperSdkError as SwigDeveloperSdkError,
+)
 
 
 class HttpClient:
@@ -66,11 +25,22 @@ class HttpClient:
         base_url: str,
         retry: RetryOptions,
         transport: httpx.AsyncBaseTransport | None = None,
+        timeout: float | None = 5.0,
     ) -> None:
-        self._api_key = api_key
-        self._base_url = base_url.rstrip("/")
         self._retry = retry
-        self._transport = transport
+        self._client = httpx.AsyncClient(
+            base_url=base_url.rstrip("/"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            },
+            transport=transport,
+            timeout=timeout,
+        )
+
+    async def aclose(self) -> None:
+        if not self._client.is_closed:
+            await self._client.aclose()
 
     async def get(self, path: str) -> object:
         return await self._request(path, method="GET")
@@ -95,48 +65,35 @@ class HttpClient:
         body: Mapping[str, object] | None = None,
         retry: bool = True,
     ) -> object:
-        last_error: SwigDeveloperSdkError | None = None
         max_retries = self._retry.max_retries if retry else 0
         for attempt in range(max_retries + 1):
             try:
-                async with httpx.AsyncClient(transport=self._transport) as client:
-                    response = await client.request(
-                        method,
-                        f"{self._base_url}{path}",
-                        headers={
-                            "Content-Type": "application/json",
-                            "Authorization": f"Bearer {self._api_key}",
-                        },
-                        json=body,
-                    )
-                response_body = _parse_response_body(response)
+                response = await self._client.request(method, path, json=body)
+            except httpx.DecodingError as error:
+                raise SwigResponseError("API response could not be decoded") from error
+            except httpx.TimeoutException as error:
+                if attempt == max_retries:
+                    raise SwigTimeoutError() from error
+            except httpx.TransportError as error:
+                if attempt == max_retries:
+                    raise SwigConnectionError() from error
+            else:
                 if 200 <= response.status_code < 300:
-                    return _unwrap_data(response_body)
-                error = SwigDeveloperSdkError.from_response(response, response_body)
-                if 400 <= response.status_code < 500:
-                    raise error
-                last_error = error
-            except SwigDeveloperSdkError as error:
-                if 400 <= error.status_code < 500:
-                    raise
-                last_error = error
-            except httpx.HTTPError as error:
-                last_error = SwigDeveloperSdkError(str(error), "NETWORK_ERROR", 0)
-            except Exception as error:
-                last_error = SwigDeveloperSdkError(str(error), "NETWORK_ERROR", 0)
-
-            if attempt < max_retries:
-                await asyncio.sleep(
-                    self._retry.retry_delay * self._retry.backoff_multiplier**attempt
+                    return _unwrap_data(_parse_response_body(response))
+                try:
+                    response_body = response.json() if response.content else None
+                except ValueError:
+                    response_body = None
+                error_response = SwigDeveloperSdkError.from_response(
+                    response, response_body
                 )
+                if response.status_code < 500 or attempt == max_retries:
+                    raise error_response
 
-        if last_error is not None:
-            raise last_error
-        raise SwigDeveloperSdkError(
-            f"Request failed after {max_retries} retries",
-            "RETRY_EXHAUSTED",
-            0,
-        )
+            await asyncio.sleep(
+                self._retry.retry_delay * self._retry.backoff_multiplier**attempt
+            )
+        raise AssertionError("retry loop must return or raise")
 
 
 def _parse_response_body(response: httpx.Response) -> object:
@@ -144,18 +101,14 @@ def _parse_response_body(response: httpx.Response) -> object:
         return None
     try:
         return cast(JsonValue, response.json())
-    except ValueError:
-        return response.text
+    except ValueError as error:
+        raise SwigResponseError("API response is not valid JSON") from error
 
 
 def _unwrap_data(body: object) -> object:
     if isinstance(body, Mapping) and "data" in body:
         return body["data"]
     return body
-
-
-def _optional_string(value: object) -> str | None:
-    return value if isinstance(value, str) else None
 
 
 def _compact(value: object) -> object:

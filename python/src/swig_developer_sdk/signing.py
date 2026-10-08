@@ -70,6 +70,11 @@ async def sign_prepared_transaction(
     *,
     sign_transaction: PreparedTransactionSigningFn,
 ) -> SignedPreparedTransaction:
+    """Sign a prepared transaction with an application-owned callback.
+
+    The callback receives base64 transaction text and preparation metadata, and
+    returns signed base64 text, synchronously or asynchronously. This helper
+    makes no hosted request, submits nothing, and propagates callback errors."""
     transaction = await _resolve(sign_transaction(prepared.transaction, prepared))
     return SignedPreparedTransaction(
         transaction=transaction,
@@ -82,6 +87,9 @@ async def sign_prepared_transaction_with_signer(
     prepared: PreparedTransaction,
     signer: PreparedTransactionSigner,
 ) -> SignedPreparedTransaction:
+    """Delegate to an application-owned signer without hosted API calls.
+
+    Return its signed transaction and propagate its errors; no submission occurs."""
     return await _resolve(signer.sign_prepared_transaction(prepared))
 
 
@@ -91,6 +99,11 @@ async def sign_prepared_swig_transaction(
     secp256r1: Secp256r1SigningFns | None = None,
     secp256k1: Secp256k1SigningFns | None = None,
 ) -> SignedPreparedTransaction:
+    """Patch requested secp256r1/secp256k1 signatures into a base64 transaction.
+
+    Callbacks may be sync or async, or mapped by signer public key. Remaining
+    transaction signatures belong to the application. This makes no hosted
+    request; invalid preparation or signature data raises ValueError."""
     if prepared.transaction_encoding not in (None, "base64"):
         raise ValueError("Only base64 prepared transactions can be signed")
 
@@ -114,6 +127,10 @@ async def sign_prepared_swig_transactions(
     secp256r1: Secp256r1SigningFns | None = None,
     secp256k1: Secp256k1SigningFns | None = None,
 ) -> tuple[SignedPreparedTransaction, ...]:
+    """Sign an ordered sequence using sign_prepared_swig_transaction.
+
+    Stops at the first failure and returns a tuple on success. This helper
+    makes no hosted API requests and does not submit transactions."""
     signed: list[SignedPreparedTransaction] = []
     for prepared in prepared_transactions:
         signed.append(

@@ -33,6 +33,11 @@ WebAuthnAssertionFn: TypeAlias = Callable[
 def create_secp256r1_passkey_signing_fn(
     get_assertion: WebAuthnAssertionFn,
 ) -> PasskeySigningFn:
+    """Adapt a sync/async assertion callback into a Swig P-256 signing callback.
+
+    Preserves WebAuthn assertion bytes and converts DER to a low-S raw signature.
+    Invalid data raises ValueError; callback errors propagate. No hosted API call."""
+
     async def sign(message: bytes) -> PasskeySigningResult:
         assertion = get_assertion(message)
         if inspect.isawaitable(assertion):

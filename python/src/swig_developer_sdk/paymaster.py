@@ -7,6 +7,7 @@ from urllib.parse import urlencode
 
 from .common import Network
 from .core import HttpClient
+from .errors import SwigResponseError
 
 PaymasterKind: TypeAlias = Literal["api", "idp", "unspecified"]
 PaymasterBalanceKind: TypeAlias = Literal["api", "idp"]
@@ -38,6 +39,10 @@ class PaymasterClient:
         network: Network | None = None,
         kind: PaymasterBalanceKind | None = None,
     ) -> PaymasterBalance:
+        """Fetch the configured paymaster balance; amounts include lamports and SOL.
+
+        Network resolves from the call then client. This GET uses the client
+        retry policy. An unconfigured paymaster is represented in the result."""
         query: dict[str, str] = {}
         resolved_network = network or self._default_network
         if resolved_network is not None:
@@ -56,15 +61,16 @@ class PaymasterClient:
         *,
         network: Network | None = None,
     ) -> PaymasterBalance:
+        """Fetch the IDP paymaster balance using the same defaults as get_balance."""
         return await self.get_balance(network=network, kind="idp")
 
 
 def normalize_paymaster_balance(value: object) -> PaymasterBalance:
     if not isinstance(value, Mapping):
-        raise ValueError("Paymaster balance response must be an object")
+        raise SwigResponseError("Paymaster balance response must be an object")
     configured = value.get("configured", False)
     if not isinstance(configured, bool):
-        raise ValueError("Paymaster balance response has invalid configured")
+        raise SwigResponseError("Paymaster balance response has invalid configured")
     return PaymasterBalance(
         configured=configured,
         kind=_normalize_kind(value.get("kind")),
@@ -88,7 +94,7 @@ def _normalize_kind(value: object) -> PaymasterKind:
         return "idp"
     if value in (None, "unspecified", "PAYMASTER_KIND_UNSPECIFIED", 0):
         return "unspecified"
-    raise ValueError("Paymaster balance response has invalid kind")
+    raise SwigResponseError("Paymaster balance response has invalid kind")
 
 
 def _number(value: object, field: str) -> float:
@@ -99,7 +105,7 @@ def _number(value: object, field: str) -> float:
             return float(value)
         except ValueError:
             pass
-    raise ValueError(f"Paymaster balance response is missing {field}")
+    raise SwigResponseError(f"Paymaster balance response is missing {field}")
 
 
 def _optional_string(value: object) -> str | None:

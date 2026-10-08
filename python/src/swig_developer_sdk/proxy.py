@@ -5,6 +5,7 @@ import os
 import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, fields, is_dataclass
+from types import TracebackType
 from typing import Literal, TypeAlias, TypeVar, cast
 from urllib.parse import unquote
 
@@ -12,7 +13,14 @@ import httpx
 from pydantic import BaseModel
 
 from .client import SwigClient
-from .common import DEFAULT_BACKEND_URL, Network, WalletAuthority, normalize_network
+from .common import (
+    DEFAULT_BACKEND_URL,
+    Network,
+    WalletAuthority,
+    normalize_network,
+    wallet_authority_to_wire,
+)
+from .errors import SwigDeveloperSdkError
 from .paymaster import PaymasterBalanceKind
 from .ramp import (
     CryptoAmountInput,
@@ -111,8 +119,37 @@ class SwigProxyRouteError(Exception):
 
 
 class SwigProxyHandler:
+    """Reusable framework-neutral handler; close it at application shutdown.
+
+    Use async with or aclose(). The lazily created client owns any injected
+    transport. Request network overrides are resolved independently.
+    """
+
     def __init__(self, config: SwigProxyConfig | None = None) -> None:
         self._config = config or SwigProxyConfig()
+        self._swig: SwigClient | None = None
+        self._closed = False
+
+    async def aclose(self) -> None:
+        """Close the proxy's HTTP client and owned transport at app shutdown."""
+        if self._closed:
+            return
+        self._closed = True
+        if self._swig is not None:
+            await self._swig.aclose()
+        elif self._config.transport is not None:
+            await self._config.transport.aclose()
+
+    async def __aenter__(self) -> SwigProxyHandler:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        await self.aclose()
 
     async def handle(
         self,
@@ -135,6 +172,8 @@ class SwigProxyHandler:
             return ProxyResponse(200, serialized)
         except SwigProxyRouteError as error:
             return ProxyResponse(error.status, {"error": str(error)})
+        except SwigDeveloperSdkError as error:
+            return ProxyResponse(error.status_code or 502, {"error": str(error)})
         except Exception as error:
             return ProxyResponse(400, {"error": str(error)})
 
@@ -156,7 +195,7 @@ class SwigProxyHandler:
             wallet=wallet,
             network=network,
         )
-        swig = self._client(network)
+        swig = self._client()
         if route == "wallet/create":
             fee_payer = await self._fee_payer(context)
             policy_id = _optional_string(body.get("policyId"))
@@ -302,7 +341,7 @@ class SwigProxyHandler:
     ) -> Mapping[str, object]:
         route, identifier = _resolve_read_route(path)
         network = _read_network(query.get("network")) or self._config.network
-        swig = self._client(network)
+        swig = self._client()
         if route == "paymaster/balance":
             kind_value = query.get("kind", "").strip().upper()
             kind: PaymasterBalanceKind | None
@@ -354,7 +393,11 @@ class SwigProxyHandler:
             result = await handle.list_roles(network=network)
         return cast(Mapping[str, object], _to_wire(result))
 
-    def _client(self, network: Network | None) -> SwigClient:
+    def _client(self) -> SwigClient:
+        if self._closed:
+            raise RuntimeError("Proxy handler is closed")
+        if self._swig is not None:
+            return self._swig
         api_key = self._config.api_key or _read_env(
             "SWIG_DEVELOPER_API_KEY", "SWIG_API_KEY"
         )
@@ -369,12 +412,13 @@ class SwigProxyHandler:
                 "NEXT_PUBLIC_SWIG_BACKEND_URL",
             )
         )
-        return SwigClient(
+        self._swig = SwigClient(
             api_key=api_key,
             base_url=base_url or DEFAULT_BACKEND_URL,
-            network=network,
+            network=self._config.network,
             transport=self._config.transport,
         )
+        return self._swig
 
     async def _fee_payer(self, context: SwigRouteContext) -> str:
         configured = self._config.fee_payer
@@ -480,36 +524,11 @@ def _read_authority(value: object) -> WalletAuthority | None:
     if value is None:
         return None
     body = _mapping(value, "authority")
-    for scheme in ("ed25519", "secp256k1", "secp256r1"):
-        nested = body.get(scheme)
-        if isinstance(nested, Mapping):
-            public_key = _optional_string(nested.get("publicKey"))
-            if public_key:
-                return {scheme: {"publicKey": public_key}}
-    proof = body.get("programExecProof")
-    if isinstance(proof, Mapping):
-        role_id = _optional_int(proof.get("roleId"))
-        zk_proof = _optional_string(proof.get("zkProof"))
-        if role_id is not None and zk_proof:
-            return {"programExecProof": {"roleId": role_id, "zkProof": zk_proof}}
-    participant_set = body.get("participantSet")
-    if isinstance(participant_set, Mapping):
-        address = _optional_string(
-            participant_set.get("address", participant_set.get("participantSetAddress"))
-        )
-        raw_role_id = participant_set.get("roleId")
-        role_id = _optional_int(raw_role_id)
-        if not address:
-            raise SwigProxyRouteError("participantSet authority requires address")
-        if raw_role_id is not None and role_id is None:
-            raise SwigProxyRouteError(
-                "participantSet authority roleId must be an integer"
-            )
-        authority: dict[str, object] = {"address": address}
-        if role_id is not None:
-            authority["roleId"] = role_id
-        return {"participantSet": authority}
-    raise SwigProxyRouteError("authority must include a supported authority")
+    try:
+        wire = wallet_authority_to_wire(body)
+    except ValueError as error:
+        raise SwigProxyRouteError(str(error)) from error
+    return cast(WalletAuthority, wire)
 
 
 def _read_recovery_options(value: object) -> RecoveryOptions | None:

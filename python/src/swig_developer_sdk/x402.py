@@ -21,6 +21,7 @@ from .common import (
     wallet_authority_to_wire,
 )
 from .core import HttpClient
+from .errors import SwigResponseError
 from .transactions import (
     PreparedTransaction,
     SignedPreparedTransaction,
@@ -72,6 +73,13 @@ class WalletX402Client:
         *,
         accepted_index: int | None = None,
     ) -> X402PreparationResult:
+        """Prepare payment from an x402 v2 HTTP 402 response for local signing.
+
+        The handle or client must supply a network and requester authority.
+        accepted_index selects a payment option; omission lets the API choose.
+        Caller response/index errors raise ValueError; hosted API and malformed
+        preparation responses raise SDK errors. Preparation does not retry.
+        """
         payment_required = parse_payment_required_response(response)
         return await self._prepare_payment_required(
             payment_required,
@@ -170,37 +178,45 @@ def normalize_x402_preparation_response(
     body = _mapping(response, "x402 preparation response")
     prepared_wire = _pick(body, "preparedTransaction", "prepared_transaction")
     if prepared_wire is None:
-        raise ValueError("x402 preparation response is missing preparedTransaction")
+        raise SwigResponseError(
+            "x402 preparation response is missing preparedTransaction"
+        )
 
     accepted_index = _response_accepted_index(
         _pick(body, "acceptedIndex", "accepted_index")
     )
     if accepted_index >= len(payment_required.accepts):
-        raise ValueError("x402 preparation response acceptedIndex is out of range")
+        raise SwigResponseError(
+            "x402 preparation response acceptedIndex is out of range"
+        )
     if (
         requested_accepted_index is not None
         and accepted_index != requested_accepted_index
     ):
-        raise ValueError("x402 preparation response selected a different requirement")
+        raise SwigResponseError(
+            "x402 preparation response selected a different requirement"
+        )
 
     accepted = payment_required.accepts[accepted_index]
     if accepted.scheme != "exact" or accepted.network != X402_SOLANA_NETWORKS[network]:
-        raise ValueError(
+        raise SwigResponseError(
             "x402 preparation response selected an unsupported requirement"
         )
 
     prepared = normalize_prepared_transaction(prepared_wire)
     if prepared.kind != "x402-payment":
-        raise ValueError("x402 preparation response has an invalid transaction kind")
+        raise SwigResponseError(
+            "x402 preparation response has an invalid transaction kind"
+        )
     if prepared.network != network:
-        raise ValueError("x402 preparation response has a different network")
+        raise SwigResponseError("x402 preparation response has a different network")
     if prepared.transaction_encoding != "base64":
-        raise ValueError("x402 preparation response must use base64")
+        raise SwigResponseError("x402 preparation response must use base64")
     if (
         prepared.wallet is None
         or prepared.wallet.swig_config_address != swig_config_address
     ):
-        raise ValueError("x402 preparation response has a different Swig wallet")
+        raise SwigResponseError("x402 preparation response has a different Swig wallet")
 
     return X402PreparationResult(
         prepared_transaction=prepared,
@@ -269,7 +285,9 @@ def _response_accepted_index(value: object) -> int:
         or value < 0
         or value > UINT32_MAX
     ):
-        raise ValueError("x402 preparation response has an invalid acceptedIndex")
+        raise SwigResponseError(
+            "x402 preparation response has an invalid acceptedIndex"
+        )
     return value
 
 
@@ -290,7 +308,7 @@ def _decode_canonical_base64(value: str) -> bytes:
 def _mapping(value: object, label: str) -> Mapping[str, object]:
     if isinstance(value, Mapping):
         return value
-    raise ValueError(f"{label} must be an object")
+    raise SwigResponseError(f"{label} must be an object")
 
 
 def _pick(body: Mapping[str, object], *keys: str) -> object | None:

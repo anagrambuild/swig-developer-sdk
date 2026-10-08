@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal, TypeAlias
+from typing import Literal, TypeAlias, cast, overload
 
 import base58
 
@@ -16,6 +16,7 @@ from .common import (
     wallet_authority_to_wire,
 )
 from .core import HttpClient
+from .errors import SwigResponseError
 
 TransactionEncoding = Literal["base64"]
 PreparedTransactionKind = Literal[
@@ -158,10 +159,58 @@ class TransactionsClient:
         self._http = http
         self._default_network = default_network
 
+    @overload
+    async def sponsor(
+        self, args: SponsorSignedTransactionArgs
+    ) -> SubmittedTransaction: ...
+
+    @overload
     async def sponsor(
         self,
-        args: SponsorSignedTransactionArgs,
+        *,
+        transaction: str,
+        transaction_encoding: TransactionEncoding | None = None,
+        network: Network | None = None,
+        idempotency_key: str | None = None,
+    ) -> SubmittedTransaction: ...
+
+    async def sponsor(
+        self,
+        args: SponsorSignedTransactionArgs | None = None,
+        *,
+        transaction: str | None = None,
+        transaction_encoding: TransactionEncoding | None = None,
+        network: Network | None = None,
+        idempotency_key: str | None = None,
     ) -> SubmittedTransaction:
+        """Sponsor and submit a signed base64 transaction.
+
+        Prefer keyword arguments; the legacy Args object remains supported.
+        Network resolves from the call, then the client, then backend mainnet.
+        Only calls with an idempotency key retry. A signature means RPC
+        acceptance, not confirmation. Caller errors raise ValueError/TypeError;
+        API and response failures derive from SwigDeveloperSdkError.
+        """
+        if args is not None:
+            if any(
+                value is not None
+                for value in (
+                    transaction,
+                    transaction_encoding,
+                    network,
+                    idempotency_key,
+                )
+            ):
+                raise TypeError("Pass either args or sponsorship keywords, not both")
+        else:
+            if transaction is None:
+                raise TypeError("transaction is required")
+            args = SponsorSignedTransactionArgs(
+                transaction=transaction,
+                transaction_encoding=transaction_encoding,
+                network=network,
+                idempotency_key=idempotency_key,
+            )
         transaction_bytes = base64.b64decode(args.transaction)
         response = await self._http.post(
             "/paymaster/sponsor",
@@ -182,6 +231,10 @@ class TransactionsClient:
         prepared_transaction: PreparedTransaction,
         approvals: Sequence[ParticipantSetApproval],
     ) -> CompileParticipantSetApprovalsResult:
+        """Compile detached member approvals into a prepared transaction.
+
+        Sign and submit the returned transaction locally. Retain its expiration
+        slot; compilation is not submission and this POST does not retry."""
         response = _mapping(
             await self._http.post(
                 "/transaction/wallet/participant-set/compile",
@@ -199,14 +252,16 @@ class TransactionsClient:
         )
         transaction = response.get("transaction")
         if transaction is None:
-            raise ValueError("Compile ParticipantSet response is missing transaction")
+            raise SwigResponseError(
+                "Compile ParticipantSet response is missing transaction"
+            )
         authorization_expiration_slot = _pick(
             response,
             "authorizationExpirationSlot",
             "authorization_expiration_slot",
         )
         if not isinstance(authorization_expiration_slot, (str, int)):
-            raise ValueError(
+            raise SwigResponseError(
                 "Compile ParticipantSet response is missing authorizationExpirationSlot"
             )
         return CompileParticipantSetApprovalsResult(
@@ -214,10 +269,50 @@ class TransactionsClient:
             authorization_expiration_slot=str(authorization_expiration_slot),
         )
 
+    @overload
+    async def sponsor_bundle(
+        self, args: SponsorSignedTransactionBundleArgs
+    ) -> SubmittedTransactionBundle: ...
+
+    @overload
     async def sponsor_bundle(
         self,
-        args: SponsorSignedTransactionBundleArgs,
+        *,
+        transactions: Sequence[str],
+        network: Network | None = None,
+        idempotency_key: str | None = None,
+    ) -> SubmittedTransactionBundle: ...
+
+    async def sponsor_bundle(
+        self,
+        args: SponsorSignedTransactionBundleArgs | None = None,
+        *,
+        transactions: Sequence[str] | None = None,
+        network: Network | None = None,
+        idempotency_key: str | None = None,
     ) -> SubmittedTransactionBundle:
+        """Sponsor one to five signed base64 transactions in order, on mainnet.
+
+        Prefer keyword arguments; the legacy Args object remains supported.
+        Network resolves from the call then client and must be mainnet. Only
+        calls with an idempotency key retry. The bundle ID records acceptance,
+        not finality; estimated spending is not a settled charge.
+        """
+        if args is not None:
+            if any(
+                value is not None for value in (transactions, network, idempotency_key)
+            ):
+                raise TypeError("Pass either args or sponsorship keywords, not both")
+        else:
+            if transactions is None:
+                raise TypeError("transactions is required")
+            if isinstance(transactions, (str, bytes)):
+                raise TypeError("transactions must be a sequence of transactions")
+            args = SponsorSignedTransactionBundleArgs(
+                transactions=tuple(transactions),
+                network=network,
+                idempotency_key=idempotency_key,
+            )
         if not 1 <= len(args.transactions) <= 5:
             raise ValueError("transactions must contain between 1 and 5 items")
         network = args.network or self._default_network
@@ -238,7 +333,7 @@ class TransactionsClient:
         body = _mapping(response, "Sponsor bundle response")
         signatures = body.get("signatures", [])
         if not isinstance(signatures, Sequence) or isinstance(signatures, (str, bytes)):
-            raise ValueError("Sponsor bundle response has invalid signatures")
+            raise SwigResponseError("Sponsor bundle response has invalid signatures")
         return SubmittedTransactionBundle(
             request_id=_required_string(
                 _pick(body, "requestId", "request_id"), "requestId"
@@ -266,7 +361,7 @@ def normalize_prepared_transaction(response: object) -> PreparedTransaction:
         body, "transaction", "unsignedTransaction", "unsigned_transaction"
     )
     if not isinstance(transaction, str) or not transaction:
-        raise ValueError("Prepared transaction response is missing transaction")
+        raise SwigResponseError("Prepared transaction response is missing transaction")
 
     wallet_value = body.get("wallet")
     return PreparedTransaction(
@@ -307,7 +402,9 @@ def normalize_prepared_transactions_result(
     if not isinstance(raw_transactions, Sequence) or isinstance(
         raw_transactions, (str, bytes)
     ):
-        raise ValueError("Prepare transactions response has invalid transactions")
+        raise SwigResponseError(
+            "Prepare transactions response has invalid transactions"
+        )
     transactions = tuple(
         normalize_prepared_transaction(
             {
@@ -348,7 +445,7 @@ def normalize_submitted_transaction(response: object) -> SubmittedTransaction:
     body = _mapping(response, "Sponsor response")
     signature = body.get("signature")
     if not isinstance(signature, str) or not signature:
-        raise ValueError("Sponsor response is missing signature")
+        raise SwigResponseError("Sponsor response is missing signature")
     return SubmittedTransaction(
         request_id=_required_string(
             _pick(body, "requestId", "request_id"), "requestId"
@@ -364,7 +461,7 @@ def _normalize_signature_requests(value: object) -> tuple[ClientSignatureRequest
     if value is None:
         return ()
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
-        raise ValueError("Prepared transaction has invalid signature request")
+        raise SwigResponseError("Prepared transaction has invalid signature request")
     requests: list[ClientSignatureRequest] = []
     for item in value:
         request = _mapping(item, "Prepared transaction signature request")
@@ -377,7 +474,7 @@ def _normalize_signature_requests(value: object) -> tuple[ClientSignatureRequest
             try:
                 slot = int(slot, 10)
             except ValueError as error:
-                raise ValueError(
+                raise SwigResponseError(
                     "Prepared transaction has invalid signature request"
                 ) from error
         if (
@@ -387,7 +484,9 @@ def _normalize_signature_requests(value: object) -> tuple[ClientSignatureRequest
             or not isinstance(slot, int)
             or not isinstance(counter, int)
         ):
-            raise ValueError("Prepared transaction has invalid signature request")
+            raise SwigResponseError(
+                "Prepared transaction has invalid signature request"
+            )
         requests.append(
             ClientSignatureRequest(
                 scheme=scheme,
@@ -452,14 +551,16 @@ def _normalize_participant_set_approval_plan(
     body = _mapping(value, "ParticipantSet approval plan")
     expiration_slot = _pick(body, "expirationSlot", "expiration_slot")
     if not isinstance(expiration_slot, (str, int)):
-        raise ValueError("ParticipantSet approval plan is missing expirationSlot")
+        raise SwigResponseError(
+            "ParticipantSet approval plan is missing expirationSlot"
+        )
     members_value = body.get("members")
     if (
         not isinstance(members_value, Sequence)
         or isinstance(members_value, (str, bytes))
         or not members_value
     ):
-        raise ValueError("ParticipantSet approval plan has invalid members")
+        raise SwigResponseError("ParticipantSet approval plan has invalid members")
     return ParticipantSetApprovalPlan(
         participant_set_address=_required_string(
             _pick(body, "participantSetAddress", "participant_set_address"),
@@ -504,13 +605,13 @@ def _normalize_participant_authority(value: object) -> WalletAuthority:
         if body.get(scheme) is not None
     ]
     if len(selected) != 1:
-        raise ValueError("Participant approval request has invalid authority")
+        raise SwigResponseError("Participant approval request has invalid authority")
     scheme, authority_value = selected[0]
     authority = _mapping(authority_value, "Participant approval authority value")
     public_key = _required_string(
         _pick(authority, "publicKey", "public_key"), "authority.publicKey"
     )
-    return {scheme: {"publicKey": public_key}}
+    return cast(WalletAuthority, {scheme: {"publicKey": public_key}})
 
 
 def _prepared_transaction_to_wire(
@@ -630,12 +731,12 @@ def _prepared_transaction_kind_to_wire(
 def _mapping(value: object, label: str) -> Mapping[str, object]:
     if isinstance(value, Mapping):
         return value
-    raise ValueError(f"{label} must be an object")
+    raise SwigResponseError(f"{label} must be an object")
 
 
 def _required_string(value: object, field: str) -> str:
     if not isinstance(value, str) or not value:
-        raise ValueError(f"Response is missing {field}")
+        raise SwigResponseError(f"Response is missing {field}")
     return value
 
 
@@ -647,7 +748,7 @@ def _required_int(value: object, field: str) -> int:
             return int(value, 10)
         except ValueError:
             pass
-    raise ValueError(f"Response is missing {field}")
+    raise SwigResponseError(f"Response is missing {field}")
 
 
 def _pick(value: Mapping[str, object], *keys: str) -> object:

@@ -5,7 +5,7 @@ Python SDK for preparing Swig wallet operations on a server, with a separate
 module inserts signatures with `solders` and makes no hosted API requests. No
 signing material is sent to the API.
 
-- Version: `0.9.0`
+- Version: `0.10.0`
 - Source: <https://github.com/anagrambuild/swig-developer-sdk>
 - Default API base URL: `https://api.onswig.com`
 
@@ -13,8 +13,9 @@ signing material is sent to the API.
 pip install swig-developer-sdk
 ```
 
-This is the Python parity package for `@swig-wallet/developer-sdk`. Every
-client method is `async`; the transport is `httpx`.
+This is the Python parity package for `@swig-wallet/developer-sdk`. Hosted operations are
+async; handle factories such as `wallets.use(...)` are synchronous and do no
+network I/O. The transport is `httpx`.
 
 ## How it works
 
@@ -35,8 +36,14 @@ Create an API key from the [Swig dashboard](https://dashboard.onswig.com).
 ```python
 from swig_developer_sdk import SwigClient
 
-swig = SwigClient(api_key="sk_...", network="devnet")
+async with SwigClient(api_key="sk_...", network="devnet") as swig:
+    balance = await swig.paymaster.get_balance()
 ```
+
+Reuse one client within an event loop. For a server, create it at startup and
+`await swig.aclose()` at shutdown; wallet handles share its connections and
+cannot outlive it. An injected transport is owned and closed by the client.
+The examples below assume an open `swig` client.
 
 Requests authenticate with `Authorization: Bearer <api-key>`. Override the base
 URL for non-production deployments:
@@ -49,8 +56,13 @@ swig = SwigClient(
     base_url="http://localhost:8080",
     network="devnet",
     retry_options=RetryOptions(max_retries=3, retry_delay=1.0),
+    timeout=10.0,
 )
 ```
+
+`timeout` is a positive, finite HTTP inactivity timeout in seconds. It defaults
+to 5 seconds; `None` disables it. It is not a total deadline including retries.
+Use your application cancellation scope for an overall operation deadline.
 
 ### Retry behavior
 
@@ -68,7 +80,7 @@ swig = SwigClient(
 ```python
 created = await swig.wallets.create(
     fee_payer=fee_payer,
-    initial_user={"ed25519": {"publicKey": user_public_key}},
+    initial_user={"ed25519": {"public_key": user_public_key}},
 )
 ```
 
@@ -94,7 +106,7 @@ A prepared transaction needs a client authority signature when
 ```python
 wallet = swig.wallets.use(
     "SWIG_CONFIG_ADDRESS",
-    requester_authority={"ed25519": {"publicKey": user_public_key}},
+    requester_authority={"ed25519": {"public_key": user_public_key}},
 )
 ```
 
@@ -112,9 +124,9 @@ created_set = await swig.participant_sets.create(
     fee_payer=fee_payer,
     threshold=2,
     members=(
-        {"ed25519": {"publicKey": recovery_public_key}},
-        {"secp256r1": {"publicKey": client_public_key}},
-        {"secp256k1": {"publicKey": server_public_key}},
+        {"ed25519": {"public_key": recovery_public_key}},
+        {"secp256r1": {"public_key": client_public_key}},
+        {"secp256k1": {"public_key": server_public_key}},
     ),
 )
 
@@ -451,7 +463,7 @@ from swig_developer_sdk.signers import sign_prepared_transaction
 
 prepared = await swig.ramp.prepare_transfer(
     order_id=sell_order.id,
-    requester_authority={"ed25519": {"publicKey": requester}},
+    requester_authority={"ed25519": {"public_key": requester}},
     fee_payer=fee_payer,
 )
 
@@ -573,17 +585,17 @@ evm_signer = create_secp256k1_evm_signing_fn(
 ## Submit and sponsor
 
 ```python
-from swig_developer_sdk import SponsorSignedTransactionArgs
-
 submitted = await swig.transactions.sponsor(
-    SponsorSignedTransactionArgs(
-        transaction=signed.transaction,
-        network="mainnet",
-        idempotency_key=idempotency_key,
-    )
+    transaction=signed.transaction,
+    network="mainnet",
+    idempotency_key=idempotency_key,
 )
 # submitted.request_id, submitted.signature, submitted.spent_by_paymaster
 ```
+
+Existing `SponsorSignedTransactionArgs` and `SponsorSignedTransactionBundleArgs`
+objects remain accepted as the sole argument. Do not mix an Args object with
+keyword parameters.
 
 Pass `idempotency_key` whenever your application may retry; that is the only
 case in which the SDK retries a sponsorship POST.
@@ -598,14 +610,10 @@ RPC provider when your product needs either.
 ### Bundle sponsorship
 
 ```python
-from swig_developer_sdk import SponsorSignedTransactionBundleArgs
-
 bundle = await swig.transactions.sponsor_bundle(
-    SponsorSignedTransactionBundleArgs(
-        transactions=(signed_create.transaction, signed_add_authority.transaction),
-        network="mainnet",
-        idempotency_key=idempotency_key,
-    )
+    transactions=(signed_create.transaction, signed_add_authority.transaction),
+    network="mainnet",
+    idempotency_key=idempotency_key,
 )
 # bundle.request_id, bundle.bundle_id, bundle.signatures,
 # bundle.estimated_spent_by_paymaster
@@ -650,6 +658,10 @@ response = await swig_handler.handle(
 # return response.body with response.status
 ```
 
+Keep one handler for the application lifetime and `await swig_handler.aclose()`
+at shutdown, or use it as an async context manager. Its underlying client is
+created lazily and reused across requests. Network overrides remain per request.
+
 The handler covers wallet creation, grouped preparation, SOL and SPL transfers,
 Jupiter swaps, wallet USD balance, token balances, token transactions, roles,
 x402 payment preparation, paymaster balance, and the ramp routes.
@@ -677,7 +689,44 @@ except SwigDeveloperSdkError as error:
     print(error.status_code, error.code, error)
 ```
 
+Catch `SwigDeveloperSdkError` for hosted API and response failures, or use its
+more specific subclasses:
+
+- `SwigConnectionError`: HTTP transport failed; the original exception is in
+  `__cause__`.
+- `SwigTimeoutError`: an HTTP timeout expired (also a connection error).
+- `SwigResponseError`: invalid JSON or an invalid successful response shape.
+  It also inherits `ValueError` for compatibility with existing validation catches.
+
+Invalid caller inputs remain `ValueError` or `TypeError`. Programming errors and
+cancellation are not converted to connection failures or retried. Transport errors
+use safe messages; error details include only the API's explicit `details` field,
+never a fallback copy of the response body. Treat API messages, details, and
+chained transport exceptions as potentially sensitive.
+
 Keep API keys, signed transactions, and ramp launch URLs out of logs.
+
+## Typed authority inputs
+
+The installed wheel includes `py.typed`. Authority dictionaries have explicit
+variants so editors and type checkers can check nested keys:
+
+```python
+from swig_developer_sdk import WalletAuthority
+
+authority: WalletAuthority = {"ed25519": {"public_key": user_public_key}}
+wallet = swig.wallets.use("swig-config-address", requester_authority=authority)
+```
+
+`secp256k1`, `secp256r1`, `program_exec_proof`, and `participant_set` variants
+are also supported. Prefer snake_case keys. Existing camelCase inputs continue
+to work; ambiguous variants or conflicting aliases raise `ValueError` before
+sending an HTTP request. Annotate reused dictionary variables as `WalletAuthority`
+(or a specific exported authority type) to preserve their precise type.
+
+`SwigServerClient`, callable transfer/swap shortcuts, and `spl_token` remain
+compatible aliases. Resource namespaces such as `wallet.transfer.sol(...)` are
+the canonical examples.
 
 ## Local end-to-end script
 

@@ -12,6 +12,7 @@ from .common import (
     wallet_authority_to_wire,
 )
 from .core import HttpClient
+from .errors import SwigResponseError
 from .transactions import PreparedTransaction, normalize_prepared_transaction
 
 ParticipantSetMember: TypeAlias = WalletAuthority
@@ -43,6 +44,10 @@ class ParticipantSetsClient:
         set_id: str | None = None,
         network: Network | None = None,
     ) -> CreateParticipantSetResult:
+        """Prepare creation of a threshold participant set for local signing.
+
+        Members must be public-key authorities. Network resolves from the call
+        then client and is required. This POST is not automatically retried."""
         body = _mapping(
             await self._http.post(
                 "/transaction/wallet/participant-set/create",
@@ -61,7 +66,9 @@ class ParticipantSetsClient:
         )
         transaction = body.get("transaction")
         if transaction is None:
-            raise ValueError("Create ParticipantSet response is missing transaction")
+            raise SwigResponseError(
+                "Create ParticipantSet response is missing transaction"
+            )
         return CreateParticipantSetResult(
             participant_set_address=_required_string(
                 _pick(body, "participantSetAddress", "participant_set_address"),
@@ -84,7 +91,7 @@ def _member_to_wire(member: ParticipantSetMember) -> dict[str, object]:
 def _mapping(value: object, label: str) -> Mapping[str, object]:
     if isinstance(value, Mapping):
         return value
-    raise ValueError(f"{label} must be an object")
+    raise SwigResponseError(f"{label} must be an object")
 
 
 def _pick(value: Mapping[str, object], *keys: str) -> object:
@@ -97,4 +104,4 @@ def _pick(value: Mapping[str, object], *keys: str) -> object:
 def _required_string(value: object, field: str) -> str:
     if isinstance(value, str) and value:
         return value
-    raise ValueError(f"Create ParticipantSet response is missing {field}")
+    raise SwigResponseError(f"Create ParticipantSet response is missing {field}")
