@@ -69,6 +69,8 @@ class HttpClient:
         for attempt in range(max_retries + 1):
             try:
                 response = await self._client.request(method, path, json=body)
+            except httpx.DecodingError as error:
+                raise SwigResponseError("API response could not be decoded") from error
             except httpx.TimeoutException as error:
                 if attempt == max_retries:
                     raise SwigTimeoutError() from error

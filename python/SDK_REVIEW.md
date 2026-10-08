@@ -265,13 +265,14 @@ its unimplemented additions cannot yet be runtime-validated.
   variants accept canonical snake_case and existing camelCase forms. Runtime
   validation rejects ambiguous variants and conflicting aliases.
 - PYSDK-03: connection, timeout, and response errors share the SDK base. Transport
-  causes survive; cancellation/programming errors propagate. Response-validation
+  causes survive, including HTTP content-decoding failures; cancellation and
+  programming errors propagate. Response-validation
   errors retain ValueError compatibility. Raw bodies are no longer fallback details.
 - PYSDK-05/08: keyword sponsorship and legacy Args forms produce identical wire
   payloads. Existing resource namespaces, callable shortcuts, and aliases remain.
 - PYSDK-07: supported hosted operations and local signing entry points now describe
   effects, units, defaults, ownership, and errors. Recovery support is unchanged.
-- Validation on Python 3.10: 109 tests passed, including compiler-backed consumer
+- Validation on Python 3.10: 111 tests passed, including compiler-backed consumer
   positive/negative cases; Ruff format/lint and strict mypy passed; locked dependency
   verification and source/wheel builds passed. A separate environment installed the
   built wheel, passed strict typing with Any expressions forbidden, and rejected

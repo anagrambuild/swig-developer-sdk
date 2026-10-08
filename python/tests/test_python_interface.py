@@ -141,7 +141,15 @@ async def test_programming_errors_and_cancellation_propagate(
 
 @pytest.mark.parametrize(
     "response",
-    [httpx.Response(200, text="not json"), httpx.Response(200, json={"data": []})],
+    [
+        httpx.Response(200, text="not json"),
+        httpx.Response(200, json={"data": []}),
+        httpx.Response(
+            200,
+            headers={"Content-Encoding": "gzip"},
+            stream=httpx.ByteStream(b"corrupt compressed response"),
+        ),
+    ],
 )
 async def test_malformed_response_uses_sdk_error_without_retry(
     response: httpx.Response,
@@ -163,6 +171,8 @@ async def test_malformed_response_uses_sdk_error_without_retry(
             await client.paymaster.get_balance()
     assert isinstance(raised.value, SwigResponseError)
     assert isinstance(raised.value, ValueError)
+    if response.headers.get("content-encoding") == "gzip":
+        assert isinstance(raised.value.__cause__, httpx.DecodingError)
     assert raised.value.code == "INVALID_RESPONSE"
     assert raised.value.details is None
     assert attempts == 1
@@ -339,14 +349,25 @@ async def test_proxy_reuses_and_closes_client_without_sticky_network() -> None:
     assert transport.closes == 1
 
 
-async def test_proxy_maps_invalid_upstream_response_to_502() -> None:
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(200, json={"data": []}),
+        httpx.Response(
+            200,
+            headers={"Content-Encoding": "gzip"},
+            stream=httpx.ByteStream(b"corrupt compressed response"),
+        ),
+    ],
+)
+async def test_proxy_maps_invalid_upstream_response_to_502(
+    response: httpx.Response,
+) -> None:
     async with create_swig_proxy_handler(
         SwigProxyConfig(
             api_key="secret",
             network="devnet",
-            transport=httpx.MockTransport(
-                lambda request: httpx.Response(200, json={"data": []})
-            ),
+            transport=httpx.MockTransport(lambda request: response),
         )
     ) as handler:
         response = await handler.handle(method="GET", path="/paymaster/balance")
