@@ -11,7 +11,7 @@ migration. It is an engineering review artifact, not a product tutorial.
 - Standalone repository: `anagrambuild/swig-developer-sdk`.
 - Public API base URL: `https://api.onswig.com`.
 - TypeScript package: `@swig-wallet/developer-sdk` version `0.11.1`.
-- Python package: `swig-developer-sdk` version `0.9.0`.
+- Python package: `swig-developer-sdk` version `0.10.0`.
 
 The `0.9.0` TypeScript release removes the browser proxy and framework adapter
 entrypoints. Application-owned signing helpers now use the dedicated
@@ -34,6 +34,18 @@ entrypoints. Application-owned signing helpers now use the dedicated
   backend resolves a replay before any eligibility or credential check.
 - Ramp quote requests never retry. A retried quote is a different quote, so the
   caller decides whether to ask again.
+
+## Python client lifetime and errors
+
+- Reuse a `SwigClient` per event loop and close it with `async with` or `aclose()`.
+  Wallet handles share the client. An injected transport is owned by the client.
+- `timeout` is an HTTP inactivity timeout in seconds (default 5; `None` disables).
+  It does not bound the complete retry sequence.
+- Keyword sponsorship is canonical; existing Args objects and resource aliases
+  remain supported. Authority dictionaries have typed variants and wire aliases.
+- Hosted API, transport, timeout, and response-validation errors derive from
+  `SwigDeveloperSdkError`. Caller validation errors remain ValueError/TypeError;
+  cancellation and programming errors propagate. Transport failures retain causes.
 
 ## Transaction API
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Literal, TypeAlias
+from typing import Literal, TypeAlias, cast
 from urllib.parse import quote, urlencode
 
 from .common import (
@@ -18,6 +18,7 @@ from .common import (
     wallet_authority_to_wire,
 )
 from .core import HttpClient
+from .errors import SwigResponseError
 from .transactions import (
     PreparedTransaction,
     PreparedTransactionsResult,
@@ -358,6 +359,12 @@ class WalletsClient:
         recovery: RecoveryOptions | None = None,
         network: Network | None = None,
     ) -> CreateWalletResult:
+        """Prepare wallet creation transactions without signing or submitting.
+
+        Network resolves from the call then client and is required. The fee payer
+        pays creation fees; initial_user supplies a typed authority, or policy_id
+        selects a hosted policy. The result separates transactions by signer.
+        Invalid inputs raise ValueError; API/response errors are SDK errors."""
         if initial_user is not None:
             _reject_participant_set_authority(initial_user, "initial_user")
         policy = await self.get_policy(policy_id) if policy_id else None
@@ -391,6 +398,7 @@ class WalletsClient:
         )
 
     async def get_policy(self, policy_id: str) -> Policy:
+        """Fetch a hosted policy by ID; the GET uses the client retry policy."""
         return _normalize_policy(
             await self._http.get(f"/wallet/policies/{quote(policy_id, safe='')}")
         )
@@ -402,6 +410,10 @@ class WalletsClient:
         network: Network | None = None,
         requester_authority: WalletAuthority | None = None,
     ) -> WalletHandle:
+        """Bind a wallet handle locally without an HTTP request.
+
+        Network resolves from the override, wallet reference, then client.
+        The handle shares the parent client and cannot outlive its connections."""
         if isinstance(wallet, str):
             reference = WalletReference(
                 swig_config_address=wallet,
@@ -424,6 +436,10 @@ class WalletsClient:
         network: Network | None = None,
         requester_authority: WalletAuthority | None = None,
     ) -> WalletHandle:
+        """Bind an IDP session locally without an HTTP request.
+
+        The explicit network and authority override session/client defaults.
+        The handle shares the parent client lifetime."""
         return WalletHandle(
             self,
             WalletReference(
@@ -445,6 +461,11 @@ class WalletsClient:
         requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
     ) -> PreparedTransactionsResult:
+        """Prepare an ordered group of operations without signing or submitting.
+
+        Network resolves from the call, handle, then client.
+        Sign and submit separately; preparation does not retry automatically.
+        Invalid inputs raise ValueError; API failures raise SDK errors."""
         authority = _requester_authority(wallet, requester_authority)
         response = await self._http.post(
             "/transaction/prepare/batch",
@@ -468,6 +489,11 @@ class WalletsClient:
         requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
     ) -> PreparedTransaction:
+        """Prepare a SOL transfer. amount is lamports as an integer or decimal string.
+
+        Network resolves from the call, handle, then client.
+        Sign and submit separately; preparation does not retry automatically.
+        Invalid inputs raise ValueError; API failures raise SDK errors."""
         authority = _requester_authority(wallet, requester_authority)
         return normalize_prepared_transaction(
             await self._http.post(
@@ -494,6 +520,11 @@ class WalletsClient:
         requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
     ) -> PreparedTransaction:
+        """Prepare an SPL-token transfer. amount is in token base units.
+
+        Network resolves from the call, handle, then client.
+        Sign and submit separately; preparation does not retry automatically.
+        Invalid inputs raise ValueError; API failures raise SDK errors."""
         authority = _requester_authority(wallet, requester_authority)
         return normalize_prepared_transaction(
             await self._http.post(
@@ -529,6 +560,11 @@ class WalletsClient:
         blockhash_slots_to_expiry: int | None = None,
         network: Network | None = None,
     ) -> PreparedTransaction:
+        """Prepare a Jupiter swap using input base units and basis-point slippage.
+
+        Network resolves from the call, handle, then client.
+        Sign and submit separately; preparation does not retry automatically.
+        Invalid inputs raise ValueError; API failures raise SDK errors."""
         authority = _requester_authority(wallet, requester_authority)
         _reject_participant_set_authority(authority, "requester_authority")
         return normalize_prepared_transaction(
@@ -773,6 +809,11 @@ class WalletsClient:
         address_lookup_table_accounts: Sequence[str] | None = None,
         network: Network | None = None,
     ) -> PreparedTransaction:
+        """Prepare a transaction from custom instructions and optional lookup tables.
+
+        Network resolves from the call, handle, then client.
+        Sign and submit separately; preparation does not retry automatically.
+        Invalid inputs raise ValueError; API failures raise SDK errors."""
         authority = _requester_authority(wallet, requester_authority)
         if address_lookup_table_accounts and _participant_set_authority(authority):
             raise ValueError(
@@ -801,6 +842,10 @@ class WalletsClient:
         *,
         network: Network | None = None,
     ) -> SwigUsdBalance:
+        """Fetch the wallet USD valuation snapshot using the client retry policy.
+
+        Network resolves from the call, handle, then client.
+        This GET uses the client retry policy. API failures raise SDK errors."""
         return _normalize_usd_balance(
             await self._http.get(
                 _wallet_read_path(
@@ -817,6 +862,10 @@ class WalletsClient:
         *,
         network: Network | None = None,
     ) -> ListSwigTokenBalancesResult:
+        """Fetch token balances and valuations in one response; no automatic paging.
+
+        Network resolves from the call, handle, then client.
+        This GET uses the client retry policy. API failures raise SDK errors."""
         return _normalize_token_balances(
             await self._http.get(
                 _wallet_read_path(
@@ -834,6 +883,10 @@ class WalletsClient:
         network: Network | None = None,
         limit: int | None = None,
     ) -> ListSwigTokenTransactionsResult:
+        """Fetch recent token activity bounded by limit, without automatic paging.
+
+        Network resolves from the call, handle, then client.
+        This GET uses the client retry policy. API failures raise SDK errors."""
         return _normalize_token_transactions(
             await self._http.get(
                 _wallet_read_path(
@@ -851,6 +904,10 @@ class WalletsClient:
         *,
         network: Network | None = None,
     ) -> ListSwigRolesResult:
+        """Fetch the wallet roles using the client retry policy.
+
+        Network resolves from the call, handle, then client.
+        This GET uses the client retry policy. API failures raise SDK errors."""
         return _normalize_roles(
             await self._http.get(
                 _wallet_read_path(
@@ -871,6 +928,11 @@ class WalletsClient:
         requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
     ) -> PreparedTransaction:
+        """Prepare a role with typed authority and actions for local signing.
+
+        Network resolves from the call, handle, then client.
+        Sign and submit separately; preparation does not retry automatically.
+        Invalid inputs raise ValueError; API failures raise SDK errors."""
         requester = _requester_authority(wallet, requester_authority)
         requester_wire = wallet_authority_to_wire(requester)
         if not any(scheme in requester_wire for scheme in ("ed25519", "secp256r1")):
@@ -899,7 +961,7 @@ class WalletsClient:
             },
         )
         if not isinstance(response, Mapping) or response.get("transaction") is None:
-            raise ValueError("Add role response is missing transaction")
+            raise SwigResponseError("Add role response is missing transaction")
         return normalize_prepared_transaction(response["transaction"])
 
 
@@ -930,6 +992,11 @@ class WalletHandle:
         requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
     ) -> PreparedTransactionsResult:
+        """Prepare an ordered group of operations without signing or submitting.
+
+        Network resolves from the call, handle, then client.
+        Sign and submit separately; preparation does not retry automatically.
+        Invalid inputs raise ValueError; API failures raise SDK errors."""
         return await self._wallets.prepare(
             self,
             fee_payer=fee_payer,
@@ -947,6 +1014,11 @@ class WalletHandle:
         address_lookup_table_accounts: Sequence[str] | None = None,
         network: Network | None = None,
     ) -> PreparedTransaction:
+        """Prepare a transaction from custom instructions and optional lookup tables.
+
+        Network resolves from the call, handle, then client.
+        Sign and submit separately; preparation does not retry automatically.
+        Invalid inputs raise ValueError; API failures raise SDK errors."""
         return await self._wallets.build_transaction(
             self,
             fee_payer=fee_payer,
@@ -959,11 +1031,19 @@ class WalletHandle:
     async def get_usd_balance(
         self, *, network: Network | None = None
     ) -> SwigUsdBalance:
+        """Fetch the wallet USD valuation snapshot using the client retry policy.
+
+        Network resolves from the call, handle, then client.
+        This GET uses the client retry policy. API failures raise SDK errors."""
         return await self._wallets.get_usd_balance(self, network=network)
 
     async def list_token_balances(
         self, *, network: Network | None = None
     ) -> ListSwigTokenBalancesResult:
+        """Fetch token balances and valuations in one response; no automatic paging.
+
+        Network resolves from the call, handle, then client.
+        This GET uses the client retry policy. API failures raise SDK errors."""
         return await self._wallets.list_token_balances(self, network=network)
 
     async def list_token_transactions(
@@ -972,6 +1052,10 @@ class WalletHandle:
         network: Network | None = None,
         limit: int | None = None,
     ) -> ListSwigTokenTransactionsResult:
+        """Fetch recent token activity bounded by limit, without automatic paging.
+
+        Network resolves from the call, handle, then client.
+        This GET uses the client retry policy. API failures raise SDK errors."""
         return await self._wallets.list_token_transactions(
             self, network=network, limit=limit
         )
@@ -979,6 +1063,10 @@ class WalletHandle:
     async def list_roles(
         self, *, network: Network | None = None
     ) -> ListSwigRolesResult:
+        """Fetch the wallet roles using the client retry policy.
+
+        Network resolves from the call, handle, then client.
+        This GET uses the client retry policy. API failures raise SDK errors."""
         return await self._wallets.list_roles(self, network=network)
 
 
@@ -996,6 +1084,11 @@ class WalletRolesClient:
         requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
     ) -> PreparedTransaction:
+        """Prepare a role with typed authority and actions for local signing.
+
+        Network resolves from the call, handle, then client.
+        Sign and submit separately; preparation does not retry automatically.
+        Invalid inputs raise ValueError; API failures raise SDK errors."""
         return await self._wallets.add_role(
             self._wallet,
             fee_payer=fee_payer,
@@ -1006,6 +1099,10 @@ class WalletRolesClient:
         )
 
     async def list(self, *, network: Network | None = None) -> ListSwigRolesResult:
+        """Fetch the wallet roles using the client retry policy.
+
+        Network resolves from the call, handle, then client.
+        This GET uses the client retry policy. API failures raise SDK errors."""
         return await self._wallets.list_roles(self._wallet, network=network)
 
 
@@ -1055,6 +1152,11 @@ class WalletTransferClient:
         requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
     ) -> PreparedTransaction:
+        """Prepare a SOL transfer. amount is lamports as an integer or decimal string.
+
+        Network resolves from the call, handle, then client.
+        Sign and submit separately; preparation does not retry automatically.
+        Invalid inputs raise ValueError; API failures raise SDK errors."""
         return await self._wallets.transfer_sol(
             self._wallet,
             fee_payer=fee_payer,
@@ -1074,6 +1176,11 @@ class WalletTransferClient:
         requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
     ) -> PreparedTransaction:
+        """Prepare an SPL-token transfer. amount is in token base units.
+
+        Network resolves from the call, handle, then client.
+        Sign and submit separately; preparation does not retry automatically.
+        Invalid inputs raise ValueError; API failures raise SDK errors."""
         return await self._wallets.transfer_token(
             self._wallet,
             fee_payer=fee_payer,
@@ -1094,6 +1201,11 @@ class WalletTransferClient:
         requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
     ) -> PreparedTransaction:
+        """Compatibility alias for token(); amount is in token base units.
+
+        Network resolves from the call, handle, then client.
+        Sign and submit separately; preparation does not retry automatically.
+        Invalid inputs raise ValueError; API failures raise SDK errors."""
         return await self.token(
             fee_payer=fee_payer,
             mint=mint,
@@ -1162,6 +1274,11 @@ class WalletSwapClient:
         blockhash_slots_to_expiry: int | None = None,
         network: Network | None = None,
     ) -> PreparedTransaction:
+        """Prepare a Jupiter swap using input base units and basis-point slippage.
+
+        Network resolves from the call, handle, then client.
+        Sign and submit separately; preparation does not retry automatically.
+        Invalid inputs raise ValueError; API failures raise SDK errors."""
         return await self._wallets.jupiter_swap(
             self._wallet,
             fee_payer=fee_payer,
@@ -1293,7 +1410,7 @@ def normalize_create_wallet_response(response: object) -> CreateWalletResult:
         else None
     )
     if wallet is None:
-        raise ValueError("Create wallet response is missing wallet")
+        raise SwigResponseError("Create wallet response is missing wallet")
     return CreateWalletResult(
         wallet=wallet,
         transactions=transactions,
@@ -1425,7 +1542,7 @@ def _normalize_token_balances(value: object) -> ListSwigTokenBalancesResult:
     body = _mapping(value, "Token balances response")
     balances = body.get("balances", [])
     if not isinstance(balances, Sequence) or isinstance(balances, (str, bytes)):
-        raise ValueError("Token balances response has invalid balances")
+        raise SwigResponseError("Token balances response has invalid balances")
     return ListSwigTokenBalancesResult(
         swig_config_address=_required_string(
             _pick(body, "swigConfigAddress", "swig_config_address"),
@@ -1473,7 +1590,7 @@ def _normalize_token_transactions(
     body = _mapping(value, "Token transactions response")
     transactions = body.get("transactions", [])
     if not isinstance(transactions, Sequence) or isinstance(transactions, (str, bytes)):
-        raise ValueError("Token transactions response has invalid transactions")
+        raise SwigResponseError("Token transactions response has invalid transactions")
     return ListSwigTokenTransactionsResult(
         swig_config_address=_required_string(
             _pick(body, "swigConfigAddress", "swig_config_address"),
@@ -1498,10 +1615,10 @@ def _normalize_token_transaction(value: object) -> SwigTokenTransaction:
     ):
         normalized_direction = "outflow"
     else:
-        raise ValueError("Token transaction response has invalid direction")
+        raise SwigResponseError("Token transaction response has invalid direction")
     is_subaccount = _pick(body, "isSubaccount", "is_subaccount")
     if not isinstance(is_subaccount, bool):
-        raise ValueError("Response is missing isSubaccount")
+        raise SwigResponseError("Response is missing isSubaccount")
     return SwigTokenTransaction(
         transaction_signature=_required_string(
             _pick(body, "transactionSignature", "transaction_signature"),
@@ -1553,7 +1670,7 @@ def _normalize_asset_kind(value: object) -> SwigAssetKind | None:
         return "token"
     if value in ("native-sol", "ASSET_KIND_NATIVE_SOL", 2):
         return "native-sol"
-    raise ValueError("Wallet response has invalid assetKind")
+    raise SwigResponseError("Wallet response has invalid assetKind")
 
 
 def _add_role_action_to_wire(action: AddRoleAction) -> dict[str, object]:
@@ -1645,7 +1762,7 @@ def _normalize_roles(value: object) -> ListSwigRolesResult:
     body = _mapping(value, "Roles response")
     roles = body.get("roles", [])
     if not isinstance(roles, Sequence) or isinstance(roles, (str, bytes)):
-        raise ValueError("Roles response has invalid roles")
+        raise SwigResponseError("Roles response has invalid roles")
     return ListSwigRolesResult(
         swig_config_address=_required_string(
             _pick(body, "swigConfigAddress", "swig_config_address"),
@@ -1662,7 +1779,7 @@ def _normalize_role(value: object) -> SwigRole:
     body = _mapping(value, "Role")
     actions = body.get("actions", [])
     if not isinstance(actions, Sequence) or isinstance(actions, (str, bytes)):
-        raise ValueError("Role response has invalid actions")
+        raise SwigResponseError("Role response has invalid actions")
     return SwigRole(
         role_id=_required_int(_pick(body, "roleId", "role_id"), "roleId"),
         authority_type=_required_int(
@@ -1695,12 +1812,12 @@ def _normalize_policy(value: object) -> Policy:
     body = _mapping(value, "Policy response")
     description = body.get("description")
     if description is not None and not isinstance(description, str):
-        raise ValueError("Policy response has invalid description")
+        raise SwigResponseError("Policy response has invalid description")
     actions_value = body.get("actions", [])
     if not isinstance(actions_value, Sequence) or isinstance(
         actions_value, (str, bytes)
     ):
-        raise ValueError("Policy response has invalid actions")
+        raise SwigResponseError("Policy response has invalid actions")
     actions = tuple(_mapping(item, "Policy action") for item in actions_value)
     authority = body.get("authority")
     guardian_authority = body.get("guardianAuthority")
@@ -1761,7 +1878,7 @@ def _authority_from_policy(
         if isinstance(nested, Mapping):
             public_key = nested.get("publicKey")
             if isinstance(public_key, str):
-                return {scheme: {"publicKey": public_key}}
+                return cast(WalletAuthority, {scheme: {"publicKey": public_key}})
     authority_type = value.get("type")
     public_key = value.get("publicKey")
     if not isinstance(public_key, str):
@@ -1774,7 +1891,11 @@ def _authority_from_policy(
     policy_scheme = (
         schemes.get(authority_type) if isinstance(authority_type, str) else None
     )
-    return {policy_scheme: {"publicKey": public_key}} if policy_scheme else None
+    return (
+        cast(WalletAuthority, {policy_scheme: {"publicKey": public_key}})
+        if policy_scheme
+        else None
+    )
 
 
 def _public_key_from_policy(value: Mapping[str, object] | None) -> str | None:
@@ -1830,7 +1951,7 @@ def _validate_guardian_source(
 def _mapping(value: object, label: str) -> Mapping[str, object]:
     if isinstance(value, Mapping):
         return value
-    raise ValueError(f"{label} must be an object")
+    raise SwigResponseError(f"{label} must be an object")
 
 
 def _pick(value: Mapping[str, object], *keys: str) -> object:
@@ -1843,7 +1964,7 @@ def _pick(value: Mapping[str, object], *keys: str) -> object:
 def _required_string(value: object, field: str) -> str:
     if isinstance(value, str):
         return value
-    raise ValueError(f"Response is missing {field}")
+    raise SwigResponseError(f"Response is missing {field}")
 
 
 def _optional_string(value: object) -> str | None:
@@ -1858,11 +1979,11 @@ def _required_number(value: object, field: str) -> float:
             return float(value)
         except ValueError:
             pass
-    raise ValueError(f"Response is missing {field}")
+    raise SwigResponseError(f"Response is missing {field}")
 
 
 def _required_int(value: object, field: str) -> int:
     number = _required_number(value, field)
     if not number.is_integer():
-        raise ValueError(f"Response is missing {field}")
+        raise SwigResponseError(f"Response is missing {field}")
     return int(number)

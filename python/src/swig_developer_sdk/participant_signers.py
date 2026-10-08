@@ -113,6 +113,10 @@ def create_participant_ed25519_signer(
     public_key: str,
     sign_message: ParticipantEd25519SignFn,
 ) -> ParticipantEd25519Signer:
+    """Bind an Ed25519 callback to a participant public key.
+
+    The sync/async callback receives a 32-byte challenge and returns a 64-byte
+    signature. The signer validates member binding and makes no hosted calls."""
     return ParticipantEd25519Signer(
         public_key=public_key,
         sign_message=sign_message,
@@ -124,6 +128,10 @@ def create_participant_passkey_signer(
     public_key: str,
     get_assertion: WebAuthnAssertionFn,
 ) -> ParticipantPasskeySigner:
+    """Bind a WebAuthn assertion callback to a participant public key.
+
+    The sync/async callback receives the challenge bytes. Assertion data is
+    preserved and its DER signature becomes low-S raw P-256; no hosted call occurs."""
     return ParticipantPasskeySigner(
         public_key=public_key,
         get_assertion=get_assertion,
@@ -135,6 +143,10 @@ def create_participant_personal_sign_signer(
     public_key: str,
     sign_message: ParticipantPersonalSignFn,
 ) -> ParticipantPersonalSignSigner:
+    """Bind a personal_sign callback to a participant public key.
+
+    The callback signs the 64-character lowercase ASCII hex challenge with
+    EIP-191. It returns compact signature bytes or hex; no hosted call occurs."""
     return ParticipantPersonalSignSigner(
         public_key=public_key,
         sign_message=sign_message,
@@ -145,6 +157,10 @@ async def sign_participant_set_approval(
     request: ParticipantApprovalRequest,
     signer: ParticipantSigner,
 ) -> ParticipantSetApproval:
+    """Sign one bound participant request and return a detached approval.
+
+    A mismatched key, member, or proof type raises ValueError. Signer callback
+    errors propagate. This makes no hosted API request; compile and submit later."""
     _assert_matching_request(request, signer.type, signer.public_key)
     approval = await signer.sign(request)
     if approval.member_index != request.member_index:

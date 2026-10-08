@@ -44,6 +44,7 @@ from swig_developer_sdk import (
     SwigDeveloperSdkError,
     SwigProxyConfig,
     TransferSolOperation,
+    WalletAuthority,
     create_swig_proxy_handler,
     sign_prepared_swig_transaction,
     sign_prepared_transaction,
@@ -318,170 +319,177 @@ async def run_e2e(rpc: SolanaRpc, fixture: LocalFixture) -> dict[str, object]:
             destination_rent,
         )
 
-    swig = SwigClient(
-        api_key=fixture.api_key,
-        base_url=API_BASE_URL,
-        network="devnet",
-    )
-    requester_authority = {
-        "secp256r1": {"publicKey": requester.public_key_hex},
-    }
-    created = await swig.wallets.create(
-        fee_payer=str(fee_payer.pubkey()),
-        initial_user=requester_authority,
-    )
-    creation_transaction = created.creation_transaction
-    if creation_transaction is None:
-        raise RuntimeError("Create wallet response is missing creation_transaction")
-
-    signed_creation = await sign_with_keypairs(creation_transaction, [fee_payer])
-    await rpc.send_transaction(signed_creation)
-    account_owner = await rpc.wait_for_account_owner(created.wallet.swig_config_address)
-    if account_owner != SWIG_PROGRAM_ID:
-        raise RuntimeError("Created Swig account has the wrong program owner")
-
-    await rpc.airdrop_to_balance(
-        created.wallet.wallet_address,
-        LAMPORTS_PER_SOL // 10,
-    )
-    participant_set_result = await run_participant_set_e2e(
-        rpc=rpc,
-        swig=swig,
-        fee_payer=fee_payer,
-        requester=requester,
-        swig_config_address=created.wallet.swig_config_address,
-        wallet_address=created.wallet.wallet_address,
-    )
-    wallet = swig.wallets.use(
-        created.wallet.swig_config_address,
-        network="devnet",
-        requester_authority=requester_authority,
-    )
-    prepared_transfer = await wallet.transfer.sol(
-        fee_payer=str(fee_payer.pubkey()),
-        destination=str(destination.pubkey()),
-        amount=TRANSFER_LAMPORTS,
-    )
-    destination_delta, wallet_delta = await submit_and_verify_sol_transfer(
-        rpc,
-        prepared_transfer,
-        fee_payer,
-        requester,
-        created.wallet.wallet_address,
-        str(destination.pubkey()),
-        TRANSFER_LAMPORTS,
-    )
-
-    grouped = await wallet.prepare(
-        fee_payer=str(fee_payer.pubkey()),
-        operations=(
-            TransferSolOperation(
-                destination=str(grouped_destination.pubkey()),
-                amount=TRANSFER_LAMPORTS,
-            ),
-        ),
-    )
-    if not grouped.transactions:
-        raise RuntimeError("Grouped prepare response is missing transactions")
-    grouped_destination_before = await rpc.balance(str(grouped_destination.pubkey()))
-    grouped_wallet_before = await rpc.balance(created.wallet.wallet_address)
-    for prepared in grouped.transactions:
-        await sign_and_send_prepared(rpc, prepared, fee_payer, requester)
-    grouped_destination_after = await rpc.balance(str(grouped_destination.pubkey()))
-    grouped_wallet_after = await rpc.balance(created.wallet.wallet_address)
-    grouped_destination_delta = grouped_destination_after - grouped_destination_before
-    grouped_wallet_delta = grouped_wallet_after - grouped_wallet_before
-    _require_transfer_deltas(
-        grouped_destination_delta,
-        grouped_wallet_delta,
-        TRANSFER_LAMPORTS,
-        "Grouped prepare",
-    )
-
-    (
-        token_mint,
-        wallet_token_account,
-        destination_token_account,
-    ) = await setup_test_token(
-        rpc,
-        fee_payer,
-        Pubkey.from_string(created.wallet.wallet_address),
-        destination.pubkey(),
-    )
-    token_before = await rpc.token_balance(str(destination_token_account))
-    prepared_token_transfer = await wallet.transfer.token(
-        fee_payer=str(fee_payer.pubkey()),
-        mint=str(token_mint),
-        destination_owner=str(destination.pubkey()),
-        amount=TOKEN_TRANSFER_AMOUNT,
-    )
-    await sign_and_send_prepared(rpc, prepared_token_transfer, fee_payer, requester)
-    token_after = await rpc.token_balance(str(destination_token_account))
-    token_delta = token_after - token_before
-    if token_delta != TOKEN_TRANSFER_AMOUNT:
-        raise RuntimeError("Token transfer produced the wrong destination delta")
-    wallet_token_balance = await rpc.token_balance(str(wallet_token_account))
-    if wallet_token_balance != 0:
-        raise RuntimeError("Token transfer did not debit the Swig token account")
-
-    proxy = create_swig_proxy_handler(
-        SwigProxyConfig(
-            api_key=fixture.api_key,
-            transaction_api_url=API_BASE_URL,
-            network="devnet",
+    async with SwigClient(
+        api_key=fixture.api_key, base_url=API_BASE_URL, network="devnet"
+    ) as swig:
+        requester_authority: WalletAuthority = {
+            "secp256r1": {"publicKey": requester.public_key_hex},
+        }
+        created = await swig.wallets.create(
             fee_payer=str(fee_payer.pubkey()),
-            resolve_requester_authority=lambda _context: requester_authority,
+            initial_user=requester_authority,
         )
-    )
-    proxy_transfer = await proxy.handle(
-        method="POST",
-        path="/api/swig/transfer/sol",
-        body={
-            "wallet": {
-                "swigConfigAddress": created.wallet.swig_config_address,
-                "walletAddress": created.wallet.wallet_address,
-            },
-            "network": "devnet",
-            "destination": str(proxy_destination.pubkey()),
-            "amount": str(TRANSFER_LAMPORTS),
-        },
-    )
-    prepared_proxy_transfer = prepared_from_proxy(
-        proxy_transfer.status, proxy_transfer.body
-    )
-    proxy_destination_delta, proxy_wallet_delta = await submit_and_verify_sol_transfer(
-        rpc,
-        prepared_proxy_transfer,
-        fee_payer,
-        requester,
-        created.wallet.wallet_address,
-        str(proxy_destination.pubkey()),
-        TRANSFER_LAMPORTS,
-    )
-    paymaster_result = (
-        {"paymaster_skipped": True}
-        if SKIP_PAYMASTER
-        else await run_paymaster_e2e(rpc, fixture)
-    )
+        creation_transaction = created.creation_transaction
+        if creation_transaction is None:
+            raise RuntimeError("Create wallet response is missing creation_transaction")
 
-    return {
-        "status": "ok",
-        "api": API_BASE_URL,
-        "rpc": RPC_URL,
-        "authority_scheme": "secp256r1",
-        "swig_config_address": created.wallet.swig_config_address,
-        "wallet_address": created.wallet.wallet_address,
-        "account_owner": account_owner,
-        "destination_delta_lamports": destination_delta,
-        "wallet_delta_lamports": wallet_delta,
-        "grouped_destination_delta_lamports": grouped_destination_delta,
-        "grouped_wallet_delta_lamports": grouped_wallet_delta,
-        "token_delta": token_delta,
-        "proxy_destination_delta_lamports": proxy_destination_delta,
-        "proxy_wallet_delta_lamports": proxy_wallet_delta,
-        **participant_set_result,
-        **paymaster_result,
-    }
+        signed_creation = await sign_with_keypairs(creation_transaction, [fee_payer])
+        await rpc.send_transaction(signed_creation)
+        account_owner = await rpc.wait_for_account_owner(
+            created.wallet.swig_config_address
+        )
+        if account_owner != SWIG_PROGRAM_ID:
+            raise RuntimeError("Created Swig account has the wrong program owner")
+
+        await rpc.airdrop_to_balance(
+            created.wallet.wallet_address,
+            LAMPORTS_PER_SOL // 10,
+        )
+        participant_set_result = await run_participant_set_e2e(
+            rpc=rpc,
+            swig=swig,
+            fee_payer=fee_payer,
+            requester=requester,
+            swig_config_address=created.wallet.swig_config_address,
+            wallet_address=created.wallet.wallet_address,
+        )
+        wallet = swig.wallets.use(
+            created.wallet.swig_config_address,
+            network="devnet",
+            requester_authority=requester_authority,
+        )
+        prepared_transfer = await wallet.transfer.sol(
+            fee_payer=str(fee_payer.pubkey()),
+            destination=str(destination.pubkey()),
+            amount=TRANSFER_LAMPORTS,
+        )
+        destination_delta, wallet_delta = await submit_and_verify_sol_transfer(
+            rpc,
+            prepared_transfer,
+            fee_payer,
+            requester,
+            created.wallet.wallet_address,
+            str(destination.pubkey()),
+            TRANSFER_LAMPORTS,
+        )
+
+        grouped = await wallet.prepare(
+            fee_payer=str(fee_payer.pubkey()),
+            operations=(
+                TransferSolOperation(
+                    destination=str(grouped_destination.pubkey()),
+                    amount=TRANSFER_LAMPORTS,
+                ),
+            ),
+        )
+        if not grouped.transactions:
+            raise RuntimeError("Grouped prepare response is missing transactions")
+        grouped_destination_before = await rpc.balance(
+            str(grouped_destination.pubkey())
+        )
+        grouped_wallet_before = await rpc.balance(created.wallet.wallet_address)
+        for prepared in grouped.transactions:
+            await sign_and_send_prepared(rpc, prepared, fee_payer, requester)
+        grouped_destination_after = await rpc.balance(str(grouped_destination.pubkey()))
+        grouped_wallet_after = await rpc.balance(created.wallet.wallet_address)
+        grouped_destination_delta = (
+            grouped_destination_after - grouped_destination_before
+        )
+        grouped_wallet_delta = grouped_wallet_after - grouped_wallet_before
+        _require_transfer_deltas(
+            grouped_destination_delta,
+            grouped_wallet_delta,
+            TRANSFER_LAMPORTS,
+            "Grouped prepare",
+        )
+
+        (
+            token_mint,
+            wallet_token_account,
+            destination_token_account,
+        ) = await setup_test_token(
+            rpc,
+            fee_payer,
+            Pubkey.from_string(created.wallet.wallet_address),
+            destination.pubkey(),
+        )
+        token_before = await rpc.token_balance(str(destination_token_account))
+        prepared_token_transfer = await wallet.transfer.token(
+            fee_payer=str(fee_payer.pubkey()),
+            mint=str(token_mint),
+            destination_owner=str(destination.pubkey()),
+            amount=TOKEN_TRANSFER_AMOUNT,
+        )
+        await sign_and_send_prepared(rpc, prepared_token_transfer, fee_payer, requester)
+        token_after = await rpc.token_balance(str(destination_token_account))
+        token_delta = token_after - token_before
+        if token_delta != TOKEN_TRANSFER_AMOUNT:
+            raise RuntimeError("Token transfer produced the wrong destination delta")
+        wallet_token_balance = await rpc.token_balance(str(wallet_token_account))
+        if wallet_token_balance != 0:
+            raise RuntimeError("Token transfer did not debit the Swig token account")
+
+        async with create_swig_proxy_handler(
+            SwigProxyConfig(
+                api_key=fixture.api_key,
+                transaction_api_url=API_BASE_URL,
+                network="devnet",
+                fee_payer=str(fee_payer.pubkey()),
+                resolve_requester_authority=lambda _context: requester_authority,
+            )
+        ) as proxy:
+            proxy_transfer = await proxy.handle(
+                method="POST",
+                path="/api/swig/transfer/sol",
+                body={
+                    "wallet": {
+                        "swigConfigAddress": created.wallet.swig_config_address,
+                        "walletAddress": created.wallet.wallet_address,
+                    },
+                    "network": "devnet",
+                    "destination": str(proxy_destination.pubkey()),
+                    "amount": str(TRANSFER_LAMPORTS),
+                },
+            )
+        prepared_proxy_transfer = prepared_from_proxy(
+            proxy_transfer.status, proxy_transfer.body
+        )
+        (
+            proxy_destination_delta,
+            proxy_wallet_delta,
+        ) = await submit_and_verify_sol_transfer(
+            rpc,
+            prepared_proxy_transfer,
+            fee_payer,
+            requester,
+            created.wallet.wallet_address,
+            str(proxy_destination.pubkey()),
+            TRANSFER_LAMPORTS,
+        )
+        paymaster_result = (
+            {"paymaster_skipped": True}
+            if SKIP_PAYMASTER
+            else await run_paymaster_e2e(rpc, fixture)
+        )
+
+        return {
+            "status": "ok",
+            "api": API_BASE_URL,
+            "rpc": RPC_URL,
+            "authority_scheme": "secp256r1",
+            "swig_config_address": created.wallet.swig_config_address,
+            "wallet_address": created.wallet.wallet_address,
+            "account_owner": account_owner,
+            "destination_delta_lamports": destination_delta,
+            "wallet_delta_lamports": wallet_delta,
+            "grouped_destination_delta_lamports": grouped_destination_delta,
+            "grouped_wallet_delta_lamports": grouped_wallet_delta,
+            "token_delta": token_delta,
+            "proxy_destination_delta_lamports": proxy_destination_delta,
+            "proxy_wallet_delta_lamports": proxy_wallet_delta,
+            **participant_set_result,
+            **paymaster_result,
+        }
 
 
 async def run_participant_set_e2e(
@@ -494,7 +502,7 @@ async def run_participant_set_e2e(
     wallet_address: str,
 ) -> dict[str, object]:
     members = (Keypair(), Keypair())
-    member_authorities = tuple(
+    member_authorities: tuple[WalletAuthority, ...] = tuple(
         {"ed25519": {"publicKey": str(member.pubkey())}} for member in members
     )
     created_set = await swig.participant_sets.create(
@@ -514,7 +522,7 @@ async def run_participant_set_e2e(
     if participant_owner != MULTI_AUTHORITY_PROGRAM_ID:
         raise RuntimeError("Created ParticipantSet has the wrong program owner")
 
-    requester_authority = {
+    requester_authority: WalletAuthority = {
         "secp256r1": {"publicKey": requester.public_key_hex},
     }
     setup_wallet = swig.wallets.use(
@@ -534,7 +542,7 @@ async def run_participant_set_e2e(
         requester,
     )
 
-    participant_authority = {
+    participant_authority: WalletAuthority = {
         "participantSet": {"address": created_set.participant_set_address}
     }
     participant_wallet = swig.wallets.use(
@@ -592,7 +600,7 @@ async def run_participant_set_e2e(
         approvals = []
         for approval_request in plan.members:
             authority = approval_request.authority.get("ed25519")
-            if authority is None:
+            if not isinstance(authority, Mapping):
                 raise RuntimeError("ParticipantSet E2E expected ed25519 members")
             public_key = _required_string(
                 authority.get("publicKey", authority.get("public_key")),
@@ -667,78 +675,78 @@ async def run_paymaster_e2e(
     rpc: SolanaRpc,
     fixture: LocalFixture,
 ) -> dict[str, object]:
-    swig = SwigClient(
-        api_key=fixture.paymaster_api_key,
-        base_url=API_BASE_URL,
-        network="devnet",
-    )
-    paymaster = await swig.paymaster.get_balance()
-    if not paymaster.configured or paymaster.kind != "api" or not paymaster.address:
-        raise RuntimeError("Local API paymaster is not configured")
+    async with SwigClient(
+        api_key=fixture.paymaster_api_key, base_url=API_BASE_URL, network="devnet"
+    ) as swig:
+        paymaster = await swig.paymaster.get_balance()
+        if not paymaster.configured or paymaster.kind != "api" or not paymaster.address:
+            raise RuntimeError("Local API paymaster is not configured")
 
-    await rpc.airdrop_to_balance(paymaster.address, LAMPORTS_PER_SOL // 10)
-    funded_paymaster = await swig.paymaster.get_balance()
-    if int(funded_paymaster.balance_lamports) < LAMPORTS_PER_SOL // 10:
-        raise RuntimeError(
-            "Paymaster balance endpoint did not reflect Surfpool funding"
+        await rpc.airdrop_to_balance(paymaster.address, LAMPORTS_PER_SOL // 10)
+        funded_paymaster = await swig.paymaster.get_balance()
+        if int(funded_paymaster.balance_lamports) < LAMPORTS_PER_SOL // 10:
+            raise RuntimeError(
+                "Paymaster balance endpoint did not reflect Surfpool funding"
+            )
+
+        user = Keypair()
+        destination = Keypair()
+        await rpc.airdrop_to_balance(str(user.pubkey()), LAMPORTS_PER_SOL // 100)
+        await rpc.airdrop_to_balance(
+            str(destination.pubkey()),
+            await rpc.minimum_rent_balance(),
+        )
+        transaction = create_paymaster_transfer_transaction(
+            paymaster=Pubkey.from_string(paymaster.address),
+            user=user,
+            destination=destination.pubkey(),
+            amount=TRANSFER_LAMPORTS,
+            blockhash=Hash.from_string(await rpc.latest_blockhash()),
         )
 
-    user = Keypair()
-    destination = Keypair()
-    await rpc.airdrop_to_balance(str(user.pubkey()), LAMPORTS_PER_SOL // 100)
-    await rpc.airdrop_to_balance(
-        str(destination.pubkey()),
-        await rpc.minimum_rent_balance(),
-    )
-    transaction = create_paymaster_transfer_transaction(
-        paymaster=Pubkey.from_string(paymaster.address),
-        user=user,
-        destination=destination.pubkey(),
-        amount=TRANSFER_LAMPORTS,
-        blockhash=Hash.from_string(await rpc.latest_blockhash()),
-    )
+        destination_before = await rpc.balance(str(destination.pubkey()))
+        user_before = await rpc.balance(str(user.pubkey()))
+        paymaster_before = await rpc.balance(paymaster.address)
+        idempotency_key = f"python-local-e2e-{uuid4()}"
+        sponsor_args = SponsorSignedTransactionArgs(
+            transaction=transaction,
+            idempotency_key=idempotency_key,
+        )
+        submitted = await swig.transactions.sponsor(sponsor_args)
+        await rpc.confirm(submitted.signature)
+        destination_after = await rpc.balance(str(destination.pubkey()))
+        user_after = await rpc.balance(str(user.pubkey()))
+        paymaster_after = await rpc.balance(paymaster.address)
 
-    destination_before = await rpc.balance(str(destination.pubkey()))
-    user_before = await rpc.balance(str(user.pubkey()))
-    paymaster_before = await rpc.balance(paymaster.address)
-    idempotency_key = f"python-local-e2e-{uuid4()}"
-    sponsor_args = SponsorSignedTransactionArgs(
-        transaction=transaction,
-        idempotency_key=idempotency_key,
-    )
-    submitted = await swig.transactions.sponsor(sponsor_args)
-    await rpc.confirm(submitted.signature)
-    destination_after = await rpc.balance(str(destination.pubkey()))
-    user_after = await rpc.balance(str(user.pubkey()))
-    paymaster_after = await rpc.balance(paymaster.address)
+        destination_delta = destination_after - destination_before
+        user_delta = user_after - user_before
+        paymaster_fee = paymaster_before - paymaster_after
+        if destination_delta != TRANSFER_LAMPORTS:
+            raise RuntimeError(
+                "Sponsored transfer produced the wrong destination delta"
+            )
+        if user_delta != -TRANSFER_LAMPORTS:
+            raise RuntimeError("Sponsored transfer charged the user a transaction fee")
+        if paymaster_fee <= 0:
+            raise RuntimeError("Sponsored transfer did not charge the paymaster")
 
-    destination_delta = destination_after - destination_before
-    user_delta = user_after - user_before
-    paymaster_fee = paymaster_before - paymaster_after
-    if destination_delta != TRANSFER_LAMPORTS:
-        raise RuntimeError("Sponsored transfer produced the wrong destination delta")
-    if user_delta != -TRANSFER_LAMPORTS:
-        raise RuntimeError("Sponsored transfer charged the user a transaction fee")
-    if paymaster_fee <= 0:
-        raise RuntimeError("Sponsored transfer did not charge the paymaster")
+        replayed = await swig.transactions.sponsor(sponsor_args)
+        if replayed != submitted:
+            raise RuntimeError("Idempotent sponsor retry changed the response")
+        if await rpc.balance(str(destination.pubkey())) != destination_after:
+            raise RuntimeError("Idempotent sponsor retry repeated the transfer")
+        if await rpc.balance(str(user.pubkey())) != user_after:
+            raise RuntimeError("Idempotent sponsor retry charged the user again")
+        if await rpc.balance(paymaster.address) != paymaster_after:
+            raise RuntimeError("Idempotent sponsor retry charged the paymaster again")
 
-    replayed = await swig.transactions.sponsor(sponsor_args)
-    if replayed != submitted:
-        raise RuntimeError("Idempotent sponsor retry changed the response")
-    if await rpc.balance(str(destination.pubkey())) != destination_after:
-        raise RuntimeError("Idempotent sponsor retry repeated the transfer")
-    if await rpc.balance(str(user.pubkey())) != user_after:
-        raise RuntimeError("Idempotent sponsor retry charged the user again")
-    if await rpc.balance(paymaster.address) != paymaster_after:
-        raise RuntimeError("Idempotent sponsor retry charged the paymaster again")
-
-    return {
-        "paymaster_configured": True,
-        "paymaster_idempotency_replayed": True,
-        "paymaster_destination_delta_lamports": destination_delta,
-        "paymaster_user_delta_lamports": user_delta,
-        "paymaster_fee_lamports": paymaster_fee,
-    }
+        return {
+            "paymaster_configured": True,
+            "paymaster_idempotency_replayed": True,
+            "paymaster_destination_delta_lamports": destination_delta,
+            "paymaster_user_delta_lamports": user_delta,
+            "paymaster_fee_lamports": paymaster_fee,
+        }
 
 
 def create_paymaster_transfer_transaction(

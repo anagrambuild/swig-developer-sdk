@@ -207,7 +207,7 @@ async def test_http_client_retries_transport_exceptions() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal attempts
         attempts += 1
-        raise RuntimeError("transport failed")
+        raise httpx.ConnectError("transport failed", request=request)
 
     swig = SwigClient(
         api_key="secret",

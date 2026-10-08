@@ -15,6 +15,7 @@ from .common import (
     wallet_authority_to_wire,
 )
 from .core import HttpClient
+from .errors import SwigResponseError
 from .transactions import PreparedTransaction, normalize_prepared_transaction
 
 RampEnvironment: TypeAlias = Literal["sandbox", "production"]
@@ -257,6 +258,10 @@ class RampClient:
         country_code: str | None = None,
         fiat_currency_code: str | None = None,
     ) -> RampOptions:
+        """Fetch available countries, currencies, assets, and payment methods.
+
+        Use returned currency exponents and asset decimals to construct amounts.
+        This GET uses the client retry policy."""
         return _normalize_options(
             await self._http.get(
                 _options_path(
@@ -277,6 +282,10 @@ class RampClient:
         location: RampLocation,
         order: RampOrderRequest,
     ) -> tuple[RampQuote, ...]:
+        """Fetch ephemeral quotes for one buy or sell order.
+
+        Select a returned route for create_order; do not cache the quote.
+        This POST is not automatically retried."""
         return _normalize_quotes(
             await self._http.post(
                 "/wallet/api/ramp/quotes",
@@ -299,6 +308,11 @@ class RampClient:
         route: RampRoute,
         order: RampOrderRequest,
     ) -> RampOrder:
+        """Create or retrieve an order using request_id as its idempotency key.
+
+        Reuse the same ID and inputs on retries. The selected route is repriced.
+        context.network overrides the client default. Keep launch URLs private.
+        This POST can retry because the request ID is required."""
         network = require_network(context.network, self._default_network)
         # request_id makes a replay return the stored order, so a retry is safe.
         return _normalize_order_response(
@@ -325,6 +339,9 @@ class RampClient:
         )
 
     async def get_order(self, *, order_id: str) -> RampOrder:
+        """Fetch an order and reconcile non-final provider state.
+
+        This GET uses the client retry policy; a settled order may later refund."""
         return _normalize_order_response(await self._http.get(_order_path(order_id)))
 
     async def prepare_transfer(
@@ -334,6 +351,10 @@ class RampClient:
         requester_authority: WalletAuthority,
         fee_payer: str,
     ) -> PreparedRampTransfer:
+        """Prepare a sell deposit transfer for local signing, on mainnet only.
+
+        Requires an assigned deposit. Retain the order and transfer IDs to
+        reconcile the attempt. This POST is not automatically retried."""
         response = _mapping(
             await self._http.post(
                 f"{_order_path(order_id)}/transfer/prepare",
@@ -361,6 +382,11 @@ class RampClient:
         transfer_id: str,
         signed_transaction: str = "",
     ) -> RampTransfer:
+        """Submit a signed sell transfer, or reconcile it when the payload is omitted.
+
+        The result records a landed transfer. A still-confirming error means
+        retry the same attempt; prepare a replacement only after non-landing is
+        confirmed. This POST is not automatically retried."""
         response = _mapping(
             await self._http.post(
                 f"{_order_path(order_id)}/transfer/submit",
@@ -520,7 +546,7 @@ def _normalize_quote(value: object) -> RampQuote:
         return RampQuote(route=route, details=_normalize_buy_quote(body["buy"]))
     if "sell" in body:
         return RampQuote(route=route, details=_normalize_sell_quote(body["sell"]))
-    raise ValueError("Ramp response is missing quote")
+    raise SwigResponseError("Ramp response is missing quote")
 
 
 def _normalize_buy_quote(value: object) -> RampBuyQuote:
@@ -606,7 +632,7 @@ def _normalize_order(body: Mapping[str, object]) -> RampOrder:
             ),
         )
 
-    raise ValueError("Ramp response is missing order details")
+    raise SwigResponseError("Ramp response is missing order details")
 
 
 def _normalize_prepared_transfer(body: Mapping[str, object]) -> PreparedRampTransfer:
@@ -676,7 +702,7 @@ def _normalize_asset(value: object) -> CryptoAsset:
     if "token" in body:
         token = _mapping(body["token"], "token")
         return SplTokenAsset(mint=_required_string(token.get("mint"), "mint"))
-    raise ValueError("Ramp response is missing asset")
+    raise SwigResponseError("Ramp response is missing asset")
 
 
 _ORDER_STATUSES: Mapping[str, RampOrderStatus] = {
@@ -707,33 +733,33 @@ _TRANSFER_STATES: Mapping[str, RampTransferState] = {
 def _normalize_order_status(value: object) -> RampOrderStatus:
     status = _ORDER_STATUSES.get(value) if isinstance(value, str) else None
     if status is None:
-        raise ValueError("Ramp response has invalid status")
+        raise SwigResponseError("Ramp response has invalid status")
     return status
 
 
 def _normalize_transfer_state(value: object) -> RampTransferState:
     state = _TRANSFER_STATES.get(value) if isinstance(value, str) else None
     if state is None:
-        raise ValueError("Ramp response has invalid state")
+        raise SwigResponseError("Ramp response has invalid state")
     return state
 
 
 def _mapping(value: object, label: str) -> Mapping[str, object]:
     if isinstance(value, Mapping):
         return value
-    raise ValueError(f"{label} must be an object")
+    raise SwigResponseError(f"{label} must be an object")
 
 
 def _sequence(value: object, field: str) -> Sequence[object]:
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
         return value
-    raise ValueError(f"Ramp response has invalid {field}")
+    raise SwigResponseError(f"Ramp response has invalid {field}")
 
 
 def _string_tuple(value: object, field: str) -> tuple[str, ...]:
     sequence = _sequence(value, field)
     if not all(isinstance(item, str) for item in sequence):
-        raise ValueError(f"Ramp response has invalid {field}")
+        raise SwigResponseError(f"Ramp response has invalid {field}")
     return tuple(cast(str, item) for item in sequence)
 
 
@@ -746,14 +772,14 @@ def _pick(value: Mapping[str, object], *keys: str) -> object:
 
 def _required(value: object, field: str) -> object:
     if value is None:
-        raise ValueError(f"Ramp response is missing {field}")
+        raise SwigResponseError(f"Ramp response is missing {field}")
     return value
 
 
 def _required_string(value: object, field: str) -> str:
     if isinstance(value, str) and value:
         return value
-    raise ValueError(f"Ramp response is missing {field}")
+    raise SwigResponseError(f"Ramp response is missing {field}")
 
 
 def _optional_string(value: object) -> str | None:
@@ -763,14 +789,14 @@ def _optional_string(value: object) -> str | None:
 def _units_field(value: object, field: str) -> str:
     """uint64 crosses the wire as a decimal string; keeping it one avoids 2^53."""
     if not isinstance(value, str) or not (value.isascii() and value.isdigit()):
-        raise ValueError(f"Ramp response has invalid {field}")
+        raise SwigResponseError(f"Ramp response has invalid {field}")
     return value
 
 
 def _number_field(value: object, field: str) -> int:
     if isinstance(value, bool) or not isinstance(value, (int, str)):
-        raise ValueError(f"Ramp response has invalid {field}")
+        raise SwigResponseError(f"Ramp response has invalid {field}")
     try:
         return int(value)
     except ValueError as error:
-        raise ValueError(f"Ramp response has invalid {field}") from error
+        raise SwigResponseError(f"Ramp response has invalid {field}") from error
