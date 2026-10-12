@@ -11,7 +11,7 @@ migration. It is an engineering review artifact, not a product tutorial.
 - Standalone repository: `anagrambuild/swig-developer-sdk`.
 - Public API base URL: `https://api.onswig.com`.
 - TypeScript package: `@swig-wallet/developer-sdk` version `0.12.0`.
-- Python package: `swig-developer-sdk` version `0.10.0`.
+- Python package: `swig-developer-sdk` version `0.11.0`.
 
 The `0.9.0` TypeScript release removes the browser proxy and framework adapter
 entrypoints. Application-owned signing helpers now use the dedicated
@@ -141,8 +141,7 @@ Source: `anagrambuild/swig-dev-portal` `APIQueryDexService`
 (`backend/proto/wallet/api_dex.proto`, package `api_dex.v1`). The routes read
 the backend's DEX index only; they never call Solana, parse transactions, or
 write. The two searches take a JSON body of `network`, `pageSize`, `pageToken`
-and `filters`; because they only read, the TypeScript SDK retries them like
-`GET`s.
+and `filters`; because they only read, both SDKs retry them like `GET`s.
 
 - Ownership is the API key's organization: an unknown, inactive, or another
   organization's Swig answers 404, as does a transaction the Swig did not act
@@ -157,15 +156,15 @@ and `filters`; because they only read, the TypeScript SDK retries them like
   `swigVaultAddress` on one action; a matching transaction keeps all of the
   Swig's actions. Positions: `positionStatus`, `protocol` and
   `swigVaultAddress`, each on the position. TypeScript takes
-  `{ kind, value }` objects.
+  `{ kind, value }` objects and Python one dataclass per kind.
 - `nextPageToken` is opaque and bound to the endpoint, network, Swig and
   filter set, whatever the order; reusing it otherwise is refused. An empty
   token means the last page.
 - Only transactions the index interpreted are listed. Parser and indexer status
   never cross the API.
 - Amounts are ProtoJSON decimal strings, signed for the action's
-  `protocolActorAddress`, which is the router's account on a routed trade. The
-  TypeScript SDK keeps them as strings. Slots are uint64 strings decoded to integers;
+  `protocolActorAddress`, which is the router's account on a routed trade. Both
+  SDKs keep them as strings. Slots are uint64 strings decoded to integers;
   `actingRoleId` is a required uint32 number, the Swig role that authorized
   the action.
 - Positions are those the Swig's vault or any of its sub-accounts, enabled or
