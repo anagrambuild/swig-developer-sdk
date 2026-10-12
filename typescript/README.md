@@ -3,7 +3,7 @@
 API-key SDK for preparing Swig wallet operations on a server, with a separate
 entrypoint for application-owned signing.
 
-- Version: `0.11.1`
+- Version: `0.12.0`
 - Source: <https://github.com/anagrambuild/swig-developer-sdk>
 - Default API base URL: `https://api.onswig.com`
 
@@ -412,6 +412,93 @@ Policy metadata is a separate read:
 ```typescript
 const policy = await swig.wallets.getPolicy(policyId);
 ```
+
+## DEX history and positions
+
+`swig.dex` reads the DEX activity the backend indexed for a Swig your API key's
+organization owns. The two lists are API-key `POST` searches and `get` is an
+API-key `GET`. All three only read, follow the retry policy, and never call
+Solana themselves.
+
+```typescript
+const filters: DexTransactionFilter[] = [
+  { kind: 'startSlot', value: 357_000_000n },
+  { kind: 'endSlot', value: 358_000_000n },
+  { kind: 'protocol', value: 'raydium-clmm' },
+  { kind: 'actionType', value: 'swap' },
+  { kind: 'swigVaultAddress', value: swigVaultAddress },
+];
+
+const page = await swig.dex.transactions.list({
+  swigConfigAddress,
+  network: 'mainnet',
+  pageSize: 25,
+  filters,
+});
+
+for (const transaction of page.transactions) {
+  for (const { action, protocol, swigVaultAddress } of transaction.actions) {
+    if (action.type === 'swap') {
+      console.log(protocol, action.input.amountRaw, action.output.amountRaw);
+    }
+  }
+}
+
+if (page.nextPageToken) {
+  const next = await swig.dex.transactions.list({
+    swigConfigAddress,
+    network: 'mainnet',
+    pageToken: page.nextPageToken,
+    filters,
+  });
+}
+
+const transaction = await swig.dex.transactions.get({
+  swigConfigAddress,
+  network: 'mainnet',
+  transactionSignature,
+});
+```
+
+Transactions come newest first. `filters` is optional. Filters combine with
+AND, their order does not matter, and each kind may appear once; the API refuses
+a repeated kind. `startSlot` and `endSlot` are inclusive, and `protocol`,
+`actionType` and `swigVaultAddress` must all match the same action. A matching
+transaction still carries every DEX action the Swig executed in it. A page
+token is bound to the filters it was issued with; reusing it with other filters
+is refused.
+
+```typescript
+const positions = await swig.dex.positions.list({
+  swigConfigAddress,
+  network: 'mainnet',
+  filters: [{ kind: 'positionStatus', value: 'open' }],
+});
+
+for (const position of positions.positions) {
+  if (position.status === 'open') {
+    console.log(position.dexPoolAddress, position.state.liquidityRaw);
+  }
+}
+```
+
+A position is the latest known on-chain state of a position held by the Swig's
+vault or any of its sub-accounts, enabled or not; `closed` means the position
+account no longer exists, and `updatedSlot` is the slot of the read the state
+came from. Positions take `positionStatus`, `protocol` and `swigVaultAddress`
+filters, each applied to the position. Latest state is currently recorded for
+Raydium CLMM positions only.
+
+Read the amounts as the venue saw them:
+
+- `amountRaw` is a decimal integer string, signed for the action's
+  `protocolActorAddress`: negative amounts left its accounts.
+- `protocolActorAddress` is the Swig vault on a direct call, and the router's
+  account when an aggregator such as Jupiter routed the trade. A routed swap is
+  one action per venue hop, not the wallet's net trade.
+- Only transactions the index interpreted are listed. One it could not
+  interpret, or has not processed yet, is omitted, and `get` answers 404 for
+  it.
 
 ## Fiat ramps
 

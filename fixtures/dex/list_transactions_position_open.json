@@ -1,0 +1,35 @@
+{
+  "transactions": [
+    {
+      "swigConfigAddress": "8NkNvqXK6BfLAeqHvcwHWK6b6wybcraj2J3vZHm3LarX",
+      "transactionSignature": "5hYfmfU8PWpkKtKxw1mJjc3njHa9k4vRVpRHuwwUGGPecRDisCGfRbnV68Hk7iNBsJdEPy5xpLQ9PZE1zTZmET3a",
+      "slot": "449753334",
+      "blockTime": "2026-09-23T16:10:01Z",
+      "actions": [
+        {
+          "actionIndex": 0,
+          "swigVaultAddress": "4k9xWkFvjifracRGbBUHeKg2z8qzJBPwjqjCySu28Mej",
+          "actingRoleId": 1,
+          "protocol": "DEX_PROTOCOL_RAYDIUM_CLMM",
+          "dexProgramAddress": "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
+          "action": {
+            "positionOpen": {
+              "protocolInstruction": "OpenPositionWithToken22Nft",
+              "protocolActorAddress": "4k9xWkFvjifracRGbBUHeKg2z8qzJBPwjqjCySu28Mej",
+              "dexPoolAddress": "EYJkpMH4KJy8XDQyK59DM2xBUodvPkerDxKMCwyL1ber",
+              "dexPositionAddress": "GbqbbAaDmypYedYrm9srwvYmd54hAmzqqo527KCDwoXv",
+              "deposits": [
+                {
+                  "mintAddress": "USDvUSpnhCr9yBgj3UyVrD239HRUv4RsHwH2FxsWuMk",
+                  "amountRaw": "-11120779129",
+                  "decimals": 6
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "nextPageToken": "eyJraW5kIjoidHJhbnNhY3Rpb25zIiwidiI6MSwibmV0d29yayI6Miwic3dpZ19jb25maWdfYWRkcmVzcyI6IjhOa052cVhLNkJmTEFlcUh2Y3dIV0s2YjZ3eWJjcmFqMkozdlpIbTNMYXJYIiwiZmlsdGVycyI6eyJzdGFydF9zbG90IjpudWxsLCJlbmRfc2xvdCI6bnVsbCwicHJvdG9jb2wiOm51bGwsImFjdGlvbl90eXBlIjoiREVYX0FDVElPTl9UWVBFX1BPU0lUSU9OX09QRU4iLCJzd2lnX3ZhdWx0X2FkZHJlc3MiOm51bGx9LCJzbG90Ijo0NDk3NTMzMzQsInRyYW5zYWN0aW9uX3NpZ25hdHVyZSI6IjVoWWZtZlU4UFdwa0t0S3h3MW1KamMzbmpIYTlrNHZSVnBSSHV3d1VHR1BlY1JEaXNDR2ZSYm5WNjhIazdpTkJzSmRFUHk1eHBMUTlQWkUxelRabUVUM2EifQ"
+}

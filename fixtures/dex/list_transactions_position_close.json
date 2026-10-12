@@ -1,0 +1,27 @@
+{
+  "transactions": [
+    {
+      "swigConfigAddress": "8NkNvqXK6BfLAeqHvcwHWK6b6wybcraj2J3vZHm3LarX",
+      "transactionSignature": "5HsMkaQJXy1vZydQJXavx7keRtXV5BuR1pBQDJR93fhsfZMGYRTvFY13wm56JmEXg3uMP8ndUcUMeR8LpsznWhx1",
+      "slot": "449615165",
+      "blockTime": "2026-09-23T05:59:00Z",
+      "actions": [
+        {
+          "actionIndex": 0,
+          "swigVaultAddress": "4k9xWkFvjifracRGbBUHeKg2z8qzJBPwjqjCySu28Mej",
+          "actingRoleId": 0,
+          "protocol": "DEX_PROTOCOL_RAYDIUM_CLMM",
+          "dexProgramAddress": "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
+          "action": {
+            "positionClose": {
+              "protocolInstruction": "ClosePosition",
+              "protocolActorAddress": "4k9xWkFvjifracRGbBUHeKg2z8qzJBPwjqjCySu28Mej",
+              "dexPositionAddress": "HpFVYnzYLrLPU5djgURwv7ydeaJWRGAjx3Xkd5ZNGaKp"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "nextPageToken": ""
+}
