@@ -1,0 +1,12 @@
+[package]
+name = "swig-developer-sdk"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+repository.workspace = true
+description = "Swig Developer SDK for hosted clients and native transaction signing"
+readme = "README.md"
+
+[lints.rust]
+unsafe_code = "forbid"
