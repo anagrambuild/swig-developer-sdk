@@ -50,6 +50,18 @@ pub struct ClientConfig {
     pub network: Network,
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub enum RampEnvironment {
+    Sandbox,
+    Production,
+}
+
+#[derive(Clone)]
+pub struct RampConfig {
+    pub configuration_id: String,
+    pub environment: RampEnvironment,
+}
+
 impl ClientConfig {
     /// Uses the HTTP defaults. The client constructor validates them.
     pub fn new(api_key: String, network: Network) -> Self {
@@ -63,6 +75,9 @@ impl ClientConfig {
 /// Safe configuration failures. Credential values are never included.
 #[derive(Debug, Error)]
 pub enum ClientError {
+    #[error("Ramp configuration ID is required")]
+    MissingRampConfigurationId,
+
     /// Supply a nonempty API key valid for the authorization header.
     #[error("invalid API key")]
     InvalidApiKey,

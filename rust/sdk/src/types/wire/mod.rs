@@ -8,6 +8,7 @@ pub(crate) mod participants;
 pub(crate) mod paymaster;
 pub(crate) mod permission;
 pub(crate) mod policy;
+pub(crate) mod ramp;
 pub(crate) mod transaction;
 pub(crate) mod wallet;
 
