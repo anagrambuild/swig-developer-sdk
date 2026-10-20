@@ -157,3 +157,7 @@ mod ramp_quotes_tests;
 #[cfg(test)]
 #[path = "../tests/hosted/ramp_support.rs"]
 mod ramp_support;
+
+#[cfg(test)]
+#[path = "../tests/hosted/ramp_get_order.rs"]
+mod ramp_get_order_tests;

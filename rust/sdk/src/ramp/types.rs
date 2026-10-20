@@ -1,4 +1,6 @@
+use crate::api::{self, error::ApiConversionError};
 use solana_pubkey::Pubkey;
+use solana_signature::Signature;
 
 #[derive(Clone, Eq, PartialEq)]
 pub enum CryptoAsset {
@@ -208,6 +210,164 @@ impl From<RampOrderRequest> for crate::api::types::ramp::OrderRequest {
                 sell: sell.into(),
                 receive_fiat_currency_code,
             },
+        }
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub enum RampOrderStatus {
+    Creating,
+    CreationUncertain,
+    AwaitingCustomer,
+    AwaitingTransfer,
+    Processing,
+    Settling,
+    Settled,
+    Declined,
+    Cancelled,
+    Failed,
+    Refunded,
+}
+
+#[derive(Clone)]
+pub struct RampDeposit {
+    pub address: Pubkey,
+    pub amount: CryptoAmount,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub enum RampTransferState {
+    Prepared,
+    Submitted { signature: Signature },
+    Landed { signature: Signature },
+    Failed { signature: Signature },
+    Expired,
+}
+
+#[derive(Clone)]
+pub struct RampTransfer {
+    pub transfer_id: String,
+    pub state: RampTransferState,
+    pub expires_at: String,
+}
+
+#[derive(Clone)]
+pub struct RampBuyOrder {
+    pub id: String,
+    pub status: RampOrderStatus,
+    pub created_at: String,
+    pub updated_at: String,
+    pub quote: RampBuyQuote,
+    pub launch_url: Option<String>,
+}
+
+#[derive(Clone)]
+pub struct RampSellOrder {
+    pub id: String,
+    pub status: RampOrderStatus,
+    pub created_at: String,
+    pub updated_at: String,
+    pub quote: RampSellQuote,
+    pub launch_url: Option<String>,
+    pub deposit: Option<RampDeposit>,
+    pub transfer: Option<RampTransfer>,
+}
+
+#[derive(Clone)]
+pub enum RampOrder {
+    Buy(RampBuyOrder),
+    Sell(RampSellOrder),
+}
+
+impl TryFrom<api::types::ramp_order::Transfer> for RampTransfer {
+    type Error = ApiConversionError;
+
+    fn try_from(value: api::types::ramp_order::Transfer) -> Result<Self, Self::Error> {
+        if value.transfer_id.is_empty() || value.expires_at.is_empty() {
+            return Err(ApiConversionError::Invalid("incomplete Ramp transfer"));
+        }
+        let signature = value.solana_signature;
+        let state = match (value.state, signature) {
+            (api::types::ramp_order::TransferState::Prepared, None) => RampTransferState::Prepared,
+            (api::types::ramp_order::TransferState::Expired, None) => RampTransferState::Expired,
+            (api::types::ramp_order::TransferState::Submitted, Some(signature)) => {
+                RampTransferState::Submitted { signature }
+            }
+            (api::types::ramp_order::TransferState::Landed, Some(signature)) => {
+                RampTransferState::Landed { signature }
+            }
+            (api::types::ramp_order::TransferState::Failed, Some(signature)) => {
+                RampTransferState::Failed { signature }
+            }
+            _ => {
+                return Err(ApiConversionError::Invalid(
+                    "Ramp transfer state and signature disagree",
+                ))
+            }
+        };
+        Ok(Self {
+            transfer_id: value.transfer_id,
+            state,
+            expires_at: value.expires_at,
+        })
+    }
+}
+
+impl TryFrom<api::types::ramp_order::Order> for RampOrder {
+    type Error = ApiConversionError;
+
+    fn try_from(value: api::types::ramp_order::Order) -> Result<Self, Self::Error> {
+        if value.id.is_empty() || value.created_at.is_empty() || value.updated_at.is_empty() {
+            return Err(ApiConversionError::Invalid("incomplete Ramp order"));
+        }
+        match (value.buy, value.sell) {
+            (Some(details), None) => Ok(Self::Buy(RampBuyOrder {
+                id: value.id,
+                status: value.status.into(),
+                created_at: value.created_at,
+                updated_at: value.updated_at,
+                quote: details.quote.into(),
+                launch_url: details.launch_url.filter(|url| !url.is_empty()),
+            })),
+            (None, Some(details)) => Ok(Self::Sell(RampSellOrder {
+                id: value.id,
+                status: value.status.into(),
+                created_at: value.created_at,
+                updated_at: value.updated_at,
+                quote: details.quote.into(),
+                launch_url: details.launch_url.filter(|url| !url.is_empty()),
+                deposit: details.deposit.map(Into::into),
+                transfer: details.transfer.map(TryInto::try_into).transpose()?,
+            })),
+            _ => Err(ApiConversionError::Invalid(
+                "Ramp order requires exactly one direction",
+            )),
+        }
+    }
+}
+
+impl From<api::types::ramp_order::OrderStatus> for RampOrderStatus {
+    fn from(value: api::types::ramp_order::OrderStatus) -> Self {
+        match value {
+            api::types::ramp_order::OrderStatus::Creating => Self::Creating,
+            api::types::ramp_order::OrderStatus::CreationUncertain => Self::CreationUncertain,
+            api::types::ramp_order::OrderStatus::AwaitingCustomer => Self::AwaitingCustomer,
+            api::types::ramp_order::OrderStatus::AwaitingTransfer => Self::AwaitingTransfer,
+            api::types::ramp_order::OrderStatus::Processing => Self::Processing,
+            api::types::ramp_order::OrderStatus::Settling => Self::Settling,
+            api::types::ramp_order::OrderStatus::Settled => Self::Settled,
+            api::types::ramp_order::OrderStatus::Declined => Self::Declined,
+            api::types::ramp_order::OrderStatus::Cancelled => Self::Cancelled,
+            api::types::ramp_order::OrderStatus::Failed => Self::Failed,
+            api::types::ramp_order::OrderStatus::Refunded => Self::Refunded,
+        }
+    }
+}
+impl From<api::types::ramp_order::Deposit> for RampDeposit {
+    fn from(value: api::types::ramp_order::Deposit) -> Self {
+        Self {
+            address: value.address,
+            amount: value.amount.into(),
         }
     }
 }
