@@ -16,8 +16,9 @@ pub use participants::{
     PrepareCreateParticipantSetError,
 };
 pub use paymaster::{
-    GetPaymasterBalanceError, PaymasterBalance, PaymasterClient, PaymasterKind, SponsorError,
-    SponsorSignedTransactionArgs, SubmittedTransaction,
+    GetPaymasterBalanceError, PaymasterBalance, PaymasterClient, PaymasterKind, SponsorBundleError,
+    SponsorError, SponsorSignedTransactionArgs, SponsorSignedTransactionBundleArgs,
+    SubmittedTransaction, SubmittedTransactionBundle,
 };
 pub use signing::{
     Ed25519ParticipantSigner, ParticipantApprovalError, ParticipantSigner,
@@ -136,3 +137,7 @@ mod paymaster_balance_tests;
 #[cfg(test)]
 #[path = "../tests/hosted/paymaster_sponsor.rs"]
 mod paymaster_sponsor_tests;
+
+#[cfg(test)]
+#[path = "../tests/hosted/paymaster_bundle.rs"]
+mod paymaster_bundle_tests;

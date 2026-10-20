@@ -28,3 +28,5 @@ pub(crate) mod compile_participant_set_approvals;
 pub(crate) mod get_paymaster_balance;
 
 pub(crate) mod sponsor;
+
+pub(crate) mod sponsor_bundle;
