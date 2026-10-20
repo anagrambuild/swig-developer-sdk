@@ -8,6 +8,12 @@ mod ramp;
 mod signing;
 mod types;
 mod wallet;
+pub mod x402;
+
+pub use x402::{
+    ExactSvmExtra, ExactSvmPaymentRequirement, ParsePaymentRequiredError, PaymentRequiredV2,
+    PaymentRequirement, X402ResourceInfoV2,
+};
 
 pub use config::{
     ClientConfig, ClientError, HttpConfig, RampConfig, RampEnvironment, RetryOptions,
@@ -156,3 +162,11 @@ mod ramp_prepare_transfer_tests;
 #[cfg(test)]
 #[path = "../tests/hosted/ramp_submit_transfer.rs"]
 mod ramp_submit_transfer_tests;
+
+#[cfg(test)]
+#[path = "../tests/x402/support.rs"]
+mod x402_test_support;
+
+#[cfg(test)]
+#[path = "../tests/x402/requirements.rs"]
+mod x402_requirement_tests;
