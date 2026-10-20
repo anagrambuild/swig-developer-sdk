@@ -30,3 +30,5 @@ pub(crate) mod get_paymaster_balance;
 pub(crate) mod sponsor;
 
 pub(crate) mod sponsor_bundle;
+
+pub(crate) mod get_ramp_options;

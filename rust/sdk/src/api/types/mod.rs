@@ -31,3 +31,7 @@ pub(crate) mod participant_set;
 pub(crate) mod approval;
 
 pub(crate) mod paymaster;
+
+pub(crate) mod ramp;
+
+pub(crate) mod ramp_options;
