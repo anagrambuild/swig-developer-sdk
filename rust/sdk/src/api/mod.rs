@@ -38,3 +38,5 @@ pub(crate) mod get_ramp_quotes;
 pub(crate) mod get_ramp_order;
 
 pub(crate) mod create_ramp_order;
+
+pub(crate) mod prepare_ramp_transfer;
