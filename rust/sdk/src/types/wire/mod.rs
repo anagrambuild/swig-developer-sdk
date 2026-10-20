@@ -1,3 +1,4 @@
+mod approval;
 mod authority;
 mod encoding;
 mod error;
@@ -9,6 +10,7 @@ pub(crate) mod policy;
 pub(crate) mod transaction;
 pub(crate) mod wallet;
 
+pub(crate) use approval::ApprovalWire;
 pub(crate) use authority::{validate_authority_shape, AuthorityWire};
 #[cfg(test)]
 pub(crate) use encoding::PreparedTransactionKind;

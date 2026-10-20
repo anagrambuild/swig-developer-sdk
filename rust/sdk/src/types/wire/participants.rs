@@ -1,8 +1,11 @@
 use serde::{Deserialize, Serialize};
+use serde_with::{serde_as, DisplayFromStr};
 
 use crate::{Network, PrepareCreateParticipantSetArgs};
 
-use super::{transaction::PreparedTransactionWire, AuthorityWire, NetworkWire, WireError};
+use super::{
+    transaction::PreparedTransactionWire, ApprovalWire, AuthorityWire, NetworkWire, WireError,
+};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -54,4 +57,21 @@ impl ParticipantSetCreationWire {
             .try_into()
             .map_err(|_| WireError::Invalid("invalid participant set identifier"))
     }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CompileParticipantSetRequest {
+    pub prepared_transaction: PreparedTransactionWire,
+    pub approvals: Vec<ApprovalWire>,
+}
+
+#[serde_as]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ParticipantSetCompilationWire {
+    pub transaction: PreparedTransactionWire,
+    #[serde_as(as = "DisplayFromStr")]
+    #[serde(alias = "authorization_expiration_slot")]
+    pub authorization_expiration_slot: u64,
 }
