@@ -29,3 +29,5 @@ pub(crate) mod add_role;
 pub(crate) mod participant_set;
 
 pub(crate) mod approval;
+
+pub(crate) mod paymaster;
