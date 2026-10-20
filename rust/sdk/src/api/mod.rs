@@ -22,3 +22,5 @@ pub(crate) mod prepare_transaction;
 pub(crate) mod prepare_add_role;
 
 pub(crate) mod create_participant_set;
+
+pub(crate) mod compile_participant_set_approvals;

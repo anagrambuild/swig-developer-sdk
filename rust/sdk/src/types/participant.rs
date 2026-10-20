@@ -128,3 +128,71 @@ impl TryFrom<ParticipantSetApprovalPlan> for ApiParticipantSetApprovalPlan {
 #[cfg(test)]
 #[path = "../../tests/api/participant.rs"]
 mod tests;
+
+use crate::api::types::approval::{
+    ParticipantApproval as ApiParticipantApproval, SignatureProof, WebAuthnProof,
+};
+
+impl From<ParticipantApproval> for ApiParticipantApproval {
+    fn from(value: ParticipantApproval) -> Self {
+        match value {
+            ParticipantApproval::Ed25519 {
+                member_index,
+                signature,
+            } => Self::Ed25519 {
+                member_index,
+                ed25519: SignatureProof { signature },
+            },
+            ParticipantApproval::Secp256k1 {
+                member_index,
+                signature,
+            } => Self::Secp256k1 {
+                member_index,
+                secp256k1: SignatureProof { signature },
+            },
+            ParticipantApproval::WebAuthnP256 {
+                member_index,
+                authenticator_data,
+                client_data_json,
+                signature,
+            } => Self::WebAuthnP256 {
+                member_index,
+                webauthn_p256: WebAuthnProof {
+                    authenticator_data,
+                    client_data_json,
+                    signature,
+                },
+            },
+        }
+    }
+}
+
+impl From<ApiParticipantApproval> for ParticipantApproval {
+    fn from(value: ApiParticipantApproval) -> Self {
+        match value {
+            ApiParticipantApproval::Ed25519 {
+                member_index,
+                ed25519,
+            } => Self::Ed25519 {
+                member_index,
+                signature: ed25519.signature,
+            },
+            ApiParticipantApproval::Secp256k1 {
+                member_index,
+                secp256k1,
+            } => Self::Secp256k1 {
+                member_index,
+                signature: secp256k1.signature,
+            },
+            ApiParticipantApproval::WebAuthnP256 {
+                member_index,
+                webauthn_p256,
+            } => Self::WebAuthnP256 {
+                member_index,
+                authenticator_data: webauthn_p256.authenticator_data,
+                client_data_json: webauthn_p256.client_data_json,
+                signature: webauthn_p256.signature,
+            },
+        }
+    }
+}

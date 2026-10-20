@@ -55,3 +55,20 @@ pub(crate) struct CreateParticipantSetResponse {
     pub set_id: ParticipantSetId,
     pub transaction: PreparedTransaction,
 }
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CompileParticipantSetApprovalsRequest {
+    pub prepared_transaction: PreparedTransaction,
+    pub approvals: Vec<super::approval::ParticipantApproval>,
+}
+
+#[serde_as]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CompileParticipantSetApprovalsResponse {
+    pub transaction: PreparedTransaction,
+    #[serde_as(as = "DisplayFromStr")]
+    #[serde(alias = "authorization_expiration_slot")]
+    pub authorization_expiration_slot: u64,
+}
