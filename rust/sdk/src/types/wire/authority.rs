@@ -22,6 +22,16 @@ pub(crate) enum AuthorityWire {
     },
 }
 
+pub(crate) fn validate_authority_shape(value: &serde_json::Value) -> Result<(), WireError> {
+    let fields = value
+        .as_object()
+        .ok_or(WireError::Invalid("invalid authority shape"))?;
+    if fields.values().any(|payload| !payload.is_object()) {
+        return Err(WireError::Invalid("invalid authority shape"));
+    }
+    Ok(())
+}
+
 impl TryFrom<AuthorityWire> for WalletAuthority {
     type Error = WireError;
 

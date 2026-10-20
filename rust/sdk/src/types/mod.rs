@@ -2,7 +2,6 @@ mod authority;
 mod network;
 mod permission;
 
-#[cfg(test)]
 pub(crate) mod wire;
 
 pub use authority::WalletAuthority;

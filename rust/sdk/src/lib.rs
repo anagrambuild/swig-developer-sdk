@@ -7,7 +7,7 @@ mod wallet;
 
 pub use config::{ClientConfig, ClientError, HttpConfig, RetryOptions};
 pub use types::{Network, WalletAuthority, WalletPermission};
-pub use wallet::WalletClient;
+pub use wallet::{GetPolicyError, Policy, PolicyAuthority, WalletClient};
 
 #[cfg(test)]
 #[path = "../tests/transport/mod.rs"]
@@ -16,3 +16,11 @@ mod transport_tests;
 #[cfg(test)]
 #[path = "../tests/transport/support.rs"]
 mod test_support;
+
+#[cfg(test)]
+#[path = "../tests/hosted/support.rs"]
+mod hosted_support;
+
+#[cfg(test)]
+#[path = "../tests/hosted/policy.rs"]
+mod policy_tests;

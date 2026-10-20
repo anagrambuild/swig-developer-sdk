@@ -12,10 +12,6 @@ const DEFAULT_API_URL: &str = "https://api.onswig.com";
 const MAX_BODY_BYTES: usize = 8 * 1024 * 1024;
 const MAX_ERROR_BODY_BYTES: usize = 64 * 1024;
 
-#[allow(
-    dead_code,
-    reason = "Consumed by hosted operations in the next stacked change"
-)]
 pub(crate) struct HttpClient {
     client: Client,
     api_key: HeaderValue,
@@ -25,10 +21,6 @@ pub(crate) struct HttpClient {
     pub(crate) test: std::sync::Mutex<crate::test_support::TestTransport>,
 }
 
-#[allow(
-    dead_code,
-    reason = "Consumed by hosted operations in the next stacked change"
-)]
 impl HttpClient {
     pub(crate) fn new(config: HttpConfig) -> Result<Self, ClientError> {
         if config.api_key.trim().is_empty() {
@@ -114,6 +106,7 @@ impl HttpClient {
     }
 
     /// Sends an already-serialized JSON body exactly once.
+    #[allow(dead_code, reason = "Consumed by later hosted operations in the stack")]
     pub(crate) async fn post(&self, path: &str, body: Vec<u8>) -> Result<Vec<u8>, HttpError> {
         let request = self
             .client
@@ -127,6 +120,7 @@ impl HttpClient {
     }
 
     /// The endpoint must establish that replaying these exact bytes is safe.
+    #[allow(dead_code, reason = "Consumed by later hosted operations in the stack")]
     pub(crate) async fn post_with_retry(
         &self,
         path: &str,
