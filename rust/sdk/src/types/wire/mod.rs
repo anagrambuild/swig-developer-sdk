@@ -5,6 +5,7 @@ mod error;
 mod network;
 mod participant;
 pub(crate) mod participants;
+pub(crate) mod paymaster;
 pub(crate) mod permission;
 pub(crate) mod policy;
 pub(crate) mod transaction;
