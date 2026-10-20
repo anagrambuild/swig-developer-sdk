@@ -6,8 +6,10 @@ use solana_transaction::versioned::VersionedTransaction;
 
 use crate::{ClientSignatureRequest, PreparedTransaction, TransactionSignError, WalletAuthority};
 
+const SWIG_PROGRAM: Pubkey = Pubkey::from_str_const("swigypWHEksbC64pWKwah1WTeh9JXwx8H1rJHLdbQMB");
 const SECP256R1_PROGRAM: Pubkey =
     Pubkey::from_str_const("Secp256r1SigVerify1111111111111111111111111");
+const SECP256K1_PAYLOAD_SIZE: usize = 77;
 const SECP256R1_SIGNATURE: Range<usize> = 49..113;
 const SECP256R1_PUBLIC_KEY: Range<usize> = 16..49;
 const SECP256R1_MESSAGE: Range<usize> = 113..145;
@@ -61,6 +63,7 @@ pub(super) fn preflight(
     let mut targets = Vec::with_capacity(prepared.signature_requests.len());
     for request in &prepared.signature_requests {
         let target = match authority {
+            WalletAuthority::Secp256k1 { .. } => secp256k1_target(transaction, request)?,
             WalletAuthority::Secp256r1 { public_key } => {
                 secp256r1_target(transaction, public_key, request)?
             }
@@ -106,6 +109,61 @@ fn program_id(
         .ok_or(TransactionSignError::InvalidPreparation(
             "instruction program ID must be a static account",
         ))
+}
+
+fn secp256k1_target(
+    transaction: &VersionedTransaction,
+    request: &ClientSignatureRequest,
+) -> Result<SigningTarget, TransactionSignError> {
+    let mut matching = None;
+    for (index, instruction) in transaction.message.instructions().iter().enumerate() {
+        if program_id(transaction, instruction)? != SWIG_PROGRAM
+            || instruction.data.get(..2) != Some(11_u16.to_le_bytes().as_slice())
+        {
+            continue;
+        }
+        let data = &instruction.data;
+        if data.len() < 8 {
+            return Err(TransactionSignError::InvalidPreparation(
+                "truncated Swig SignV2 header",
+            ));
+        }
+        let payload = 8_usize.checked_add(usize::from(read_u16(data, 2)?)).ok_or(
+            TransactionSignError::InvalidPreparation("invalid Swig authority offset"),
+        )?;
+        let end = payload.checked_add(SECP256K1_PAYLOAD_SIZE).ok_or(
+            TransactionSignError::InvalidPreparation("invalid Swig authority offset"),
+        )?;
+        let Some(authority_payload) = data.get(payload..end) else {
+            // Other authority variants also use SignV2 with shorter payloads.
+            continue;
+        };
+        if authority_payload.get(..8) != Some(request.slot.to_le_bytes().as_slice())
+            || authority_payload.get(8..12) != Some(request.counter.to_le_bytes().as_slice())
+        {
+            continue;
+        }
+        if data.len() != end {
+            return Err(TransactionSignError::InvalidPreparation(
+                "raw secp256k1 signing requires an unprefixed authority payload",
+            ));
+        }
+        let signature_start =
+            payload
+                .checked_add(12)
+                .ok_or(TransactionSignError::InvalidPreparation(
+                    "invalid Swig signature offset",
+                ))?;
+        let target = SigningTarget {
+            instruction: index,
+            signature: signature_start..end,
+            message_hash: request.message_hash,
+        };
+        if matching.replace(target).is_some() {
+            return Err(TransactionSignError::AmbiguousSigningTarget);
+        }
+    }
+    matching.ok_or(TransactionSignError::SigningTargetNotFound)
 }
 
 fn secp256r1_target(

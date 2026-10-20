@@ -8,7 +8,9 @@ mod types;
 mod wallet;
 
 pub use config::{ClientConfig, ClientError, HttpConfig, RetryOptions};
-pub use signing::{Secp256r1TransactionSigner, TransactionSignError, TransactionSigner};
+pub use signing::{
+    Secp256k1TransactionSigner, Secp256r1TransactionSigner, TransactionSignError, TransactionSigner,
+};
 pub use solana_instruction::{AccountMeta, Instruction};
 pub use types::{
     Network, ProgramScopeNumericType, ProgramScopeType, SwigRole, SwigRoleAction,
