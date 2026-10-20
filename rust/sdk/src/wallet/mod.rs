@@ -5,6 +5,7 @@ mod get_usd_balance;
 mod list_roles;
 mod list_token_balances;
 mod list_token_transactions;
+mod prepare;
 mod transfer;
 
 pub use client::WalletClient;
@@ -22,6 +23,7 @@ pub use list_token_transactions::{
     AssetTransfer, ListSwigTokenTransactionsArgs, ListTokenTransactionsError, TransactionDirection,
     WalletTransaction, WalletTransactionList,
 };
+pub use prepare::{PrepareOperation, PrepareTransfersArgs, PrepareTransfersError};
 pub use transfer::{
     PrepareTransferSolArgs, PrepareTransferSolError, PrepareTransferTokenArgs,
     PrepareTransferTokenError,
