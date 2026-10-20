@@ -8,9 +8,10 @@ mod wallet;
 pub use config::{ClientConfig, ClientError, HttpConfig, RetryOptions};
 pub use types::{Network, WalletAuthority, WalletPermission};
 pub use wallet::{
-    GetPolicyError, ListRolesError, Policy, PolicyAuthority, ProgramScopeNumericType,
-    ProgramScopeType, SwigRole, SwigRoleAction, SwigRoleAuthority, SwigRoleList,
-    SwigRolePermission, WalletClient,
+    GetPolicyError, GetUsdBalanceError, ListRolesError, ListTokenBalancesError, Policy,
+    PolicyAuthority, ProgramScopeNumericType, ProgramScopeType, SolBalance, SwigRole,
+    SwigRoleAction, SwigRoleAuthority, SwigRoleList, SwigRolePermission, SwigUsdBalance,
+    TokenBalance, WalletBalanceSummary, WalletClient,
 };
 
 #[cfg(test)]
@@ -32,3 +33,7 @@ mod policy_tests;
 #[cfg(test)]
 #[path = "../tests/hosted/roles.rs"]
 mod role_tests;
+
+#[cfg(test)]
+#[path = "../tests/hosted/balances.rs"]
+mod balance_tests;
