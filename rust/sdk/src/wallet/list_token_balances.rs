@@ -1,14 +1,12 @@
+use crate::types::assets::NormalizedAsset;
 use solana_pubkey::Pubkey;
 use std::collections::BTreeMap;
 use thiserror::Error;
 
 use crate::{
-    api::{
-        error::ApiConversionError,
-        types::assets::{Asset, AssetKind, BalanceSummary},
-    },
+    api::{error::ApiConversionError, types::assets::BalanceSummary},
     http::HttpError,
-    SolBalance, TokenBalance, WalletBalanceSummary, WalletClient,
+    WalletBalanceSummary, WalletClient,
 };
 
 /// Failures returned by `list_token_balances`.
@@ -85,60 +83,6 @@ impl WalletClient {
     }
 }
 
-enum NormalizedAsset {
-    Sol(SolBalance),
-    Token(TokenBalance),
-}
-impl TryFrom<Asset> for NormalizedAsset {
-    type Error = ApiConversionError;
-    fn try_from(value: Asset) -> Result<Self, Self::Error> {
-        if !value.ui_amount.is_finite()
-            || !value.usd_price.is_finite()
-            || !value.usd_value.is_finite()
-        {
-            return Err(ApiConversionError::Invalid("invalid asset valuation"));
-        }
-        match value.asset_kind {
-            Some(AssetKind::NativeSol)
-                if value.token_program == 0 && value.mint_address.is_empty() =>
-            {
-                Ok(Self::Sol(SolBalance {
-                    lamports: value.amount_raw,
-                    ui_amount: value.ui_amount,
-                    usd_price: value.usd_price,
-                    usd_value: value.usd_value,
-                }))
-            }
-            Some(AssetKind::Token) | Some(AssetKind::Unspecified) | None => {
-                let token_program = match value.token_program {
-                    1 => solana_pubkey::pubkey!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
-                    2 => solana_pubkey::pubkey!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"),
-                    _ => {
-                        return Err(ApiConversionError::Invalid(
-                            "unclassifiable asset or unsupported token program",
-                        ))
-                    }
-                };
-                let mint_address = value
-                    .mint_address
-                    .parse()
-                    .map_err(|_| ApiConversionError::Invalid("invalid token mint"))?;
-                Ok(Self::Token(TokenBalance {
-                    mint_address,
-                    token_program,
-                    symbol: value.token_symbol,
-                    name: value.token_name,
-                    decimals: value.decimals,
-                    amount_raw: value.amount_raw,
-                    ui_amount: value.ui_amount,
-                    usd_price: value.usd_price,
-                    usd_value: value.usd_value,
-                }))
-            }
-            _ => Err(ApiConversionError::Invalid("inconsistent native SOL asset")),
-        }
-    }
-}
 impl TryFrom<BalanceSummary> for WalletBalanceSummary {
     type Error = ApiConversionError;
     fn try_from(value: BalanceSummary) -> Result<Self, Self::Error> {

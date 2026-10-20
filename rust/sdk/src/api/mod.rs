@@ -5,3 +5,5 @@ pub(crate) mod types;
 
 pub(crate) mod get_usd_balance;
 pub(crate) mod list_token_balances;
+
+pub(crate) mod list_token_transactions;

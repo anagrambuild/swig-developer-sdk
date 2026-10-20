@@ -1349,6 +1349,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dcf09694a0fc14e5ffb18f9b7b7c0f15ecb6eac5b5610bf76a1853459d19daf9"
 
 [[package]]
+name = "solana-signature"
+version = "3.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "132a93134f1262aa832f1849b83bec6c9945669b866da18661a427943b9e801e"
+dependencies = [
+ "five8",
+ "serde",
+ "solana-sanitize",
+ "wincode",
+]
+
+[[package]]
 name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1382,6 +1394,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "solana-pubkey",
+ "solana-signature",
  "thiserror",
  "tokio",
 ]

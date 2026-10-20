@@ -86,3 +86,64 @@ pub(crate) struct BalanceSummary {
     #[serde(alias = "total_usd_value")]
     pub total_usd_value: f64,
 }
+
+use solana_signature::Signature;
+#[derive(Deserialize)]
+#[serde(try_from = "EnumValue")]
+pub(crate) enum TransactionDirection {
+    Inflow,
+    Outflow,
+}
+impl TryFrom<EnumValue> for TransactionDirection {
+    type Error = ApiConversionError;
+    fn try_from(value: EnumValue) -> Result<Self, Self::Error> {
+        match value {
+            EnumValue::Code(1) => Ok(Self::Inflow),
+            EnumValue::Code(2) => Ok(Self::Outflow),
+            EnumValue::Name(name) => match name.as_str() {
+                "SWIG_TOKEN_TRANSACTION_DIRECTION_INFLOW" | "inflow" => Ok(Self::Inflow),
+                "SWIG_TOKEN_TRANSACTION_DIRECTION_OUTFLOW" | "outflow" => Ok(Self::Outflow),
+                _ => Err(ApiConversionError::Invalid("unknown transaction direction")),
+            },
+            _ => Err(ApiConversionError::Invalid("unknown transaction direction")),
+        }
+    }
+}
+#[serde_as]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WalletTransaction {
+    #[serde_as(as = "DisplayFromStr")]
+    #[serde(alias = "transaction_signature")]
+    pub transaction_signature: Signature,
+    #[serde_as(as = "DisplayFromStr")]
+    pub slot: u64,
+    #[serde(alias = "block_time")]
+    pub block_time: Option<String>,
+    #[serde_as(as = "DisplayFromStr")]
+    #[serde(alias = "owner_address")]
+    pub owner_address: Pubkey,
+    #[serde_as(as = "DisplayFromStr")]
+    #[serde(alias = "wallet_address")]
+    pub wallet_address: Pubkey,
+    #[serde(default, alias = "is_subaccount")]
+    pub is_subaccount: bool,
+    #[serde(default, alias = "token_account_address")]
+    pub token_account_address: String,
+    pub direction: TransactionDirection,
+    #[serde(flatten)]
+    pub asset: Asset,
+}
+#[serde_as]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TransactionList {
+    #[serde_as(as = "DisplayFromStr")]
+    #[serde(alias = "swig_config_address")]
+    pub swig_config_address: Pubkey,
+    #[serde_as(as = "DisplayFromStr")]
+    #[serde(alias = "wallet_address")]
+    pub wallet_address: Pubkey,
+    #[serde(default)]
+    pub transactions: Vec<WalletTransaction>,
+}

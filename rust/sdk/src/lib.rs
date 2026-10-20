@@ -40,3 +40,10 @@ mod role_tests;
 #[cfg(test)]
 #[path = "../tests/hosted/balances.rs"]
 mod balance_tests;
+
+#[cfg(test)]
+#[path = "../tests/hosted/history.rs"]
+mod history_tests;
+
+pub use types::{AssetTransfer, TransactionDirection, WalletTransaction, WalletTransactionList};
+pub use wallet::{ListSwigTokenTransactionsArgs, ListTokenTransactionsError};
