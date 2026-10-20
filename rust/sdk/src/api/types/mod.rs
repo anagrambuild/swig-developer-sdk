@@ -17,3 +17,5 @@ pub(crate) mod prepared_batch;
 pub(crate) mod create_wallet;
 
 pub(crate) mod transfer;
+
+pub(crate) mod prepare;

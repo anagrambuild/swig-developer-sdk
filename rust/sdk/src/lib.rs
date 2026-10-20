@@ -70,3 +70,9 @@ pub use wallet::{
     PrepareTransferSolArgs, PrepareTransferSolError, PrepareTransferTokenArgs,
     PrepareTransferTokenError,
 };
+
+pub use wallet::{PrepareOperation, PrepareTransfersArgs, PrepareTransfersError};
+
+#[cfg(test)]
+#[path = "../tests/hosted/wallet_batch_preparation.rs"]
+mod wallet_batch_preparation_tests;

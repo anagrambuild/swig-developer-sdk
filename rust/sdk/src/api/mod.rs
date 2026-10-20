@@ -12,3 +12,5 @@ pub(crate) mod prepare_create_wallet;
 
 pub(crate) mod prepare_transfer_sol;
 pub(crate) mod prepare_transfer_token;
+
+pub(crate) mod prepare_transfers;
