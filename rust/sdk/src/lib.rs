@@ -7,6 +7,7 @@ mod types;
 mod wallet;
 
 pub use config::{ClientConfig, ClientError, HttpConfig, RetryOptions};
+pub use solana_instruction::{AccountMeta, Instruction};
 pub use types::{
     Network, ProgramScopeNumericType, ProgramScopeType, SwigRole, SwigRoleAction,
     SwigRoleAuthority, SwigRoleList, SwigRolePermission, WalletAuthority, WalletPermission,
@@ -84,3 +85,9 @@ mod wallet_swap_tests;
 pub use wallet::{
     ComputeUnitPricePercentile, PrepareSwapArgs, PrepareSwapError, SwapOptions, SwapQuoteMode,
 };
+
+pub use wallet::{PrepareTransactionArgs, PrepareTransactionError};
+
+#[cfg(test)]
+#[path = "../tests/hosted/wallet_custom_transactions.rs"]
+mod wallet_custom_transaction_tests;
