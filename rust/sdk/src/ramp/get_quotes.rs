@@ -60,15 +60,8 @@ impl RampClient {
             .as_ref()
             .ok_or(GetRampQuotesError::MissingConfiguration)?;
         validation::location(&args.location).map_err(GetRampQuotesError::InvalidInput)?;
-        validation::order_request(&args.order).map_err(GetRampQuotesError::InvalidInput)?;
-        let currency = match &mut args.order {
-            RampOrderRequest::Buy { spend, .. } => &mut spend.currency_code,
-            RampOrderRequest::Sell {
-                receive_fiat_currency_code,
-                ..
-            } => receive_fiat_currency_code,
-        };
-        *currency = currency.trim().to_ascii_uppercase();
+        validation::normalize_order_request(&mut args.order)
+            .map_err(GetRampQuotesError::InvalidInput)?;
         let request = crate::api::types::ramp_quote::GetQuotesRequest {
             configuration_id: config.configuration_id.clone(),
             environment: match config.environment {

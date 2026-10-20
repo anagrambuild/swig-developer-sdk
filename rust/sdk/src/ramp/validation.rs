@@ -14,9 +14,9 @@ pub(crate) fn location(location: &RampLocation) -> Result<(), &'static str> {
     Ok(())
 }
 
-pub(crate) fn order_request(order: &RampOrderRequest) -> Result<(), &'static str> {
+pub(crate) fn normalize_order_request(order: &mut RampOrderRequest) -> Result<(), &'static str> {
     let (currency, amount) = match order {
-        RampOrderRequest::Buy { spend, .. } => (&spend.currency_code, spend.minor_units),
+        RampOrderRequest::Buy { spend, .. } => (&mut spend.currency_code, spend.minor_units),
         RampOrderRequest::Sell {
             sell,
             receive_fiat_currency_code,
@@ -25,6 +25,7 @@ pub(crate) fn order_request(order: &RampOrderRequest) -> Result<(), &'static str
     if currency.trim().is_empty() || amount == 0 {
         return Err("currency and positive amount are required");
     }
+    *currency = currency.trim().to_ascii_uppercase();
     Ok(())
 }
 
@@ -100,4 +101,32 @@ pub(crate) fn order(order: &RampOrder) -> Result<(), &'static str> {
             Ok(())
         }
     }
+}
+
+pub(crate) fn created_order(
+    value: &RampOrder,
+    request: &RampOrderRequest,
+) -> Result<(), &'static str> {
+    order(value)?;
+    let matches_request = match (value, request) {
+        (RampOrder::Buy(order), RampOrderRequest::Buy { spend, receive }) => {
+            order.quote.spend.currency_code == spend.currency_code
+                && order.quote.receive.asset == *receive
+        }
+        (
+            RampOrder::Sell(order),
+            RampOrderRequest::Sell {
+                sell,
+                receive_fiat_currency_code,
+            },
+        ) => {
+            order.quote.sell.asset == sell.asset
+                && &order.quote.receive.currency_code == receive_fiat_currency_code
+        }
+        _ => return Err("Ramp order direction mismatch"),
+    };
+    if !matches_request {
+        return Err("Ramp order currency or asset mismatch");
+    }
+    Ok(())
 }
