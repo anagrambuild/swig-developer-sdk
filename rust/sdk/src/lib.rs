@@ -3,10 +3,12 @@
 mod api;
 mod config;
 mod http;
+mod signing;
 mod types;
 mod wallet;
 
 pub use config::{ClientConfig, ClientError, HttpConfig, RetryOptions};
+pub use signing::{Secp256r1TransactionSigner, TransactionSignError, TransactionSigner};
 pub use solana_instruction::{AccountMeta, Instruction};
 pub use types::{
     Network, ProgramScopeNumericType, ProgramScopeType, SwigRole, SwigRoleAction,
@@ -97,3 +99,6 @@ mod wallet_custom_transaction_tests;
 mod wallet_add_role_tests;
 
 pub use wallet::{PrepareAddRoleArgs, PrepareAddRoleError};
+#[cfg(test)]
+#[path = "../tests/signing/mod.rs"]
+mod signing_tests;
