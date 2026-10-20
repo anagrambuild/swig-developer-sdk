@@ -1,5 +1,6 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
+use solana_signature::Signature;
 
 use crate::api::error::ApiConversionError;
 
@@ -52,4 +53,24 @@ pub(crate) struct PaymasterBalance {
     pub balance_lamports: Option<u64>,
     #[serde(alias = "balance_sol")]
     pub balance_sol: Option<f64>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct SponsorRequest {
+    pub base58_encoded_transaction: String,
+    pub network: &'static str,
+    #[serde(rename = "idempotencyKey", skip_serializing_if = "Option::is_none")]
+    pub idempotency_key: Option<String>,
+}
+
+#[serde_as]
+#[derive(Deserialize)]
+pub(crate) struct SubmittedTransaction {
+    #[serde(alias = "requestId")]
+    pub request_id: String,
+    #[serde_as(as = "DisplayFromStr")]
+    pub signature: Signature,
+    #[serde(default, alias = "spentByPaymaster")]
+    #[serde_as(as = "DisplayFromStr")]
+    pub spent_by_paymaster: i64,
 }
