@@ -9,7 +9,9 @@ pub(crate) mod transaction;
 
 pub use authority::WalletAuthority;
 pub use network::Network;
-pub use participant::{ParticipantApprovalRequest, ParticipantSetApprovalPlan};
+pub use participant::{
+    ParticipantApproval, ParticipantApprovalRequest, ParticipantSetApprovalPlan,
+};
 pub use permission::WalletPermission;
 pub use role::{SwigRole, SwigRoleAction, SwigRoleList};
 pub use role_authority::SwigRoleAuthority;

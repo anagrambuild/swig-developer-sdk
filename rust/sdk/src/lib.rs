@@ -13,6 +13,10 @@ pub use participants::{
     ParticipantSetCreationPlan, PrepareCreateParticipantSetArgs, PrepareCreateParticipantSetError,
 };
 pub use signing::{
+    Ed25519ParticipantSigner, ParticipantApprovalError, ParticipantSigner,
+    Secp256k1ParticipantSigner, Secp256r1ParticipantSigner,
+};
+pub use signing::{
     Secp256k1TransactionSigner, Secp256r1TransactionSigner, TransactionSignError, TransactionSigner,
 };
 pub use solana_instruction::{AccountMeta, Instruction};
@@ -112,3 +116,5 @@ mod signing_tests;
 #[cfg(test)]
 #[path = "../tests/hosted/participant_creation.rs"]
 mod participant_creation_tests;
+
+pub use types::ParticipantApproval;
