@@ -35,3 +35,5 @@ pub(crate) mod paymaster;
 pub(crate) mod ramp;
 
 pub(crate) mod ramp_options;
+
+pub(crate) mod ramp_quote;

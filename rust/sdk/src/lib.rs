@@ -149,3 +149,11 @@ mod paymaster_bundle_tests;
 #[cfg(test)]
 #[path = "../tests/hosted/ramp_options.rs"]
 mod ramp_options_tests;
+
+#[cfg(test)]
+#[path = "../tests/hosted/ramp_quotes.rs"]
+mod ramp_quotes_tests;
+
+#[cfg(test)]
+#[path = "../tests/hosted/ramp_support.rs"]
+mod ramp_support;
