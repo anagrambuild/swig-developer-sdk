@@ -43,3 +43,5 @@ pub(crate) mod ramp_order;
 pub(crate) mod ramp_create_order;
 
 pub(crate) mod ramp_prepare_transfer;
+
+pub(crate) mod ramp_submit_transfer;
