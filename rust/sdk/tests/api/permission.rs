@@ -1,25 +1,35 @@
 use serde_json::json;
 use solana_pubkey::Pubkey;
 
-use crate::{api::types::permission::PolicyPermission, WalletPermission};
+use crate::{
+    api::types::permission::{AddRoleAction, PolicyPermission},
+    WalletPermission,
+};
 
 #[test]
-fn permissions_decode_policy_formats() -> Result<(), Box<dyn std::error::Error>> {
+fn permissions_decode_policy_and_encode_add_role_formats() -> Result<(), Box<dyn std::error::Error>>
+{
     use WalletPermission::*;
 
     let mint = Pubkey::new_from_array([1; 32]);
     let destination = Pubkey::new_from_array([2; 32]);
     let program_id = Pubkey::new_from_array([3; 32]);
     let cases = [
-        (All, json!({"type":"All"})),
+        (All, json!({"type":"All"}), json!({"all":{}})),
         (
             AllButManageAuthority,
             json!({"type":"AllButManageAuthority"}),
+            json!({"allButManageAuthority":{}}),
         ),
-        (ManageAuthority, json!({"type":"ManageAuthority"})),
+        (
+            ManageAuthority,
+            json!({"type":"ManageAuthority"}),
+            json!({"manageAuthority":{}}),
+        ),
         (
             SolLimit { amount: u64::MAX },
-            json!({"type":"SolLimit","amount":u64::MAX.to_string()}),
+            json!({"type":"SolLimit","amount":"18446744073709551615"}),
+            json!({"solLimit":{"amount":"18446744073709551615"}}),
         ),
         (
             SolRecurringLimit {
@@ -27,6 +37,7 @@ fn permissions_decode_policy_formats() -> Result<(), Box<dyn std::error::Error>>
                 window: 32,
             },
             json!({"type":"SolRecurringLimit","recurringAmount":"31","window":"32"}),
+            json!({"solRecurringLimit":{"recurringAmount":"31","window":"32"}}),
         ),
         (
             SolDestinationLimit {
@@ -34,6 +45,7 @@ fn permissions_decode_policy_formats() -> Result<(), Box<dyn std::error::Error>>
                 destination,
             },
             json!({"type":"SolDestinationLimit","amount":"41","destination":destination.to_string()}),
+            json!({"solDestinationLimit":{"amount":"41","destination":destination.to_string()}}),
         ),
         (
             SolRecurringDestinationLimit {
@@ -42,10 +54,12 @@ fn permissions_decode_policy_formats() -> Result<(), Box<dyn std::error::Error>>
                 destination,
             },
             json!({"type":"SolRecurringDestinationLimit","recurringAmount":"51","window":"52","destination":destination.to_string()}),
+            json!({"solRecurringDestinationLimit":{"recurringAmount":"51","window":"52","destination":destination.to_string()}}),
         ),
         (
             TokenLimit { mint, amount: 61 },
             json!({"type":"TokenLimit","mint":mint.to_string(),"amount":"61"}),
+            json!({"tokenLimit":{"mint":mint.to_string(),"amount":"61"}}),
         ),
         (
             TokenRecurringLimit {
@@ -54,6 +68,7 @@ fn permissions_decode_policy_formats() -> Result<(), Box<dyn std::error::Error>>
                 window: 72,
             },
             json!({"type":"TokenRecurringLimit","mint":mint.to_string(),"recurringAmount":"71","window":"72"}),
+            json!({"tokenRecurringLimit":{"mint":mint.to_string(),"recurringAmount":"71","window":"72"}}),
         ),
         (
             TokenDestinationLimit {
@@ -62,6 +77,7 @@ fn permissions_decode_policy_formats() -> Result<(), Box<dyn std::error::Error>>
                 destination,
             },
             json!({"type":"TokenDestinationLimit","mint":mint.to_string(),"amount":"81","destination":destination.to_string()}),
+            json!({"tokenDestinationLimit":{"mint":mint.to_string(),"amount":"81","destination":destination.to_string()}}),
         ),
         (
             TokenRecurringDestinationLimit {
@@ -71,16 +87,27 @@ fn permissions_decode_policy_formats() -> Result<(), Box<dyn std::error::Error>>
                 destination,
             },
             json!({"type":"TokenRecurringDestinationLimit","mint":mint.to_string(),"recurringAmount":"91","window":"92","destination":destination.to_string()}),
+            json!({"tokenRecurringDestinationLimit":{"mint":mint.to_string(),"recurringAmount":"91","window":"92","destination":destination.to_string()}}),
         ),
         (
             Program { program_id },
             json!({"type":"Program","programId":program_id.to_string()}),
+            json!({"program":{"programId":program_id.to_string()}}),
         ),
-        (ProgramAll, json!({"type":"ProgramAll"})),
-        (ProgramCurated, json!({"type":"ProgramCurated"})),
+        (
+            ProgramAll,
+            json!({"type":"ProgramAll"}),
+            json!({"programAll":{}}),
+        ),
+        (
+            ProgramCurated,
+            json!({"type":"ProgramCurated"}),
+            json!({"programCurated":{}}),
+        ),
         (
             StakeLimit { amount: 121 },
             json!({"type":"StakeLimit","amount":"121"}),
+            json!({"stakeLimit":{"amount":"121"}}),
         ),
         (
             StakeRecurringLimit {
@@ -88,13 +115,22 @@ fn permissions_decode_policy_formats() -> Result<(), Box<dyn std::error::Error>>
                 window: 132,
             },
             json!({"type":"StakeRecurringLimit","recurringAmount":"131","window":"132"}),
+            json!({"stakeRecurringLimit":{"recurringAmount":"131","window":"132"}}),
         ),
-        (StakeAll, json!({"type":"StakeAll"})),
-        (SubAccount, json!({"type":"SubAccount"})),
+        (StakeAll, json!({"type":"StakeAll"}), json!({"stakeAll":{}})),
+        (
+            SubAccount,
+            json!({"type":"SubAccount"}),
+            json!({"subAccount":{}}),
+        ),
     ];
-    for (expected, json) in cases {
-        let permission: PolicyPermission = serde_json::from_value(json)?;
-        assert!(WalletPermission::from(permission) == expected);
+    for (permission, policy_json, role_json) in cases {
+        let policy_wire: PolicyPermission = serde_json::from_value(policy_json)?;
+        assert!(WalletPermission::from(policy_wire) == permission);
+        assert_eq!(
+            serde_json::to_value(AddRoleAction::from(permission))?,
+            role_json
+        );
     }
     Ok(())
 }

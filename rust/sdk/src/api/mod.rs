@@ -18,3 +18,5 @@ pub(crate) mod prepare_transfers;
 pub(crate) mod prepare_swap;
 
 pub(crate) mod prepare_transaction;
+
+pub(crate) mod prepare_add_role;

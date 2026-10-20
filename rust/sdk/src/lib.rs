@@ -91,3 +91,9 @@ pub use wallet::{PrepareTransactionArgs, PrepareTransactionError};
 #[cfg(test)]
 #[path = "../tests/hosted/wallet_custom_transactions.rs"]
 mod wallet_custom_transaction_tests;
+
+#[cfg(test)]
+#[path = "../tests/hosted/wallet_add_role.rs"]
+mod wallet_add_role_tests;
+
+pub use wallet::{PrepareAddRoleArgs, PrepareAddRoleError};

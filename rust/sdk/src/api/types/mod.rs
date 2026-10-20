@@ -23,3 +23,5 @@ pub(crate) mod prepare;
 pub(crate) mod swap;
 
 pub(crate) mod custom_transaction;
+
+pub(crate) mod add_role;

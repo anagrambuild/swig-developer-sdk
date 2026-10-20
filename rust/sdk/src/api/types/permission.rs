@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
 use solana_pubkey::Pubkey;
 
@@ -89,3 +89,86 @@ pub(crate) enum PolicyPermission {
 #[cfg(test)]
 #[path = "../../../tests/api/permission.rs"]
 mod tests;
+
+#[serde_as]
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub(crate) enum AddRoleAction {
+    All {},
+    AllButManageAuthority {},
+    ManageAuthority {},
+    SolLimit {
+        #[serde_as(as = "DisplayFromStr")]
+        amount: u64,
+    },
+    SolRecurringLimit {
+        #[serde_as(as = "DisplayFromStr")]
+        recurring_amount: u64,
+        #[serde_as(as = "DisplayFromStr")]
+        window: u64,
+    },
+    SolDestinationLimit {
+        #[serde_as(as = "DisplayFromStr")]
+        amount: u64,
+        #[serde_as(as = "DisplayFromStr")]
+        destination: Pubkey,
+    },
+    SolRecurringDestinationLimit {
+        #[serde_as(as = "DisplayFromStr")]
+        recurring_amount: u64,
+        #[serde_as(as = "DisplayFromStr")]
+        window: u64,
+        #[serde_as(as = "DisplayFromStr")]
+        destination: Pubkey,
+    },
+    TokenLimit {
+        #[serde_as(as = "DisplayFromStr")]
+        mint: Pubkey,
+        #[serde_as(as = "DisplayFromStr")]
+        amount: u64,
+    },
+    TokenRecurringLimit {
+        #[serde_as(as = "DisplayFromStr")]
+        mint: Pubkey,
+        #[serde_as(as = "DisplayFromStr")]
+        recurring_amount: u64,
+        #[serde_as(as = "DisplayFromStr")]
+        window: u64,
+    },
+    TokenDestinationLimit {
+        #[serde_as(as = "DisplayFromStr")]
+        mint: Pubkey,
+        #[serde_as(as = "DisplayFromStr")]
+        amount: u64,
+        #[serde_as(as = "DisplayFromStr")]
+        destination: Pubkey,
+    },
+    TokenRecurringDestinationLimit {
+        #[serde_as(as = "DisplayFromStr")]
+        mint: Pubkey,
+        #[serde_as(as = "DisplayFromStr")]
+        recurring_amount: u64,
+        #[serde_as(as = "DisplayFromStr")]
+        window: u64,
+        #[serde_as(as = "DisplayFromStr")]
+        destination: Pubkey,
+    },
+    Program {
+        #[serde_as(as = "DisplayFromStr")]
+        program_id: Pubkey,
+    },
+    ProgramAll {},
+    ProgramCurated {},
+    StakeLimit {
+        #[serde_as(as = "DisplayFromStr")]
+        amount: u64,
+    },
+    StakeRecurringLimit {
+        #[serde_as(as = "DisplayFromStr")]
+        recurring_amount: u64,
+        #[serde_as(as = "DisplayFromStr")]
+        window: u64,
+    },
+    StakeAll {},
+    SubAccount {},
+}
