@@ -6,6 +6,7 @@ mod types;
 mod wallet;
 
 pub use config::{ClientConfig, ClientError, HttpConfig, RetryOptions};
+pub use solana_instruction::{AccountMeta, Instruction};
 pub use types::{
     ClientSignatureRequest, Network, ParticipantApprovalRequest, ParticipantSetApprovalPlan,
     PreparedTransaction, RecentBlockhash, WalletAddressInfo, WalletAuthority, WalletPermission,
@@ -14,12 +15,13 @@ pub use wallet::{
     AssetTransfer, ComputeUnitPricePercentile, GetPolicyError, GetUsdBalanceError, ListRolesError,
     ListSwigTokenTransactionsArgs, ListTokenBalancesError, ListTokenTransactionsError, Policy,
     PolicyAuthority, PrepareCreateWalletArgs, PrepareCreateWalletError, PrepareOperation,
-    PrepareSwapArgs, PrepareSwapError, PrepareTransferSolArgs, PrepareTransferSolError,
-    PrepareTransferTokenArgs, PrepareTransferTokenError, PrepareTransfersArgs,
-    PrepareTransfersError, ProgramScopeNumericType, ProgramScopeType, SolBalance, SwapOptions,
-    SwapQuoteMode, SwigRole, SwigRoleAction, SwigRoleAuthority, SwigRoleList, SwigRolePermission,
-    SwigUsdBalance, TokenBalance, TransactionDirection, WalletBalanceSummary, WalletClient,
-    WalletCreation, WalletTransaction, WalletTransactionList,
+    PrepareSwapArgs, PrepareSwapError, PrepareTransactionArgs, PrepareTransactionError,
+    PrepareTransferSolArgs, PrepareTransferSolError, PrepareTransferTokenArgs,
+    PrepareTransferTokenError, PrepareTransfersArgs, PrepareTransfersError,
+    ProgramScopeNumericType, ProgramScopeType, SolBalance, SwapOptions, SwapQuoteMode, SwigRole,
+    SwigRoleAction, SwigRoleAuthority, SwigRoleList, SwigRolePermission, SwigUsdBalance,
+    TokenBalance, TransactionDirection, WalletBalanceSummary, WalletClient, WalletCreation,
+    WalletTransaction, WalletTransactionList,
 };
 
 #[cfg(test)]
@@ -69,3 +71,7 @@ mod wallet_batch_preparation_tests;
 #[cfg(test)]
 #[path = "../tests/hosted/wallet_swaps.rs"]
 mod wallet_swap_tests;
+
+#[cfg(test)]
+#[path = "../tests/hosted/wallet_custom_transactions.rs"]
+mod wallet_custom_transaction_tests;

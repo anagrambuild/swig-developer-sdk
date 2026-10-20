@@ -1,4 +1,5 @@
 pub(crate) mod assets;
+pub(crate) mod build_transaction;
 pub(crate) mod create;
 pub(crate) mod policy;
 pub(crate) mod prepare;
