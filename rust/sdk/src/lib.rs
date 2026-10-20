@@ -11,7 +11,11 @@ pub use types::{
     Network, ProgramScopeNumericType, ProgramScopeType, SwigRole, SwigRoleAction,
     SwigRoleAuthority, SwigRoleList, SwigRolePermission, WalletAuthority, WalletPermission,
 };
-pub use wallet::{GetPolicyError, ListRolesError, Policy, WalletClient};
+pub use types::{SolBalance, SwigUsdBalance, TokenBalance, WalletBalanceSummary};
+pub use wallet::{
+    GetPolicyError, GetUsdBalanceError, ListRolesError, ListTokenBalancesError, Policy,
+    WalletClient,
+};
 
 #[cfg(test)]
 #[path = "../tests/transport/mod.rs"]
@@ -32,3 +36,7 @@ mod policy_tests;
 #[cfg(test)]
 #[path = "../tests/hosted/roles.rs"]
 mod role_tests;
+
+#[cfg(test)]
+#[path = "../tests/hosted/balances.rs"]
+mod balance_tests;

@@ -11,3 +11,6 @@ pub use permission::WalletPermission;
 pub use role::{SwigRole, SwigRoleAction, SwigRoleList};
 pub use role_authority::SwigRoleAuthority;
 pub use role_permission::{ProgramScopeNumericType, ProgramScopeType, SwigRolePermission};
+
+mod assets;
+pub use assets::{SolBalance, SwigUsdBalance, TokenBalance, WalletBalanceSummary};
