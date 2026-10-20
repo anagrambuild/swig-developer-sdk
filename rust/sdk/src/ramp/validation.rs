@@ -78,3 +78,19 @@ pub(crate) fn quote(quote: &RampQuote, request: &RampOrderRequest) -> Result<(),
         _ => Err("Ramp quote direction mismatch"),
     }
 }
+pub(crate) fn order(order: &RampOrder) -> Result<(), &'static str> {
+    match order {
+        RampOrder::Buy(order) => buy_quote(&order.quote),
+        RampOrder::Sell(order) => {
+            sell_quote(&order.quote)?;
+            if order
+                .deposit
+                .as_ref()
+                .is_some_and(|deposit| deposit.amount.base_units == 0)
+            {
+                return Err("Ramp deposit amount must be positive");
+            }
+            Ok(())
+        }
+    }
+}

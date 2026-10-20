@@ -1,7 +1,8 @@
-use crate::types::wire::ramp::CryptoAssetWire;
+use crate::types::wire::ramp::{CryptoAssetWire, RampOrderWire, RampTransferWire};
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
 use solana_pubkey::Pubkey;
+use solana_signature::Signature;
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "CryptoAssetWire", into = "CryptoAssetWire")]
 pub enum CryptoAsset {
@@ -80,4 +81,105 @@ pub struct RampSellQuote {
     pub total_fee: FiatAmount,
     #[serde(alias = "exchange_rate")]
     pub exchange_rate: String,
+}
+#[derive(Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "String")]
+pub enum RampOrderStatus {
+    #[serde(rename = "RAMP_ORDER_STATUS_CREATING")]
+    Creating,
+    #[serde(rename = "RAMP_ORDER_STATUS_CREATION_UNCERTAIN")]
+    CreationUncertain,
+    #[serde(rename = "RAMP_ORDER_STATUS_AWAITING_CUSTOMER")]
+    AwaitingCustomer,
+    #[serde(rename = "RAMP_ORDER_STATUS_AWAITING_TRANSFER")]
+    AwaitingTransfer,
+    #[serde(rename = "RAMP_ORDER_STATUS_PROCESSING")]
+    Processing,
+    #[serde(rename = "RAMP_ORDER_STATUS_SETTLING")]
+    Settling,
+    #[serde(rename = "RAMP_ORDER_STATUS_SETTLED")]
+    Settled,
+    #[serde(rename = "RAMP_ORDER_STATUS_DECLINED")]
+    Declined,
+    #[serde(rename = "RAMP_ORDER_STATUS_CANCELLED")]
+    Cancelled,
+    #[serde(rename = "RAMP_ORDER_STATUS_FAILED")]
+    Failed,
+    #[serde(rename = "RAMP_ORDER_STATUS_REFUNDED")]
+    Refunded,
+}
+
+#[serde_as]
+#[derive(Clone, Serialize, Deserialize)]
+pub struct RampDeposit {
+    #[serde_as(as = "DisplayFromStr")]
+    pub address: Pubkey,
+    pub amount: CryptoAmount,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub enum RampTransferState {
+    Prepared,
+    Submitted { signature: Signature },
+    Landed { signature: Signature },
+    Failed { signature: Signature },
+    Expired,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(try_from = "RampTransferWire", into = "RampTransferWire")]
+pub struct RampTransfer {
+    pub transfer_id: String,
+    pub state: RampTransferState,
+    pub expires_at: String,
+}
+
+#[derive(Clone)]
+pub struct RampBuyOrder {
+    pub id: String,
+    pub status: RampOrderStatus,
+    pub created_at: String,
+    pub updated_at: String,
+    pub quote: RampBuyQuote,
+    pub launch_url: Option<String>,
+}
+
+#[derive(Clone)]
+pub struct RampSellOrder {
+    pub id: String,
+    pub status: RampOrderStatus,
+    pub created_at: String,
+    pub updated_at: String,
+    pub quote: RampSellQuote,
+    pub launch_url: Option<String>,
+    pub deposit: Option<RampDeposit>,
+    pub transfer: Option<RampTransfer>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(try_from = "RampOrderWire", into = "RampOrderWire")]
+pub enum RampOrder {
+    Buy(RampBuyOrder),
+    Sell(RampSellOrder),
+}
+
+impl TryFrom<String> for RampOrderStatus {
+    type Error = &'static str;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match value.as_str() {
+            "RAMP_ORDER_STATUS_CREATING" => Ok(Self::Creating),
+            "RAMP_ORDER_STATUS_CREATION_UNCERTAIN" => Ok(Self::CreationUncertain),
+            "RAMP_ORDER_STATUS_AWAITING_CUSTOMER" => Ok(Self::AwaitingCustomer),
+            "RAMP_ORDER_STATUS_AWAITING_TRANSFER" => Ok(Self::AwaitingTransfer),
+            "RAMP_ORDER_STATUS_PROCESSING" => Ok(Self::Processing),
+            "RAMP_ORDER_STATUS_SETTLING" => Ok(Self::Settling),
+            "RAMP_ORDER_STATUS_SETTLED" => Ok(Self::Settled),
+            "RAMP_ORDER_STATUS_DECLINED" => Ok(Self::Declined),
+            "RAMP_ORDER_STATUS_CANCELLED" => Ok(Self::Cancelled),
+            "RAMP_ORDER_STATUS_FAILED" => Ok(Self::Failed),
+            "RAMP_ORDER_STATUS_REFUNDED" => Ok(Self::Refunded),
+            _ => Err("invalid Ramp order status"),
+        }
+    }
 }
