@@ -76,3 +76,11 @@ pub use wallet::{PrepareOperation, PrepareTransfersArgs, PrepareTransfersError};
 #[cfg(test)]
 #[path = "../tests/hosted/wallet_batch_preparation.rs"]
 mod wallet_batch_preparation_tests;
+
+#[cfg(test)]
+#[path = "../tests/hosted/wallet_swaps.rs"]
+mod wallet_swap_tests;
+
+pub use wallet::{
+    ComputeUnitPricePercentile, PrepareSwapArgs, PrepareSwapError, SwapOptions, SwapQuoteMode,
+};

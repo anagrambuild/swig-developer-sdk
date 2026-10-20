@@ -6,6 +6,7 @@ mod list_roles;
 mod list_token_balances;
 mod list_token_transactions;
 mod prepare;
+mod swap;
 mod transfer;
 
 pub use client::WalletClient;
@@ -26,3 +27,7 @@ pub use transfer::{
 };
 
 pub use prepare::{PrepareOperation, PrepareTransfersArgs, PrepareTransfersError};
+
+pub use swap::{
+    ComputeUnitPricePercentile, PrepareSwapArgs, PrepareSwapError, SwapOptions, SwapQuoteMode,
+};
