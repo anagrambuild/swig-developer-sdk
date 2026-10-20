@@ -61,3 +61,12 @@ mod wallet_preparation_support;
 #[cfg(test)]
 #[path = "../tests/hosted/wallet_creation.rs"]
 mod wallet_creation_tests;
+
+#[cfg(test)]
+#[path = "../tests/hosted/wallet_transfers.rs"]
+mod wallet_transfer_tests;
+
+pub use wallet::{
+    PrepareTransferSolArgs, PrepareTransferSolError, PrepareTransferTokenArgs,
+    PrepareTransferTokenError,
+};

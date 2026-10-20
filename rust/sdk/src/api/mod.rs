@@ -9,3 +9,6 @@ pub(crate) mod list_token_balances;
 pub(crate) mod list_token_transactions;
 
 pub(crate) mod prepare_create_wallet;
+
+pub(crate) mod prepare_transfer_sol;
+pub(crate) mod prepare_transfer_token;
