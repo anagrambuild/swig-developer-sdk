@@ -3,11 +3,15 @@
 mod api;
 mod config;
 mod http;
+mod participants;
 mod signing;
 mod types;
 mod wallet;
 
 pub use config::{ClientConfig, ClientError, HttpConfig, RetryOptions};
+pub use participants::{
+    ParticipantSetCreationPlan, PrepareCreateParticipantSetArgs, PrepareCreateParticipantSetError,
+};
 pub use signing::{
     Secp256k1TransactionSigner, Secp256r1TransactionSigner, TransactionSignError, TransactionSigner,
 };
@@ -104,3 +108,7 @@ pub use wallet::{PrepareAddRoleArgs, PrepareAddRoleError};
 #[cfg(test)]
 #[path = "../tests/signing/mod.rs"]
 mod signing_tests;
+
+#[cfg(test)]
+#[path = "../tests/hosted/participant_creation.rs"]
+mod participant_creation_tests;

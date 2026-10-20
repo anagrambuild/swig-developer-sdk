@@ -25,3 +25,5 @@ pub(crate) mod swap;
 pub(crate) mod custom_transaction;
 
 pub(crate) mod add_role;
+
+pub(crate) mod participant_set;
