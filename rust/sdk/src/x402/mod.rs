@@ -4,7 +4,11 @@ pub use create_payment::{
     X402PaymentSubmission,
 };
 mod parse_payment_required;
+mod prepare_payment;
 mod protocol;
+pub use prepare_payment::{
+    PrepareX402PaymentArgs, PrepareX402PaymentError, X402PaymentPreparation,
+};
 mod types;
 
 pub use parse_payment_required::{parse_payment_required, ParsePaymentRequiredError};
