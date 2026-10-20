@@ -1,5 +1,6 @@
 use super::NetworkWire;
 use super::WireError;
+use super::{transaction::PreparedTransactionWire, AuthorityWire};
 use crate::{
     CryptoAsset, RampBuyQuote, RampLocation, RampOrderRequest, RampQuote, RampQuoteDetails,
     RampRoute, RampSellQuote,
@@ -389,6 +390,28 @@ pub(crate) struct CreateOrderRequest {
     pub route: RampRoute,
     #[serde(flatten)]
     pub order: RampOrderRequest,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PrepareRequest {
+    pub requester_authority: AuthorityWire,
+    pub fee_payer: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PrepareResponse {
+    #[serde(alias = "prepared_transfer")]
+    pub prepared_transfer: PreparedTransferResponse,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PreparedTransferResponse {
+    pub transfer: RampTransfer,
+    #[serde(alias = "prepared_transaction")]
+    pub prepared_transaction: PreparedTransactionWire,
+    pub deposit: RampDeposit,
 }
 
 impl TryFrom<String> for TransferStateWire {
