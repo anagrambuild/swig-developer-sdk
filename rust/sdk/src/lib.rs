@@ -7,7 +7,10 @@ mod types;
 mod wallet;
 
 pub use config::{ClientConfig, ClientError, HttpConfig, RetryOptions};
-pub use types::{Network, SwigRoleAuthority, WalletAuthority, WalletPermission};
+pub use types::{
+    Network, ProgramScopeNumericType, ProgramScopeType, SwigRoleAuthority, SwigRolePermission,
+    WalletAuthority, WalletPermission,
+};
 pub use wallet::{GetPolicyError, Policy, WalletClient};
 
 #[cfg(test)]
