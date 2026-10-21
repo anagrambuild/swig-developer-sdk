@@ -10,3 +10,6 @@ pub(crate) mod assets;
 pub(crate) mod encoding;
 pub(crate) mod participant;
 pub(crate) mod transaction;
+
+pub(crate) mod network;
+pub(crate) mod prepared_batch;

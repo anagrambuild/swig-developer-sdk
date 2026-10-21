@@ -20,3 +20,7 @@ pub use assets::{SolBalance, SwigUsdBalance, TokenBalance, WalletBalanceSummary}
 
 pub use assets::{AssetTransfer, TransactionDirection, WalletTransaction, WalletTransactionList};
 pub use transaction::ClientSignatureRequest;
+
+mod wallet;
+pub use transaction::{PreparedTransaction, RecentBlockhash};
+pub use wallet::WalletAddressInfo;

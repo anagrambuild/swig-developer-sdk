@@ -1,15 +1,20 @@
+use crate::api::types::{
+    participant::{
+        ParticipantApprovalRequest as ApiParticipantApprovalRequest,
+        ParticipantSetApprovalPlan as ApiParticipantSetApprovalPlan,
+    },
+    transaction::PreparedTransaction as ApiPreparedTransaction,
+};
 use std::error::Error;
 
 use serde_json::{json, Value};
 use solana_pubkey::Pubkey;
 
 use crate::{
-    api::types::participant::{
-        ParticipantApprovalRequest as ApiParticipantApprovalRequest,
-        ParticipantSetApprovalPlan as ApiParticipantSetApprovalPlan,
-    },
-    ParticipantApprovalRequest, ParticipantSetApprovalPlan, WalletAuthority,
+    ParticipantApprovalRequest, ParticipantSetApprovalPlan, PreparedTransaction, WalletAuthority,
 };
+
+use crate::types::transaction::tests::prepared;
 
 fn plan_json() -> Value {
     json!({
@@ -109,6 +114,29 @@ fn only_supported_plan_discriminator_decodes() -> Result<(), Box<dyn Error>> {
         value["type"] = invalid;
         assert!(serde_json::from_value::<ApiParticipantSetApprovalPlan>(value.clone()).is_err());
     }
+    Ok(())
+}
+
+#[test]
+fn compile_wire_omits_sdk_fields_and_keeps_transaction_network() -> Result<(), Box<dyn Error>> {
+    let mut native = prepared(false);
+    native.participant_set_approval_plan = Some(ParticipantSetApprovalPlan::try_from(
+        serde_json::from_value::<ApiParticipantSetApprovalPlan>(plan_json())?,
+    )?);
+    let encoded = serde_json::to_value(ApiPreparedTransaction::try_from(native)?)?;
+    assert!(encoded.get("kind").is_none());
+    assert!(encoded["wallet"].get("network").is_none());
+    assert!(encoded["participantSetApprovalPlan"].get("type").is_none());
+    assert_eq!(encoded["network"], "NETWORK_DEVNET");
+    assert_eq!(
+        encoded["participantSetApprovalPlan"]["compilationEnvelope"],
+        plan_json()["compilationEnvelope"]
+    );
+    let decoded =
+        PreparedTransaction::try_from(serde_json::from_value::<ApiPreparedTransaction>(encoded)?)?;
+    assert!(decoded
+        .participant_set_approval_plan
+        .is_some_and(|plan| plan.compilation_envelope == "opaque/bytes+=\nretain exactly"));
     Ok(())
 }
 

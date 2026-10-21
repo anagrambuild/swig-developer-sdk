@@ -49,3 +49,5 @@ pub use types::{AssetTransfer, TransactionDirection, WalletTransaction, WalletTr
 pub use wallet::{ListSwigTokenTransactionsArgs, ListTokenTransactionsError};
 
 pub use types::{ClientSignatureRequest, ParticipantApprovalRequest, ParticipantSetApprovalPlan};
+
+pub use types::{PreparedTransaction, RecentBlockhash, WalletAddressInfo};
