@@ -1,11 +1,12 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use serde_with::{serde_as, DisplayFromStr};
 
 use crate::{ClientSignatureRequest, PreparedTransaction, WalletAddressInfo};
 
 use super::{
-    decode_hex32, decode_transaction, encode_transaction, AuthorityWire, NetworkWire,
-    OptionalPreparedKind, ParticipantSetApprovalPlanWire, SignatureSchemeWire,
+    decode_hex32, decode_transaction, encode_transaction, validate_authority_shape, AuthorityWire,
+    NetworkWire, OptionalPreparedKind, ParticipantSetApprovalPlanWire, SignatureSchemeWire,
     TransactionEncodingWire, WireError,
 };
 
@@ -117,6 +118,49 @@ pub(crate) struct PreparedTransactionWire {
     pub signature_requests: Vec<ClientSignatureRequestWire>,
     #[serde(alias = "participant_set_approval_plan")]
     pub participant_set_approval_plan: Option<ParticipantSetApprovalPlanWire>,
+}
+
+pub(crate) fn validate_prepared_transaction_shape(value: &Value) -> Result<(), WireError> {
+    let fields = value
+        .as_object()
+        .ok_or(WireError::Invalid("malformed prepared transaction"))?;
+    if fields
+        .get("wallet")
+        .is_some_and(|wallet| !wallet.is_null() && !wallet.is_object())
+    {
+        return Err(WireError::Invalid("malformed prepared transaction"));
+    }
+    for field in ["signatureRequests", "signature_requests"] {
+        if fields
+            .get(field)
+            .and_then(Value::as_array)
+            .is_some_and(|requests| requests.iter().any(|request| !request.is_object()))
+        {
+            return Err(WireError::Invalid("malformed prepared transaction"));
+        }
+    }
+    for field in [
+        "participantSetApprovalPlan",
+        "participant_set_approval_plan",
+    ] {
+        let Some(plan) = fields.get(field).filter(|plan| !plan.is_null()) else {
+            continue;
+        };
+        let plan = plan
+            .as_object()
+            .ok_or(WireError::Invalid("malformed prepared transaction"))?;
+        if let Some(members) = plan.get("members").and_then(Value::as_array) {
+            for member in members {
+                let member = member
+                    .as_object()
+                    .ok_or(WireError::Invalid("malformed prepared transaction"))?;
+                if let Some(authority) = member.get("authority") {
+                    validate_authority_shape(authority)?;
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 impl TryFrom<PreparedTransactionWire> for PreparedTransaction {
