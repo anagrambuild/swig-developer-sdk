@@ -9,6 +9,7 @@ description = "Swig Developer SDK for hosted clients and native transaction sign
 readme = "README.md"
 
 [dependencies]
+bs58 = "0.5"
 hex = "0.4"
 k256 = { version = "0.13", default-features = false, features = ["arithmetic"] }
 p256 = { version = "0.13", default-features = false, features = ["arithmetic"] }

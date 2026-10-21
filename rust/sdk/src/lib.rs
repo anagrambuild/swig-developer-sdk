@@ -7,7 +7,7 @@ mod wallet;
 
 pub use config::{ClientConfig, ClientError, HttpConfig, RetryOptions};
 pub use types::{Network, WalletAuthority, WalletPermission};
-pub use wallet::{GetPolicyError, Policy, PolicyAuthority, WalletClient};
+pub use wallet::{GetPolicyError, Policy, PolicyAuthority, SwigRoleAuthority, WalletClient};
 
 #[cfg(test)]
 #[path = "../tests/transport/mod.rs"]
