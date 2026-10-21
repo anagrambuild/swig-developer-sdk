@@ -51,3 +51,13 @@ pub use wallet::{ListSwigTokenTransactionsArgs, ListTokenTransactionsError};
 pub use types::{ClientSignatureRequest, ParticipantApprovalRequest, ParticipantSetApprovalPlan};
 
 pub use types::{PreparedTransaction, RecentBlockhash, WalletAddressInfo};
+
+pub use wallet::{PrepareCreateWalletArgs, PrepareCreateWalletError, WalletCreation};
+
+#[cfg(test)]
+#[path = "../tests/hosted/wallet_preparation_support.rs"]
+mod wallet_preparation_support;
+
+#[cfg(test)]
+#[path = "../tests/hosted/wallet_creation.rs"]
+mod wallet_creation_tests;

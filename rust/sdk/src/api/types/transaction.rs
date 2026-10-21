@@ -59,8 +59,6 @@ pub(crate) struct PreparedTransaction {
     pub participant_set_approval_plan: Option<ParticipantSetApprovalPlan>,
 }
 
-// Used by hosted preparation endpoints introduced immediately above this model slice.
-#[allow(dead_code)]
 pub(crate) fn validate_prepared_transaction_shape(value: &Value) -> Result<(), ApiConversionError> {
     let fields = value.as_object().ok_or(ApiConversionError::Invalid(
         "malformed prepared transaction",

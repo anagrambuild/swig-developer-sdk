@@ -13,3 +13,5 @@ pub(crate) mod transaction;
 
 pub(crate) mod network;
 pub(crate) mod prepared_batch;
+
+pub(crate) mod create_wallet;

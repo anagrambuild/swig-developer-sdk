@@ -1,7 +1,6 @@
 use crate::api::{error::ApiConversionError, types::prepared_batch::PreparedBatch};
 use crate::{Network, PreparedTransaction, WalletAddressInfo};
 use solana_pubkey::Pubkey;
-#[allow(dead_code)]
 pub(crate) fn validate_prepared_context(
     prepared: &PreparedTransaction,
     swig_config_address: Option<Pubkey>,
@@ -18,7 +17,6 @@ pub(crate) fn validate_prepared_context(
     Ok(())
 }
 
-#[allow(dead_code)]
 pub(crate) fn normalize_batch(
     batch: PreparedBatch,
     swig_config_address: Option<Pubkey>,

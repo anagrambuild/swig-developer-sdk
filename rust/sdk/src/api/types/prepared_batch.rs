@@ -9,8 +9,6 @@ use serde_json::Value;
 #[cfg(test)]
 #[path = "../../../tests/api/prepared_batch.rs"]
 mod tests;
-// Shared by create and batch preparation, consumed in subsequent endpoint slices.
-#[allow(dead_code)]
 #[derive(Deserialize)]
 pub(crate) struct PreparedBatch {
     pub wallet: Option<WalletAddressInfo>,
@@ -18,7 +16,6 @@ pub(crate) struct PreparedBatch {
     pub transactions: Vec<PreparedTransaction>,
 }
 
-#[allow(dead_code)]
 pub(crate) fn validate_prepared_batch_shape(value: &Value) -> Result<(), ApiConversionError> {
     let fields = value
         .as_object()
