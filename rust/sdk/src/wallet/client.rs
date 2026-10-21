@@ -6,10 +6,6 @@ use crate::{http::HttpClient, ClientConfig, ClientError, Network};
 #[derive(Clone)]
 pub struct WalletClient {
     pub(crate) http: Arc<HttpClient>,
-    #[allow(
-        dead_code,
-        reason = "Consumed by wallet operations in the next stacked change"
-    )]
     pub(crate) network: Network,
 }
 

@@ -8,10 +8,10 @@ mod wallet;
 
 pub use config::{ClientConfig, ClientError, HttpConfig, RetryOptions};
 pub use types::{
-    Network, ProgramScopeNumericType, ProgramScopeType, SwigRoleAuthority, SwigRolePermission,
-    WalletAuthority, WalletPermission,
+    Network, ProgramScopeNumericType, ProgramScopeType, SwigRole, SwigRoleAction,
+    SwigRoleAuthority, SwigRoleList, SwigRolePermission, WalletAuthority, WalletPermission,
 };
-pub use wallet::{GetPolicyError, Policy, WalletClient};
+pub use wallet::{GetPolicyError, ListRolesError, Policy, WalletClient};
 
 #[cfg(test)]
 #[path = "../tests/transport/mod.rs"]
@@ -28,3 +28,7 @@ mod hosted_support;
 #[cfg(test)]
 #[path = "../tests/hosted/policy.rs"]
 mod policy_tests;
+
+#[cfg(test)]
+#[path = "../tests/hosted/roles.rs"]
+mod role_tests;
