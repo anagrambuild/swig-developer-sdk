@@ -47,3 +47,5 @@ mod history_tests;
 
 pub use types::{AssetTransfer, TransactionDirection, WalletTransaction, WalletTransactionList};
 pub use wallet::{ListSwigTokenTransactionsArgs, ListTokenTransactionsError};
+
+pub use types::{ClientSignatureRequest, ParticipantApprovalRequest, ParticipantSetApprovalPlan};
