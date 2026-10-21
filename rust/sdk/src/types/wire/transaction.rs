@@ -1,9 +1,13 @@
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
 
-use crate::ClientSignatureRequest;
+use crate::{ClientSignatureRequest, PreparedTransaction, WalletAddressInfo};
 
-use super::{decode_hex32, AuthorityWire, SignatureSchemeWire, WireError};
+use super::{
+    decode_hex32, decode_transaction, encode_transaction, AuthorityWire, NetworkWire,
+    OptionalPreparedKind, ParticipantSetApprovalPlanWire, SignatureSchemeWire,
+    TransactionEncodingWire, WireError,
+};
 
 #[serde_as]
 #[derive(Clone, Serialize, Deserialize)]
@@ -55,6 +59,123 @@ impl TryFrom<ClientSignatureRequest> for ClientSignatureRequestWire {
             message_hash: hex::encode(value.message_hash),
             slot: value.slot,
             counter: value.counter,
+        })
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WalletAddressInfoWire {
+    #[serde(alias = "swig_config_address")]
+    pub swig_config_address: String,
+    #[serde(alias = "wallet_address")]
+    pub wallet_address: String,
+}
+
+impl TryFrom<WalletAddressInfoWire> for WalletAddressInfo {
+    type Error = WireError;
+
+    fn try_from(value: WalletAddressInfoWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            swig_config_address: value
+                .swig_config_address
+                .parse()
+                .map_err(|_| WireError::Invalid("invalid Swig config address"))?,
+            wallet_address: value
+                .wallet_address
+                .parse()
+                .map_err(|_| WireError::Invalid("invalid wallet address"))?,
+        })
+    }
+}
+
+impl From<WalletAddressInfo> for WalletAddressInfoWire {
+    fn from(value: WalletAddressInfo) -> Self {
+        Self {
+            swig_config_address: value.swig_config_address.to_string(),
+            wallet_address: value.wallet_address.to_string(),
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PreparedTransactionWire {
+    #[serde(alias = "unsignedTransaction", alias = "unsigned_transaction")]
+    pub transaction: String,
+    #[serde(alias = "transaction_encoding")]
+    pub transaction_encoding: Option<TransactionEncodingWire>,
+    pub wallet: Option<WalletAddressInfoWire>,
+    #[serde(alias = "expires_at")]
+    pub expires_at: Option<String>,
+    pub network: Option<NetworkWire>,
+    #[serde(alias = "recent_blockhash")]
+    pub recent_blockhash: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub kind: OptionalPreparedKind,
+    #[serde(default, alias = "signature_requests")]
+    pub signature_requests: Vec<ClientSignatureRequestWire>,
+    #[serde(alias = "participant_set_approval_plan")]
+    pub participant_set_approval_plan: Option<ParticipantSetApprovalPlanWire>,
+}
+
+impl TryFrom<PreparedTransactionWire> for PreparedTransaction {
+    type Error = WireError;
+
+    fn try_from(value: PreparedTransactionWire) -> Result<Self, Self::Error> {
+        // Decode accepts only the validated Base64 marker, or the peer default.
+        let transaction = decode_transaction(&value.transaction)?;
+        // Endpoints inspect kind before conversion. It is not a public model field.
+        let _kind = value.kind.0;
+        Ok(Self {
+            transaction,
+            wallet: value.wallet.map(TryInto::try_into).transpose()?,
+            expires_at: value.expires_at,
+            network: value.network.map(TryInto::try_into).transpose()?,
+            recent_blockhash: value
+                .recent_blockhash
+                .map(|blockhash| {
+                    blockhash
+                        .parse()
+                        .map_err(|_| WireError::Invalid("invalid recent blockhash"))
+                })
+                .transpose()?,
+            signature_requests: value
+                .signature_requests
+                .into_iter()
+                .map(TryInto::try_into)
+                .collect::<Result<_, _>>()?,
+            participant_set_approval_plan: value
+                .participant_set_approval_plan
+                .map(TryInto::try_into)
+                .transpose()?,
+        })
+    }
+}
+
+impl TryFrom<PreparedTransaction> for PreparedTransactionWire {
+    type Error = WireError;
+
+    fn try_from(value: PreparedTransaction) -> Result<Self, Self::Error> {
+        Ok(Self {
+            transaction: encode_transaction(&value.transaction)?,
+            transaction_encoding: Some(TransactionEncodingWire::Base64),
+            wallet: value.wallet.map(Into::into),
+            expires_at: value.expires_at,
+            network: value.network.map(Into::into),
+            recent_blockhash: value
+                .recent_blockhash
+                .map(|blockhash| blockhash.to_string()),
+            kind: OptionalPreparedKind::default(),
+            signature_requests: value
+                .signature_requests
+                .into_iter()
+                .map(TryInto::try_into)
+                .collect::<Result<_, _>>()?,
+            participant_set_approval_plan: value
+                .participant_set_approval_plan
+                .map(TryInto::try_into)
+                .transpose()?,
         })
     }
 }

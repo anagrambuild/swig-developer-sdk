@@ -1,14 +1,188 @@
 use std::error::Error;
 
-use serde_json::json;
+use base64::{engine::general_purpose::STANDARD, Engine};
+use serde_json::{json, Value};
+use solana_message::{
+    compiled_instruction::CompiledInstruction, legacy::Message, v0, MessageHeader, VersionedMessage,
+};
 use solana_pubkey::Pubkey;
+use solana_signature::Signature;
+use solana_transaction::versioned::VersionedTransaction;
 
 use crate::{
-    types::wire::transaction::ClientSignatureRequestWire, ClientSignatureRequest, WalletAuthority,
+    types::wire::{
+        transaction::{ClientSignatureRequestWire, PreparedTransactionWire},
+        OptionalPreparedKind, PreparedTransactionKind,
+    },
+    ClientSignatureRequest, Network, PreparedTransaction, RecentBlockhash, WalletAddressInfo,
+    WalletAuthority,
 };
 
 const SECP256K1_KEY: &str = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
 const SECP256R1_KEY: &str = "036b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296";
+
+pub(crate) fn native_transaction(versioned: bool) -> VersionedTransaction {
+    let message = Message {
+        header: MessageHeader {
+            num_required_signatures: 1,
+            num_readonly_signed_accounts: 0,
+            num_readonly_unsigned_accounts: 1,
+        },
+        account_keys: vec![
+            Pubkey::new_from_array([1; 32]),
+            Pubkey::new_from_array([2; 32]),
+        ],
+        recent_blockhash: RecentBlockhash::new_from_array([3; 32]),
+        instructions: vec![CompiledInstruction {
+            program_id_index: 1,
+            accounts: vec![0],
+            data: vec![4, 5, 6],
+        }],
+    };
+    let message = if versioned {
+        VersionedMessage::V0(v0::Message {
+            header: message.header,
+            account_keys: message.account_keys,
+            recent_blockhash: message.recent_blockhash,
+            instructions: message.instructions,
+            address_table_lookups: vec![v0::MessageAddressTableLookup {
+                account_key: Pubkey::new_from_array([9; 32]),
+                writable_indexes: vec![0],
+                readonly_indexes: vec![1],
+            }],
+        })
+    } else {
+        VersionedMessage::Legacy(message)
+    };
+    VersionedTransaction {
+        signatures: vec![Signature::default()],
+        message,
+    }
+}
+
+pub(crate) fn prepared(versioned: bool) -> PreparedTransaction {
+    PreparedTransaction {
+        transaction: native_transaction(versioned),
+        wallet: Some(WalletAddressInfo {
+            swig_config_address: Pubkey::new_from_array([4; 32]),
+            wallet_address: Pubkey::new_from_array([5; 32]),
+        }),
+        expires_at: Some("2026-10-18T12:00:00Z".into()),
+        network: Some(Network::Devnet),
+        recent_blockhash: Some(RecentBlockhash::new_from_array([3; 32])),
+        signature_requests: vec![],
+        participant_set_approval_plan: None,
+    }
+}
+
+fn prepared_json() -> Result<Value, Box<dyn Error>> {
+    Ok(serde_json::to_value(PreparedTransactionWire::try_from(
+        prepared(false),
+    )?)?)
+}
+
+fn decode_prepared(value: Value) -> Result<PreparedTransaction, Box<dyn Error>> {
+    let wire: PreparedTransactionWire = serde_json::from_value(value)?;
+    Ok(wire.try_into()?)
+}
+
+#[test]
+fn legacy_and_versioned_transactions_round_trip_without_changing_bytes(
+) -> Result<(), Box<dyn Error>> {
+    for versioned in [false, true] {
+        let native = prepared(versioned);
+        let original_bytes = bincode::serialize(&native.transaction)?;
+        let wire = PreparedTransactionWire::try_from(native)?;
+        let json = serde_json::to_value(&wire)?;
+        assert_eq!(json["transactionEncoding"], "TRANSACTION_ENCODING_BASE64");
+        assert_eq!(json["network"], "NETWORK_DEVNET");
+        assert_eq!(
+            json["recentBlockhash"],
+            RecentBlockhash::new_from_array([3; 32]).to_string()
+        );
+        assert!(json["wallet"].get("network").is_none());
+        assert_eq!(json["wallet"].as_object().map(|value| value.len()), Some(2));
+        assert!(json.get("kind").is_none());
+        let native = decode_prepared(json)?;
+        assert_eq!(bincode::serialize(&native.transaction)?, original_bytes);
+        assert_eq!(
+            native.wallet.map(|wallet| wallet.wallet_address),
+            Some(Pubkey::new_from_array([5; 32]))
+        );
+        assert!(native.network == Some(Network::Devnet));
+    }
+    Ok(())
+}
+
+#[test]
+fn encoding_accepts_peer_defaults_and_rejects_unknown_markers() -> Result<(), Box<dyn Error>> {
+    for encoding in [
+        Value::Null,
+        json!(1),
+        json!("base64"),
+        json!("TRANSACTION_ENCODING_BASE64"),
+    ] {
+        let mut value = prepared_json()?;
+        value["transactionEncoding"] = encoding;
+        assert!(decode_prepared(value).is_ok());
+    }
+    let mut absent = prepared_json()?;
+    absent
+        .as_object_mut()
+        .ok_or("expected object")?
+        .remove("transactionEncoding");
+    assert!(decode_prepared(absent).is_ok());
+    for encoding in [
+        json!(0),
+        json!(2),
+        json!("base58"),
+        json!("TRANSACTION_ENCODING_UNSPECIFIED"),
+        json!(true),
+    ] {
+        let mut value = prepared_json()?;
+        value["transactionEncoding"] = encoding;
+        assert!(decode_prepared(value).is_err());
+    }
+    Ok(())
+}
+
+#[test]
+fn invalid_base64_truncated_trailing_and_unsanitized_transactions_fail(
+) -> Result<(), Box<dyn Error>> {
+    let bytes = bincode::serialize(&native_transaction(false))?;
+    let mut trailing = bytes.clone();
+    trailing.push(0);
+    let mut unsanitized = native_transaction(false);
+    unsanitized.signatures.clear();
+    for transaction in [
+        String::new(),
+        "not Base64".into(),
+        "AA==".into(),
+        STANDARD.encode(&bytes[..bytes.len() - 1]),
+        STANDARD.encode(trailing),
+        STANDARD.encode(bincode::serialize(&unsanitized)?),
+    ] {
+        let mut value = prepared_json()?;
+        value["transaction"] = json!(transaction);
+        assert!(decode_prepared(value).is_err());
+    }
+    let mut invalid = prepared(false);
+    invalid.transaction.signatures.clear();
+    assert!(PreparedTransactionWire::try_from(invalid).is_err());
+    Ok(())
+}
+
+#[test]
+fn metadata_is_validated_and_diagnostics_do_not_echo_inputs() -> Result<(), Box<dyn Error>> {
+    let mut value = prepared_json()?;
+    value["recentBlockhash"] = json!("secret-shaped-invalid-blockhash");
+    let error = decode_prepared(value).err().ok_or("expected failure")?;
+    assert_eq!(error.to_string(), "invalid recent blockhash");
+    let mut value = prepared_json()?;
+    value["wallet"]["walletAddress"] = json!("invalid-wallet");
+    assert!(decode_prepared(value).is_err());
+    Ok(())
+}
 
 #[test]
 fn signature_requests_convert_both_curves_and_preserve_exact_u64_slots(
@@ -73,5 +247,60 @@ fn malformed_signature_requests_and_unsupported_authorities_fail() -> Result<(),
         };
         assert!(ClientSignatureRequestWire::try_from(request).is_err());
     }
+    Ok(())
+}
+
+#[test]
+fn unspecified_kind_is_absent_and_known_kind_remains_private() -> Result<(), Box<dyn Error>> {
+    for kind in [
+        Value::Null,
+        json!(0),
+        json!("PREPARED_TRANSACTION_KIND_UNSPECIFIED"),
+    ] {
+        let mut value = prepared_json()?;
+        value["kind"] = kind;
+        let wire: PreparedTransactionWire = serde_json::from_value(value)?;
+        assert!(wire.kind.0.is_none());
+        let native = PreparedTransaction::try_from(wire)?;
+        assert!(
+            serde_json::to_value(PreparedTransactionWire::try_from(native)?)?
+                .get("kind")
+                .is_none()
+        );
+    }
+    for kind in [
+        json!(5),
+        json!("PREPARED_TRANSACTION_KIND_X402_PAYMENT"),
+        json!("x402-payment"),
+    ] {
+        let mut value = prepared_json()?;
+        value["kind"] = kind;
+        let wire: PreparedTransactionWire = serde_json::from_value(value)?;
+        assert!(wire.kind.0 == Some(PreparedTransactionKind::X402Payment));
+        assert!(serde_json::to_value(&wire)?.get("kind").is_none());
+        assert!(PreparedTransaction::try_from(wire).is_ok());
+    }
+    for kind in [
+        json!(7),
+        json!(-1),
+        json!(true),
+        json!({}),
+        json!("future-kind"),
+    ] {
+        assert!(serde_json::from_value::<OptionalPreparedKind>(kind).is_err());
+    }
+    Ok(())
+}
+
+#[test]
+fn peer_field_aliases_are_still_accepted() -> Result<(), Box<dyn Error>> {
+    let value = json!({
+        "unsigned_transaction": STANDARD.encode(bincode::serialize(&native_transaction(false))?),
+        "transaction_encoding": "base64", "recent_blockhash": RecentBlockhash::new_from_array([3; 32]).to_string(),
+        "signature_requests": [], "participant_set_approval_plan": null,
+    });
+    let native = decode_prepared(value)?;
+    assert!(native.signature_requests.is_empty());
+    assert!(native.network.is_none());
     Ok(())
 }
