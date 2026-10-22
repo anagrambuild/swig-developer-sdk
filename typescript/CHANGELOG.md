@@ -1,5 +1,16 @@
 # @swig-wallet/developer-sdk
 
+## Unreleased
+
+### Minor Changes
+
+- Add `swig.yield`, the Yield API client. Native Solana staking is the first
+  yield method: `prepareRole`, `deposit`, `exit` (all or partial), and
+  `withdraw` prepare unsigned transactions; `listOptions`, `estimate`,
+  `listPositions`, `getSummary`, and `listRewards` read validator options,
+  live rates, and indexed positions. `forWallet` binds a wallet for repeated
+  calls. Python exposes the same surface as `swig.yields`.
+
 ## 0.11.1
 
 ### Patch Changes

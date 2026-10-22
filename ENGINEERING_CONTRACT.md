@@ -148,6 +148,32 @@ A sponsor signature means the Solana RPC accepted the transaction; it may
 still be pending and is not confirmation or finality. A bundle ID means Jito
 accepted the bundle; it likewise may still be pending.
 
+## Yield API
+
+`api_yield.v1.ApiYieldService` (transaction-service). Every route is scoped to
+one Swig wallet config, requires `network`, and verifies the config belongs to
+the API key's organization (`NOT_FOUND` otherwise). Prepare routes bind the path
+value to `wallet.swig_config_address` (or `swig_config_address` for roles).
+
+| Method | Route |
+| --- | --- |
+| POST | `/api/yield/{swig_config_address}/role/prepare` |
+| POST | `/api/yield/{swig_config_address}/deposit/prepare` |
+| POST | `/api/yield/{swig_config_address}/exit/prepare` |
+| POST | `/api/yield/{swig_config_address}/withdraw/prepare` |
+| GET | `/api/yield/{swig_config_address}/options` |
+| GET | `/api/yield/{swig_config_address}/estimate` |
+| GET | `/api/yield/{swig_config_address}/positions` |
+| GET | `/api/yield/{swig_config_address}/summary` |
+| GET | `/api/yield/{swig_config_address}/rewards` |
+
+Prepare routes return the standard `PreparedTransaction` and never retry
+automatically; position seeds make deposits and partial exits safe to retry
+(`ALREADY_EXISTS` once the account exists). GET routes use the client retry
+policy. Rates are cached server-side for 15 seconds. Positions and rewards are
+indexed reads: page size defaults to 50 (maximum 200), and page tokens are bound
+to organization, network, and config.
+
 ## Ramp API
 
 One service covers both directions. Direction is carried by the buy or sell

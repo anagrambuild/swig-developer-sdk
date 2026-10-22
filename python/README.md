@@ -278,6 +278,65 @@ prepared = await wallet.build_transaction(
 
 The returned transaction is still signed and submitted by your application.
 
+## Yield
+
+`swig.yields` earns on an existing Swig wallet (`yield` is a Python keyword).
+Native Solana staking to an allowlisted validator is the first yield method.
+Prepare calls return unsigned transactions to authorize, sign, and submit.
+
+```python
+from swig_developer_sdk import PartialYieldExit, PreparedYieldRoleCreation
+
+options = await swig.yields.list_options(swig_config_address=config)
+validator = next(option for option in options if option.accepts_deposits)
+
+role = await swig.yields.prepare_role(
+    swig_config_address=config,
+    fee_payer=fee_payer,
+    yield_authority={"ed25519": {"public_key": agent_key}},
+    validator_vote_address=validator.vote_address,
+    max_deposit=10_000_000_000,
+    role_manager_authority={"ed25519": {"public_key": admin_key}},
+)
+if isinstance(role, PreparedYieldRoleCreation):
+    ...  # sign, submit and confirm role.transaction, then call prepare_role again
+
+deposit = await swig.yields.deposit(
+    swig_config_address=config,
+    fee_payer=fee_payer,
+    requester_authority={"ed25519": {"public_key": agent_key}},
+    amount=5_000_000_000,
+    validator_vote_address=validator.vote_address,
+    position_seed="deposit-1",
+)
+exit = await swig.yields.exit(
+    swig_config_address=config,
+    fee_payer=fee_payer,
+    requester_authority={"ed25519": {"public_key": agent_key}},
+    position_address=deposit.position_address,
+    amount="all",  # or PartialYieldExit(lamports=2_000_000_000, position_seed="exit-1")
+)
+withdrawal = await swig.yields.withdraw(
+    swig_config_address=config,
+    fee_payer=fee_payer,
+    requester_authority={"ed25519": {"public_key": agent_key}},
+    position_address=exit.exiting_position_address,
+)
+
+page = await swig.yields.list_positions(swig_config_address=config, page_size=50)
+summary = await swig.yields.get_summary(swig_config_address=config)
+rewards = await swig.yields.list_rewards(swig_config_address=config)
+projection = await swig.yields.estimate(
+    swig_config_address=config,
+    validator_vote_address=validator.vote_address,
+    principal=5_000_000_000,
+    horizon_days=365,
+)
+```
+
+Routes, role permissions, pagination, and errors match the TypeScript SDK; see
+`PARITY.md`.
+
 ## Read wallet state
 
 ```python
