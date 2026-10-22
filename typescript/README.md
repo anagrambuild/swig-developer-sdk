@@ -413,6 +413,120 @@ Policy metadata is a separate read:
 const policy = await swig.wallets.getPolicy(policyId);
 ```
 
+## Yield
+
+`swig.yield` earns on an existing Swig wallet. Native Solana staking to a
+validator on the Swig allowlist is the first yield method. Every call is scoped
+to one wallet config; prepare calls return an unsigned `PreparedTransaction`
+that you authorize, sign, and submit exactly like a transfer.
+
+| Client method              | Route                                                    |
+| -------------------------- | -------------------------------------------------------- |
+| `swig.yield.prepareRole`   | `POST /api/yield/{swig_config_address}/role/prepare`     |
+| `swig.yield.deposit`       | `POST /api/yield/{swig_config_address}/deposit/prepare`  |
+| `swig.yield.exit`          | `POST /api/yield/{swig_config_address}/exit/prepare`     |
+| `swig.yield.withdraw`      | `POST /api/yield/{swig_config_address}/withdraw/prepare` |
+| `swig.yield.listOptions`   | `GET /api/yield/{swig_config_address}/options`           |
+| `swig.yield.estimate`      | `GET /api/yield/{swig_config_address}/estimate`          |
+| `swig.yield.listPositions` | `GET /api/yield/{swig_config_address}/positions`         |
+| `swig.yield.getSummary`    | `GET /api/yield/{swig_config_address}/summary`           |
+| `swig.yield.listRewards`   | `GET /api/yield/{swig_config_address}/rewards`           |
+
+Bind a wallet once with `forWallet` to drop the repeated fields:
+
+```ts
+const yieldClient = swig.yield.forWallet({
+  swigConfigAddress: wallet.swigConfigAddress,
+  network: 'mainnet',
+});
+const options = await yieldClient.listOptions();
+const validator = options.find((option) => option.acceptsDeposits)!;
+// validator.rate?.estimatedNetAprBps: 600 = 6% APR after commission
+```
+
+### Prepare a role that can stake
+
+A role needs the Stake and System programs, a SOL allowance to fund deposits,
+and stake allowance to exit and withdraw. `prepareRole` reuses the lowest
+sufficient role, or prepares an AddRole transaction that creates one with
+exactly `Program(System)`, `Program(Stake)`, `SolLimit(maxDeposit)` and
+`StakeAll` — never `All` or `ManageAuthority`.
+
+```ts
+const role = await yieldClient.prepareRole({
+  feePayer: paymaster.address,
+  yieldAuthority: { ed25519: { publicKey: agentKey } },
+  validatorVoteAddress: validator.voteAddress,
+  maxDeposit: 10_000_000_000n,
+  // Needed only to create a role: an existing role with All or ManageAuthority.
+  roleManagerAuthority: { ed25519: { publicKey: adminKey } },
+});
+if (role.type === 'create') {
+  // Sign with the role manager and fee payer, submit, and wait for confirmation,
+  // then call prepareRole again (without roleId) to resolve the new role ID.
+}
+```
+
+### Deposit, exit, and withdraw
+
+```ts
+const deposit = await yieldClient.deposit({
+  feePayer: paymaster.address,
+  requesterAuthority: { ed25519: { publicKey: agentKey } },
+  amount: 5_000_000_000n, // principal, excluding rent and fees
+  validatorVoteAddress: validator.voteAddress,
+  positionSeed: 'deposit-2026-10-22', // reuse on retry; ALREADY_EXISTS if used
+});
+// deposit.positionAddress, deposit.rentLamports (funded by the fee payer)
+
+const exit = await yieldClient.exit({
+  feePayer: paymaster.address,
+  requesterAuthority: { ed25519: { publicKey: agentKey } },
+  positionAddress: deposit.positionAddress,
+  amount: 'all', // or { lamports: 2_000_000_000n, positionSeed: 'exit-1' }
+});
+
+// After cooldown (about one epoch), the position is inactive:
+const withdrawal = await yieldClient.withdraw({
+  feePayer: paymaster.address,
+  requesterAuthority: { ed25519: { publicKey: agentKey } },
+  positionAddress: exit.exitingPositionAddress,
+});
+```
+
+Each returns `{ transaction, ... }`; sign `transaction` with
+`signPreparedTransaction` (and passkey or participant-set flows as usual), then
+submit or sponsor it. Partial exits split a fully active position into a new
+account and require both parts to meet the network minimum delegation.
+Withdrawals currently return the position balance above its rent reserve; the
+reserve stays in the position until the Swig program supports closing stake
+accounts through SignV2.
+
+### Read positions, rewards, and estimates
+
+```ts
+const { positions, nextPageToken, lastUpdatedAt } =
+  await yieldClient.listPositions({ pageSize: 50 });
+const summary = await yieldClient.getSummary();
+const rewards = await yieldClient.listRewards();
+const projection = await yieldClient.estimate({
+  validatorVoteAddress: validator.voteAddress,
+  principal: 5_000_000_000n,
+  horizonDays: 365,
+});
+```
+
+Positions and rewards come from the Swig index; amounts are lamport strings and
+timestamps are RFC 3339 strings. Pages default to 50 entries (maximum 200) and
+page tokens only work for the wallet and network that issued them. Estimates are
+`principal × net APR × days / 365`, rounded down, with no compounding.
+
+Errors follow the API: `INVALID_ARGUMENT` (bad input or unsupported validator),
+`NOT_FOUND` (wallet not in your organization), `PERMISSION_DENIED` (role cannot
+perform the operation), `FAILED_PRECONDITION` (funds, position state, or
+lockup), `ALREADY_EXISTS` (position seed in use), and `UNAVAILABLE` (RPC, rate
+source, or index outage).
+
 ## Fiat ramps
 
 `swig.ramp` covers both directions. Direction is carried by the `buy` or `sell`

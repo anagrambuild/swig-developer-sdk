@@ -68,6 +68,28 @@ SOL or an SPL mint — encoded as `{"sol": {}}` or
 Status and transfer-state enums are decoded from their wire names through an
 explicit table; an unrecognized value is refused rather than guessed.
 
+## Yield
+
+TypeScript exposes `swig.yield`; Python exposes `swig.yields` because `yield` is
+a keyword. Native staking is the first yield method.
+
+| Surface | TypeScript | Python | Parity target |
+| --- | --- | --- | --- |
+| Role preparation | `swig.yield.prepareRole` | `swig.yields.prepare_role` | same body, same `existing`/`create` oneof, same decoded role actions |
+| Deposit | `swig.yield.deposit` | `swig.yields.deposit` | same `wallet` envelope, decimal-string `lamports`, optional `roleId` omitted when unset |
+| Exit | `swig.yield.exit` | `swig.yields.exit` | `'all'`/`"all"` encodes `{"all": {}}`; partial encodes `{"partial": {lamports, positionSeed}}` |
+| Withdrawal | `swig.yield.withdraw` | `swig.yields.withdraw` | same request and result |
+| Options | `swig.yield.listOptions` | `swig.yields.list_options` | same query and rate decoding |
+| Estimate | `swig.yield.estimate` | `swig.yields.estimate` | same query; both reject `horizonDays` outside 1..365 before sending |
+| Positions | `swig.yield.listPositions` | `swig.yields.list_positions` | same pagination query; both reject page sizes outside 1..200; same state table |
+| Summary | `swig.yield.getSummary` | `swig.yields.get_summary` | same lamport strings |
+| Rewards | `swig.yield.listRewards` | `swig.yields.list_rewards` | same pagination and decoding |
+| Wallet binding | `swig.yield.forWallet` | keyword arguments | TypeScript-only convenience |
+
+Lamport amounts cross the wire and come back as decimal strings. Position
+states decode `YIELD_POSITION_STATE_*` names or numbers to `activating`,
+`active`, `deactivating`, `inactive`, or `unspecified`.
+
 ## Signing
 
 TypeScript uses `@swig-wallet/developer-sdk/signers`. Python uses the

@@ -12,6 +12,7 @@ from .paymaster import PaymasterClient
 from .ramp import RampClient
 from .transactions import TransactionsClient
 from .wallets import WalletsClient
+from .yields import YieldClient
 
 
 class SwigClient:
@@ -50,6 +51,8 @@ class SwigClient:
         self.ramp = RampClient(http, network)
         self.transactions = TransactionsClient(http, network)
         self.wallets = WalletsClient(http, network)
+        # ``yield`` is a Python keyword, so the yield client is ``yields``.
+        self.yields = YieldClient(http, network)
 
     async def aclose(self) -> None:
         """Close connections and the owned transport; repeated calls are safe.
