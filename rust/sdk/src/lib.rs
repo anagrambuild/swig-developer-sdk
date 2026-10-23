@@ -2,10 +2,12 @@
 
 mod config;
 mod http;
+mod signing;
 mod types;
 mod wallet;
 
 pub use config::{ClientConfig, ClientError, HttpConfig, RetryOptions};
+pub use signing::{Secp256r1TransactionSigner, TransactionSignError, TransactionSigner};
 pub use solana_instruction::{AccountMeta, Instruction};
 pub use types::{
     ClientSignatureRequest, Network, ParticipantApprovalRequest, ParticipantSetApprovalPlan,
@@ -79,3 +81,7 @@ mod wallet_custom_transaction_tests;
 #[cfg(test)]
 #[path = "../tests/hosted/wallet_add_role.rs"]
 mod wallet_add_role_tests;
+
+#[cfg(test)]
+#[path = "../tests/signing/mod.rs"]
+mod signing_tests;
