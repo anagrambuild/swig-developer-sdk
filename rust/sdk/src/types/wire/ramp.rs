@@ -1,3 +1,4 @@
+use super::NetworkWire;
 use super::WireError;
 use crate::{
     CryptoAsset, RampBuyQuote, RampLocation, RampOrderRequest, RampQuote, RampQuoteDetails,
@@ -368,6 +369,26 @@ impl From<RampOrder> for RampOrderWire {
 #[derive(Deserialize)]
 pub(crate) struct OrderResponse {
     pub order: RampOrder,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct OrderContextRequest {
+    pub customer_id: String,
+    pub swig_config_address: String,
+    pub network: NetworkWire,
+    pub location: RampLocation,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CreateOrderRequest {
+    pub request_id: String,
+    pub configuration_id: String,
+    pub environment: &'static str,
+    pub context: OrderContextRequest,
+    pub route: RampRoute,
+    #[serde(flatten)]
+    pub order: RampOrderRequest,
 }
 
 impl TryFrom<String> for TransferStateWire {

@@ -1,10 +1,12 @@
 mod client;
+mod create_order;
 mod get_options;
 mod get_order;
 mod get_quotes;
 mod types;
 mod validation;
 pub use client::RampClient;
+pub use create_order::{CreateRampOrderArgs, CreateRampOrderError, RampOrderContext};
 pub use get_options::{
     GetRampOptionsArgs, GetRampOptionsError, RampAssetOption, RampCountry, RampDirection,
     RampFiatCurrencyOption, RampOptions, RampSubdivision,

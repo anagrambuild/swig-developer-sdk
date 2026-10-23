@@ -144,3 +144,7 @@ mod ramp_support;
 #[cfg(test)]
 #[path = "../tests/hosted/ramp_get_order.rs"]
 mod ramp_get_order_tests;
+
+#[cfg(test)]
+#[path = "../tests/hosted/ramp_create_order.rs"]
+mod ramp_create_order_tests;
