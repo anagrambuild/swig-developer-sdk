@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
 
 #[derive(Deserialize)]
@@ -48,4 +48,23 @@ pub(crate) struct PaymasterBalanceWire {
 pub(crate) struct PaymasterConfigurationWire {
     #[serde(default)]
     pub configured: bool,
+}
+
+#[derive(Serialize)]
+pub(crate) struct SponsorRequest {
+    pub base58_encoded_transaction: String,
+    pub network: &'static str,
+    #[serde(rename = "idempotencyKey", skip_serializing_if = "Option::is_none")]
+    pub idempotency_key: Option<String>,
+}
+
+#[serde_as]
+#[derive(Deserialize)]
+pub(crate) struct SubmittedTransactionWire {
+    #[serde(alias = "requestId")]
+    pub request_id: String,
+    pub signature: String,
+    #[serde(default, alias = "spentByPaymaster")]
+    #[serde_as(as = "DisplayFromStr")]
+    pub spent_by_paymaster: i64,
 }
