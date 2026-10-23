@@ -1,3 +1,4 @@
+mod approval;
 mod authority;
 mod participant;
 mod participants;

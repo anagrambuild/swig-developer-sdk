@@ -9,7 +9,9 @@ mod wallet;
 
 pub use config::{ClientConfig, ClientError, HttpConfig, RetryOptions};
 pub use participants::{
-    ParticipantSetCreationPlan, PrepareCreateParticipantSetArgs, PrepareCreateParticipantSetError,
+    CompileParticipantSetApprovalsArgs, CompileParticipantSetApprovalsError,
+    ParticipantSetApprovalCompilation, ParticipantSetCreationPlan, PrepareCreateParticipantSetArgs,
+    PrepareCreateParticipantSetError,
 };
 pub use signing::{
     Ed25519ParticipantSigner, ParticipantApprovalError, ParticipantSigner,
@@ -100,3 +102,7 @@ mod signing_tests;
 #[cfg(test)]
 #[path = "../tests/hosted/participant_creation.rs"]
 mod participant_creation_tests;
+
+#[cfg(test)]
+#[path = "../tests/hosted/participant_compilation.rs"]
+mod participant_compilation_tests;
