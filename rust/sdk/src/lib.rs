@@ -12,12 +12,17 @@ pub use participants::{
     ParticipantSetCreationPlan, PrepareCreateParticipantSetArgs, PrepareCreateParticipantSetError,
 };
 pub use signing::{
+    Ed25519ParticipantSigner, ParticipantApprovalError, ParticipantSigner,
+    Secp256k1ParticipantSigner, Secp256r1ParticipantSigner,
+};
+pub use signing::{
     Secp256k1TransactionSigner, Secp256r1TransactionSigner, TransactionSignError, TransactionSigner,
 };
 pub use solana_instruction::{AccountMeta, Instruction};
 pub use types::{
-    ClientSignatureRequest, Network, ParticipantApprovalRequest, ParticipantSetApprovalPlan,
-    PreparedTransaction, RecentBlockhash, WalletAddressInfo, WalletAuthority, WalletPermission,
+    ClientSignatureRequest, Network, ParticipantApproval, ParticipantApprovalRequest,
+    ParticipantSetApprovalPlan, PreparedTransaction, RecentBlockhash, WalletAddressInfo,
+    WalletAuthority, WalletPermission,
 };
 pub use wallet::{
     AssetTransfer, ComputeUnitPricePercentile, GetPolicyError, GetUsdBalanceError, ListRolesError,
