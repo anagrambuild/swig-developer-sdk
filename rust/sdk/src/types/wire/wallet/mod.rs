@@ -1,3 +1,4 @@
+pub(crate) mod add_role;
 pub(crate) mod assets;
 pub(crate) mod build_transaction;
 pub(crate) mod create;

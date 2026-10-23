@@ -1,3 +1,4 @@
+mod add_role;
 mod build_transaction;
 mod client;
 mod create;
@@ -10,6 +11,7 @@ mod prepare;
 mod swap;
 mod transfer;
 
+pub use add_role::{PrepareAddRoleArgs, PrepareAddRoleError};
 pub use build_transaction::{PrepareTransactionArgs, PrepareTransactionError};
 pub use client::WalletClient;
 pub use create::{PrepareCreateWalletArgs, PrepareCreateWalletError, WalletCreation};
