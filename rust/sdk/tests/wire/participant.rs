@@ -4,9 +4,14 @@ use serde_json::{json, Value};
 use solana_pubkey::Pubkey;
 
 use crate::{
-    types::wire::{ParticipantApprovalRequestWire, ParticipantSetApprovalPlanWire},
-    ParticipantApprovalRequest, ParticipantSetApprovalPlan, WalletAuthority,
+    types::wire::{
+        transaction::PreparedTransactionWire, ParticipantApprovalRequestWire,
+        ParticipantSetApprovalPlanWire,
+    },
+    ParticipantApprovalRequest, ParticipantSetApprovalPlan, PreparedTransaction, WalletAuthority,
 };
+
+use super::transaction::prepared;
 
 fn plan_json() -> Value {
     json!({
@@ -49,6 +54,29 @@ fn only_supported_plan_discriminator_decodes() -> Result<(), Box<dyn Error>> {
         value["type"] = invalid;
         assert!(serde_json::from_value::<ParticipantSetApprovalPlanWire>(value.clone()).is_err());
     }
+    Ok(())
+}
+
+#[test]
+fn compile_wire_omits_sdk_fields_and_keeps_transaction_network() -> Result<(), Box<dyn Error>> {
+    let mut native = prepared(false);
+    native.participant_set_approval_plan = Some(ParticipantSetApprovalPlan::try_from(
+        serde_json::from_value::<ParticipantSetApprovalPlanWire>(plan_json())?,
+    )?);
+    let encoded = serde_json::to_value(PreparedTransactionWire::try_from(native)?)?;
+    assert!(encoded.get("kind").is_none());
+    assert!(encoded["wallet"].get("network").is_none());
+    assert!(encoded["participantSetApprovalPlan"].get("type").is_none());
+    assert_eq!(encoded["network"], "NETWORK_DEVNET");
+    assert_eq!(
+        encoded["participantSetApprovalPlan"]["compilationEnvelope"],
+        plan_json()["compilationEnvelope"]
+    );
+    let decoded =
+        PreparedTransaction::try_from(serde_json::from_value::<PreparedTransactionWire>(encoded)?)?;
+    assert!(decoded
+        .participant_set_approval_plan
+        .is_some_and(|plan| plan.compilation_envelope == "opaque/bytes+=\nretain exactly"));
     Ok(())
 }
 

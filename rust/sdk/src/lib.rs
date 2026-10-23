@@ -8,7 +8,7 @@ mod wallet;
 pub use config::{ClientConfig, ClientError, HttpConfig, RetryOptions};
 pub use types::{
     ClientSignatureRequest, Network, ParticipantApprovalRequest, ParticipantSetApprovalPlan,
-    WalletAuthority, WalletPermission,
+    PreparedTransaction, RecentBlockhash, WalletAddressInfo, WalletAuthority, WalletPermission,
 };
 pub use wallet::{
     AssetTransfer, GetPolicyError, GetUsdBalanceError, ListRolesError,
