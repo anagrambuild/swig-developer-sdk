@@ -152,3 +152,7 @@ mod ramp_create_order_tests;
 #[cfg(test)]
 #[path = "../tests/hosted/ramp_prepare_transfer.rs"]
 mod ramp_prepare_transfer_tests;
+
+#[cfg(test)]
+#[path = "../tests/hosted/ramp_submit_transfer.rs"]
+mod ramp_submit_transfer_tests;

@@ -413,6 +413,17 @@ pub(crate) struct PreparedTransferResponse {
     pub prepared_transaction: PreparedTransactionWire,
     pub deposit: RampDeposit,
 }
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SubmitRequest {
+    pub transfer_id: String,
+    pub signed_transaction: String,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct SubmitResponse {
+    pub transfer: RampTransfer,
+}
 
 impl TryFrom<String> for TransferStateWire {
     type Error = &'static str;
