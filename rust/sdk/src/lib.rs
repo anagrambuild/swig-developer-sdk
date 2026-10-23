@@ -6,7 +6,10 @@ mod types;
 mod wallet;
 
 pub use config::{ClientConfig, ClientError, HttpConfig, RetryOptions};
-pub use types::{Network, WalletAuthority, WalletPermission};
+pub use types::{
+    ClientSignatureRequest, Network, ParticipantApprovalRequest, ParticipantSetApprovalPlan,
+    WalletAuthority, WalletPermission,
+};
 pub use wallet::{
     AssetTransfer, GetPolicyError, GetUsdBalanceError, ListRolesError,
     ListSwigTokenTransactionsArgs, ListTokenBalancesError, ListTokenTransactionsError, Policy,
