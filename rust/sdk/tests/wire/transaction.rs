@@ -11,7 +11,10 @@ use solana_transaction::versioned::VersionedTransaction;
 
 use crate::{
     types::wire::{
-        transaction::{ClientSignatureRequestWire, PreparedTransactionWire},
+        transaction::{
+            validate_prepared_transaction_shape, ClientSignatureRequestWire,
+            PreparedTransactionWire,
+        },
         OptionalPreparedKind, PreparedTransactionKind,
     },
     ClientSignatureRequest, Network, PreparedTransaction, RecentBlockhash, WalletAddressInfo,
@@ -82,8 +85,122 @@ fn prepared_json() -> Result<Value, Box<dyn Error>> {
 }
 
 fn decode_prepared(value: Value) -> Result<PreparedTransaction, Box<dyn Error>> {
+    validate_prepared_transaction_shape(&value)?;
     let wire: PreparedTransactionWire = serde_json::from_value(value)?;
     Ok(wire.try_into()?)
+}
+
+pub(crate) fn positional_prepared_responses(mut prepared: Value) -> Vec<Value> {
+    if let Some(fields) = prepared.as_object_mut() {
+        fields.remove("signatureRequests");
+        fields.remove("participantSetApprovalPlan");
+    }
+    let key = Pubkey::new_from_array([7; 32]).to_string();
+    let member = json!({
+        "memberIndex": 0, "authority": {"ed25519": {"publicKey": key}},
+        "challenge": "ab".repeat(32),
+    });
+    let plan = json!({
+        "type": "participantSet", "participantSetAddress": key, "roleId": 1,
+        "expirationSlot": "100", "nonce": 0, "transactionDigest": "ab".repeat(32),
+        "compilationEnvelope": "opaque", "threshold": 1, "members": [member],
+    });
+    let mut cases = vec![json!([
+        prepared["transaction"],
+        null,
+        prepared["wallet"],
+        null,
+        prepared["network"],
+        null,
+        null,
+        [],
+        null,
+    ])];
+    let mut wallet = prepared.clone();
+    wallet["wallet"] = json!([
+        prepared["wallet"]["swigConfigAddress"],
+        prepared["wallet"]["walletAddress"],
+    ]);
+    cases.push(wallet);
+    for field in ["signatureRequests", "signature_requests"] {
+        let mut value = prepared.clone();
+        value[field] = json!([["secp256r1", SECP256R1_KEY, "ab".repeat(32), "100", 0]]);
+        cases.push(value);
+    }
+    for field in [
+        "participantSetApprovalPlan",
+        "participant_set_approval_plan",
+    ] {
+        let mut value = prepared.clone();
+        value[field] = json!([
+            "participantSet",
+            key,
+            1,
+            "100",
+            0,
+            "ab".repeat(32),
+            "opaque",
+            1,
+            [member],
+        ]);
+        cases.push(value);
+        let mut value = prepared.clone();
+        value[field] = plan.clone();
+        value[field]["members"] = json!([[0, member["authority"], "ab".repeat(32)]]);
+        cases.push(value);
+        for (scheme, signer) in [
+            ("ed25519", key.as_str()),
+            ("secp256k1", SECP256K1_KEY),
+            ("secp256r1", SECP256R1_KEY),
+        ] {
+            let mut value = prepared.clone();
+            value[field] = plan.clone();
+            value[field]["members"][0]["authority"] = json!({scheme: [signer]});
+            cases.push(value);
+        }
+    }
+    cases
+}
+
+#[test]
+fn prepared_objects_reject_positional_arrays() -> Result<(), Box<dyn Error>> {
+    let accepted: Vec<_> = positional_prepared_responses(prepared_json()?)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, value)| decode_prepared(value).is_ok().then_some(index))
+        .collect();
+    assert!(
+        accepted.is_empty(),
+        "accepted positional objects: {accepted:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn prepared_metadata_preserves_object_collections() -> Result<(), Box<dyn Error>> {
+    let mut value = prepared_json()?;
+    value["signatureRequests"] = json!([
+        {"scheme": "secp256k1", "signer": SECP256K1_KEY, "messageHash": "ab".repeat(32), "slot": "100", "counter": 0},
+        {"scheme": "secp256r1", "signer": SECP256R1_KEY, "messageHash": "cd".repeat(32), "slot": "101", "counter": 1},
+    ]);
+    value["participantSetApprovalPlan"] = json!({
+        "participantSetAddress": Pubkey::new_from_array([7; 32]).to_string(),
+        "roleId": 1, "expirationSlot": "200", "nonce": 0,
+        "transactionDigest": "ab".repeat(32), "compilationEnvelope": "opaque", "threshold": 2,
+        "members": [
+            {"memberIndex": 0, "authority": {"ed25519": {"publicKey": Pubkey::new_from_array([8; 32]).to_string()}}, "challenge": "ab".repeat(32)},
+            {"memberIndex": 1, "authority": {"secp256r1": {"publicKey": SECP256R1_KEY}}, "challenge": "cd".repeat(32)},
+        ],
+    });
+    let native = decode_prepared(value)?;
+    assert_eq!(native.signature_requests.len(), 2);
+    assert_eq!(native.signature_requests[0].message_hash, [0xab; 32]);
+    assert_eq!(native.signature_requests[1].message_hash, [0xcd; 32]);
+    let plan = native.participant_set_approval_plan.ok_or("missing plan")?;
+    assert_eq!(plan.members.len(), 2);
+    assert_eq!(plan.members[0].member_index, 0);
+    assert_eq!(plan.members[1].member_index, 1);
+    Ok(())
 }
 
 #[test]

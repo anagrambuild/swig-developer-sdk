@@ -13,10 +13,10 @@ pub use types::{
 pub use wallet::{
     AssetTransfer, GetPolicyError, GetUsdBalanceError, ListRolesError,
     ListSwigTokenTransactionsArgs, ListTokenBalancesError, ListTokenTransactionsError, Policy,
-    PolicyAuthority, ProgramScopeNumericType, ProgramScopeType, SolBalance, SwigRole,
-    SwigRoleAction, SwigRoleAuthority, SwigRoleList, SwigRolePermission, SwigUsdBalance,
-    TokenBalance, TransactionDirection, WalletBalanceSummary, WalletClient, WalletTransaction,
-    WalletTransactionList,
+    PolicyAuthority, PrepareCreateWalletArgs, PrepareCreateWalletError, ProgramScopeNumericType,
+    ProgramScopeType, SolBalance, SwigRole, SwigRoleAction, SwigRoleAuthority, SwigRoleList,
+    SwigRolePermission, SwigUsdBalance, TokenBalance, TransactionDirection, WalletBalanceSummary,
+    WalletClient, WalletCreation, WalletTransaction, WalletTransactionList,
 };
 
 #[cfg(test)]
@@ -46,3 +46,11 @@ mod balance_tests;
 #[cfg(test)]
 #[path = "../tests/hosted/history.rs"]
 mod history_tests;
+
+#[cfg(test)]
+#[path = "../tests/hosted/wallet_preparation_support.rs"]
+mod wallet_preparation_support;
+
+#[cfg(test)]
+#[path = "../tests/hosted/wallet_creation.rs"]
+mod wallet_creation_tests;
