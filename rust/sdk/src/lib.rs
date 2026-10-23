@@ -6,7 +6,7 @@ mod types;
 mod wallet;
 
 pub use config::{ClientConfig, ClientError, HttpConfig, RetryOptions};
-pub use types::Network;
+pub use types::{Network, WalletAuthority, WalletPermission};
 pub use wallet::WalletClient;
 
 #[cfg(test)]

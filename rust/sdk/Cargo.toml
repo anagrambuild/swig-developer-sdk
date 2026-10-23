@@ -9,6 +9,7 @@ description = "Swig Developer SDK for hosted clients and native transaction sign
 readme = "README.md"
 
 [dependencies]
+solana-pubkey = "4.1"
 thiserror = "2"
 reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
@@ -17,8 +18,12 @@ tokio = { version = "1", features = ["time"] }
 
 [dev-dependencies]
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
+hex = "0.4"
 http = "1"
+k256 = { version = "0.13", default-features = false, features = ["arithmetic"] }
+p256 = { version = "0.13", default-features = false, features = ["arithmetic"] }
 reqwest = { version = "0.12.28", default-features = false, features = ["stream"] }
+serde_with = { version = "=3.17.0", default-features = false, features = ["std", "macros"] }
 tokio = { version = "1", features = ["macros", "rt"] }
 
 [lints.rust]
