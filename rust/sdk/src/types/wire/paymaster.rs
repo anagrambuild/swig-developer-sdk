@@ -68,3 +68,24 @@ pub(crate) struct SubmittedTransactionWire {
     #[serde_as(as = "DisplayFromStr")]
     pub spent_by_paymaster: i64,
 }
+
+#[derive(Serialize)]
+pub(crate) struct SponsorBundleRequest {
+    pub base58_encoded_transactions: Vec<String>,
+    pub network: &'static str,
+    #[serde(rename = "idempotencyKey", skip_serializing_if = "Option::is_none")]
+    pub idempotency_key: Option<String>,
+}
+
+#[serde_as]
+#[derive(Deserialize)]
+pub(crate) struct SubmittedTransactionBundleWire {
+    #[serde(alias = "requestId")]
+    pub request_id: String,
+    #[serde(alias = "bundleId")]
+    pub bundle_id: String,
+    pub signatures: Vec<String>,
+    #[serde(default, alias = "estimatedSpentByPaymaster")]
+    #[serde_as(as = "DisplayFromStr")]
+    pub estimated_spent_by_paymaster: u64,
+}
