@@ -5,6 +5,41 @@ use crate::{ExactSvmExtra, ExactSvmPaymentRequirement, X402ResourceInfoV2};
 
 use super::WireError;
 
+impl From<&ExactSvmPaymentRequirement> for ExactSvmRequirementWire {
+    fn from(value: &ExactSvmPaymentRequirement) -> Self {
+        Self {
+            scheme: value.scheme.clone(),
+            network: value.network.clone(),
+            amount: value.amount.clone(),
+            asset: value.asset.to_string(),
+            pay_to: value.pay_to.to_string(),
+            max_timeout_seconds: value.max_timeout_seconds,
+            extra: ExactSvmExtraWire {
+                fee_payer: value.extra.fee_payer.to_string(),
+                memo: value.extra.memo.clone(),
+                recent_blockhash: value.extra.recent_blockhash.clone(),
+                last_valid_block_height: value.extra.last_valid_block_height.clone(),
+            },
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub(crate) struct ExactSvmPayloadWire {
+    pub transaction: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PaymentPayloadWire {
+    pub x402_version: u8,
+    pub resource: X402ResourceInfoV2,
+    pub accepted: ExactSvmRequirementWire,
+    pub payload: ExactSvmPayloadWire,
+    #[serde(skip_serializing_if = "Value::is_null")]
+    pub extensions: Value,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PaymentRequiredHeaderWire {
