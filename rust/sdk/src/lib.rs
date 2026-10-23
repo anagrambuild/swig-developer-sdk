@@ -13,8 +13,9 @@ pub use types::{
 pub use wallet::{
     AssetTransfer, GetPolicyError, GetUsdBalanceError, ListRolesError,
     ListSwigTokenTransactionsArgs, ListTokenBalancesError, ListTokenTransactionsError, Policy,
-    PolicyAuthority, PrepareCreateWalletArgs, PrepareCreateWalletError, PrepareTransferSolArgs,
-    PrepareTransferSolError, PrepareTransferTokenArgs, PrepareTransferTokenError,
+    PolicyAuthority, PrepareCreateWalletArgs, PrepareCreateWalletError, PrepareOperation,
+    PrepareTransferSolArgs, PrepareTransferSolError, PrepareTransferTokenArgs,
+    PrepareTransferTokenError, PrepareTransfersArgs, PrepareTransfersError,
     ProgramScopeNumericType, ProgramScopeType, SolBalance, SwigRole, SwigRoleAction,
     SwigRoleAuthority, SwigRoleList, SwigRolePermission, SwigUsdBalance, TokenBalance,
     TransactionDirection, WalletBalanceSummary, WalletClient, WalletCreation, WalletTransaction,
@@ -60,3 +61,7 @@ mod wallet_creation_tests;
 #[cfg(test)]
 #[path = "../tests/hosted/wallet_transfers.rs"]
 mod wallet_transfer_tests;
+
+#[cfg(test)]
+#[path = "../tests/hosted/wallet_batch_preparation.rs"]
+mod wallet_batch_preparation_tests;
