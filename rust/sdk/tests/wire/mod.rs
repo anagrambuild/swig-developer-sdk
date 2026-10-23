@@ -1,5 +1,6 @@
 mod authority;
 mod participant;
+mod participants;
 mod permission;
 mod policy;
 mod roles;
