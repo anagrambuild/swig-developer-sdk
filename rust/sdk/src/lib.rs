@@ -10,6 +10,8 @@ mod types;
 mod wallet;
 pub mod x402;
 
+pub use x402::{PrepareX402PaymentArgs, PrepareX402PaymentError, X402PaymentPreparation};
+
 pub use x402::{CreateX402PaymentError, ExactSvmPayload, PaymentPayloadV2, X402PaymentSubmission};
 
 pub use x402::{
@@ -176,3 +178,7 @@ mod x402_requirement_tests;
 #[cfg(test)]
 #[path = "../tests/x402/payment_header.rs"]
 mod x402_payment_header_tests;
+
+#[cfg(test)]
+#[path = "../tests/x402/hosted.rs"]
+mod x402_hosted_tests;

@@ -15,7 +15,6 @@ pub(crate) mod x402;
 
 pub(crate) use approval::ApprovalWire;
 pub(crate) use authority::{validate_authority_shape, AuthorityWire};
-#[cfg(test)]
 pub(crate) use encoding::PreparedTransactionKind;
 pub(crate) use encoding::{
     decode_hex32, decode_transaction, encode_transaction, OptionalPreparedKind,
