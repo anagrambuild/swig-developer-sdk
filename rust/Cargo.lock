@@ -1366,6 +1366,7 @@ dependencies = [
  "http",
  "k256",
  "p256",
+ "percent-encoding",
  "reqwest",
  "serde",
  "serde_json",

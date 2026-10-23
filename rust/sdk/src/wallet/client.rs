@@ -5,10 +5,6 @@ use crate::{http::HttpClient, ClientConfig, ClientError, Network};
 /// A reusable hosted wallet client. Clones share the connection pool.
 #[derive(Clone)]
 pub struct WalletClient {
-    #[allow(
-        dead_code,
-        reason = "Consumed by wallet operations in the next stacked change"
-    )]
     pub(crate) http: Arc<HttpClient>,
     #[allow(
         dead_code,
