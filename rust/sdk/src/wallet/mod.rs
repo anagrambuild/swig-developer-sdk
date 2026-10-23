@@ -1,3 +1,4 @@
+mod build_transaction;
 mod client;
 mod create;
 mod get_policy;
@@ -9,6 +10,7 @@ mod prepare;
 mod swap;
 mod transfer;
 
+pub use build_transaction::{PrepareTransactionArgs, PrepareTransactionError};
 pub use client::WalletClient;
 pub use create::{PrepareCreateWalletArgs, PrepareCreateWalletError, WalletCreation};
 pub use get_policy::{GetPolicyError, Policy, PolicyAuthority};
