@@ -3,6 +3,7 @@ mod get_policy;
 mod get_usd_balance;
 mod list_roles;
 mod list_token_balances;
+mod list_token_transactions;
 
 pub use client::WalletClient;
 pub use get_policy::{GetPolicyError, Policy, PolicyAuthority};
@@ -13,4 +14,8 @@ pub use list_roles::{
 };
 pub use list_token_balances::{
     ListTokenBalancesError, SolBalance, TokenBalance, WalletBalanceSummary,
+};
+pub use list_token_transactions::{
+    AssetTransfer, ListSwigTokenTransactionsArgs, ListTokenTransactionsError, TransactionDirection,
+    WalletTransaction, WalletTransactionList,
 };

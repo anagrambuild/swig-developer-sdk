@@ -1,8 +1,12 @@
 use crate::types::wire::WireError;
-use crate::{SolBalance, SwigUsdBalance, TokenBalance, WalletBalanceSummary};
+use crate::{
+    AssetTransfer, SolBalance, SwigUsdBalance, TokenBalance, TransactionDirection,
+    WalletBalanceSummary, WalletTransaction, WalletTransactionList,
+};
 use serde::Deserialize;
 use serde_with::{serde_as, DisplayFromStr};
 use solana_pubkey::Pubkey;
+use solana_signature::Signature;
 use std::collections::BTreeMap;
 
 #[derive(Deserialize)]
@@ -32,6 +36,28 @@ impl TryFrom<EnumValue> for AssetKind {
                 _ => Err(WireError::Invalid("unknown asset kind")),
             },
             _ => Err(WireError::Invalid("unknown asset kind")),
+        }
+    }
+}
+#[derive(Deserialize)]
+#[serde(try_from = "EnumValue")]
+pub(crate) struct DirectionWire(pub TransactionDirection);
+impl TryFrom<EnumValue> for DirectionWire {
+    type Error = WireError;
+    fn try_from(value: EnumValue) -> Result<Self, Self::Error> {
+        match value {
+            EnumValue::Code(1) => Ok(Self(TransactionDirection::Inflow)),
+            EnumValue::Code(2) => Ok(Self(TransactionDirection::Outflow)),
+            EnumValue::Name(name) => match name.as_str() {
+                "SWIG_TOKEN_TRANSACTION_DIRECTION_INFLOW" | "inflow" => {
+                    Ok(Self(TransactionDirection::Inflow))
+                }
+                "SWIG_TOKEN_TRANSACTION_DIRECTION_OUTFLOW" | "outflow" => {
+                    Ok(Self(TransactionDirection::Outflow))
+                }
+                _ => Err(WireError::Invalid("unknown transaction direction")),
+            },
+            _ => Err(WireError::Invalid("unknown transaction direction")),
         }
     }
 }
@@ -186,6 +212,96 @@ impl TryFrom<BalanceSummaryWire> for WalletBalanceSummary {
             sol_balance,
             token_balances,
             total_usd_value: value.total_usd_value,
+        })
+    }
+}
+#[serde_as]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WalletTransactionWire {
+    #[serde_as(as = "DisplayFromStr")]
+    #[serde(alias = "transaction_signature")]
+    pub transaction_signature: Signature,
+    #[serde_as(as = "DisplayFromStr")]
+    pub slot: u64,
+    #[serde(alias = "block_time")]
+    pub block_time: Option<String>,
+    #[serde_as(as = "DisplayFromStr")]
+    #[serde(alias = "owner_address")]
+    pub owner_address: Pubkey,
+    #[serde_as(as = "DisplayFromStr")]
+    #[serde(alias = "wallet_address")]
+    pub wallet_address: Pubkey,
+    #[serde(default, alias = "is_subaccount")]
+    pub is_subaccount: bool,
+    #[serde(default, alias = "token_account_address")]
+    pub token_account_address: String,
+    pub direction: DirectionWire,
+    #[serde(flatten)]
+    pub asset: AssetWire,
+}
+impl TryFrom<WalletTransactionWire> for WalletTransaction {
+    type Error = WireError;
+    fn try_from(value: WalletTransactionWire) -> Result<Self, Self::Error> {
+        let transfer = match NormalizedAsset::try_from(value.asset)? {
+            NormalizedAsset::Sol(balance) => AssetTransfer::Sol {
+                lamports: balance.lamports,
+                ui_amount: balance.ui_amount,
+                usd_price: balance.usd_price,
+                usd_value: balance.usd_value,
+            },
+            NormalizedAsset::Token(balance) => AssetTransfer::Token {
+                token_account_address: value
+                    .token_account_address
+                    .parse()
+                    .map_err(|_| WireError::Invalid("invalid token account address"))?,
+                mint_address: balance.mint_address,
+                token_program: balance.token_program,
+                symbol: balance.symbol,
+                name: balance.name,
+                amount_raw: balance.amount_raw,
+                decimals: balance.decimals,
+                ui_amount: balance.ui_amount,
+                usd_price: balance.usd_price,
+                usd_value: balance.usd_value,
+            },
+        };
+        Ok(Self {
+            transaction_signature: value.transaction_signature,
+            slot: value.slot,
+            block_time: value.block_time,
+            owner_address: value.owner_address,
+            wallet_address: value.wallet_address,
+            is_subaccount: value.is_subaccount,
+            direction: value.direction.0,
+            transfer,
+        })
+    }
+}
+#[serde_as]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TransactionListWire {
+    #[serde_as(as = "DisplayFromStr")]
+    #[serde(alias = "swig_config_address")]
+    pub swig_config_address: Pubkey,
+    #[serde_as(as = "DisplayFromStr")]
+    #[serde(alias = "wallet_address")]
+    pub wallet_address: Pubkey,
+    #[serde(default)]
+    pub transactions: Vec<WalletTransactionWire>,
+}
+impl TryFrom<TransactionListWire> for WalletTransactionList {
+    type Error = WireError;
+    fn try_from(value: TransactionListWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            swig_config_address: value.swig_config_address,
+            wallet_address: value.wallet_address,
+            transactions: value
+                .transactions
+                .into_iter()
+                .map(WalletTransaction::try_from)
+                .collect::<Result<_, _>>()?,
         })
     }
 }
