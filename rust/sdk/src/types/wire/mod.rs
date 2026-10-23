@@ -11,6 +11,7 @@ pub(crate) mod policy;
 pub(crate) mod ramp;
 pub(crate) mod transaction;
 pub(crate) mod wallet;
+pub(crate) mod x402;
 
 pub(crate) use approval::ApprovalWire;
 pub(crate) use authority::{validate_authority_shape, AuthorityWire};
