@@ -11,15 +11,15 @@ pub use types::{
     PreparedTransaction, RecentBlockhash, WalletAddressInfo, WalletAuthority, WalletPermission,
 };
 pub use wallet::{
-    AssetTransfer, GetPolicyError, GetUsdBalanceError, ListRolesError,
+    AssetTransfer, ComputeUnitPricePercentile, GetPolicyError, GetUsdBalanceError, ListRolesError,
     ListSwigTokenTransactionsArgs, ListTokenBalancesError, ListTokenTransactionsError, Policy,
     PolicyAuthority, PrepareCreateWalletArgs, PrepareCreateWalletError, PrepareOperation,
-    PrepareTransferSolArgs, PrepareTransferSolError, PrepareTransferTokenArgs,
-    PrepareTransferTokenError, PrepareTransfersArgs, PrepareTransfersError,
-    ProgramScopeNumericType, ProgramScopeType, SolBalance, SwigRole, SwigRoleAction,
-    SwigRoleAuthority, SwigRoleList, SwigRolePermission, SwigUsdBalance, TokenBalance,
-    TransactionDirection, WalletBalanceSummary, WalletClient, WalletCreation, WalletTransaction,
-    WalletTransactionList,
+    PrepareSwapArgs, PrepareSwapError, PrepareTransferSolArgs, PrepareTransferSolError,
+    PrepareTransferTokenArgs, PrepareTransferTokenError, PrepareTransfersArgs,
+    PrepareTransfersError, ProgramScopeNumericType, ProgramScopeType, SolBalance, SwapOptions,
+    SwapQuoteMode, SwigRole, SwigRoleAction, SwigRoleAuthority, SwigRoleList, SwigRolePermission,
+    SwigUsdBalance, TokenBalance, TransactionDirection, WalletBalanceSummary, WalletClient,
+    WalletCreation, WalletTransaction, WalletTransactionList,
 };
 
 #[cfg(test)]
@@ -65,3 +65,7 @@ mod wallet_transfer_tests;
 #[cfg(test)]
 #[path = "../tests/hosted/wallet_batch_preparation.rs"]
 mod wallet_batch_preparation_tests;
+
+#[cfg(test)]
+#[path = "../tests/hosted/wallet_swaps.rs"]
+mod wallet_swap_tests;
