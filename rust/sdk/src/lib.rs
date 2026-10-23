@@ -4,11 +4,14 @@ mod config;
 mod http;
 mod participants;
 mod paymaster;
+mod ramp;
 mod signing;
 mod types;
 mod wallet;
 
-pub use config::{ClientConfig, ClientError, HttpConfig, RetryOptions};
+pub use config::{
+    ClientConfig, ClientError, HttpConfig, RampConfig, RampEnvironment, RetryOptions,
+};
 pub use participants::{
     CompileParticipantSetApprovalsArgs, CompileParticipantSetApprovalsError,
     ParticipantSetApprovalCompilation, ParticipantSetCreationPlan, PrepareCreateParticipantSetArgs,
@@ -19,6 +22,7 @@ pub use paymaster::{
     SponsorError, SponsorSignedTransactionArgs, SponsorSignedTransactionBundleArgs,
     SubmittedTransaction, SubmittedTransactionBundle,
 };
+pub use ramp::*;
 pub use signing::{
     Ed25519ParticipantSigner, ParticipantApprovalError, ParticipantSigner,
     Secp256k1ParticipantSigner, Secp256r1ParticipantSigner,
@@ -124,3 +128,7 @@ mod paymaster_sponsor_tests;
 #[cfg(test)]
 #[path = "../tests/hosted/paymaster_bundle.rs"]
 mod paymaster_bundle_tests;
+
+#[cfg(test)]
+#[path = "../tests/hosted/ramp_options.rs"]
+mod ramp_options_tests;
