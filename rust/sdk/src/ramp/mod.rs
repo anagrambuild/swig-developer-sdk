@@ -3,6 +3,7 @@ mod create_order;
 mod get_options;
 mod get_order;
 mod get_quotes;
+mod prepare_transfer;
 mod types;
 mod validation;
 pub use client::RampClient;
@@ -13,6 +14,9 @@ pub use get_options::{
 };
 pub use get_order::GetRampOrderError;
 pub use get_quotes::{GetRampQuotesArgs, GetRampQuotesError, RampQuote, RampQuoteDetails};
+pub use prepare_transfer::{
+    PrepareRampTransferArgs, PrepareRampTransferError, PreparedRampTransfer,
+};
 pub use types::CryptoAsset;
 pub use types::{
     CryptoAmount, FiatAmount, RampBuyQuote, RampLocation, RampOrderRequest, RampRoute,
