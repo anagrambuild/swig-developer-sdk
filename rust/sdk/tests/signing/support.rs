@@ -1,4 +1,5 @@
 use crate::{ClientSignatureRequest, Network, PreparedTransaction, WalletAuthority};
+use k256::ecdsa::SigningKey as Secp256k1Key;
 use p256::ecdsa::SigningKey as Secp256r1Key;
 use sha2::{Digest, Sha256};
 use sha3::Keccak256;
@@ -126,6 +127,15 @@ pub(super) fn preparation(
 
 pub(super) fn secp256r1_authority(key: &Secp256r1Key) -> Result<WalletAuthority, Box<dyn Error>> {
     Ok(WalletAuthority::Secp256r1 {
+        public_key: key
+            .verifying_key()
+            .to_encoded_point(true)
+            .as_bytes()
+            .try_into()?,
+    })
+}
+pub(super) fn secp256k1_authority(key: &Secp256k1Key) -> Result<WalletAuthority, Box<dyn Error>> {
+    Ok(WalletAuthority::Secp256k1 {
         public_key: key
             .verifying_key()
             .to_encoded_point(true)
