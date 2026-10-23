@@ -5,5 +5,6 @@ mod list_roles;
 pub use client::WalletClient;
 pub use get_policy::{GetPolicyError, Policy, PolicyAuthority};
 pub use list_roles::{
-    ProgramScopeNumericType, ProgramScopeType, SwigRoleAuthority, SwigRolePermission,
+    ListRolesError, ProgramScopeNumericType, ProgramScopeType, SwigRole, SwigRoleAction,
+    SwigRoleAuthority, SwigRoleList, SwigRolePermission,
 };
