@@ -10,6 +10,13 @@ use crate::{
 mod requests;
 
 #[test]
+fn invalid_response_keeps_a_static_message_without_a_source() {
+    let error = HttpError::InvalidResponse("malformed policy");
+    assert_eq!(error.to_string(), "invalid response: malformed policy");
+    assert!(error.source().is_none());
+}
+
+#[test]
 fn credentials_are_validated_without_disclosing_the_value() {
     for key in ["", "   ", "private-key\r\nheader", "private-key\0value"] {
         let result = HttpClient::new(HttpConfig::new(key.into()));

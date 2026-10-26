@@ -247,6 +247,12 @@ pub(crate) enum HttpError {
     RequestFailed,
     #[error("response exceeds size limit")]
     ResponseTooLarge,
+    #[error("invalid response: {0}")]
+    #[allow(
+        dead_code,
+        reason = "Produced by typed API decoders in the next stack slice"
+    )]
+    InvalidResponse(&'static str),
     #[error("authentication required")]
     Unauthenticated,
     #[error("permission denied")]
