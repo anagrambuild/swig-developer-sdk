@@ -8,9 +8,7 @@
   key's organization owns: `swig.dex.transactions.list` (newest first),
   `swig.dex.transactions.get`, and `swig.dex.positions.list` (latest state per
   position, Raydium CLMM today).
-- Narrow a list with `filters`, a list of `DexTransactionFilter` or
-  `DexPositionFilter` objects such as `{ kind: 'startSlot', value: 357_000_000n }`.
-  Filters combine with AND, in any order, at most one of each kind: inclusive
+- Narrow a list with optional filter arguments, combined with AND: inclusive
   `startSlot`/`endSlot`, `protocol`, `actionType` and `swigVaultAddress` for
   transactions, and `positionStatus`, `protocol` and `swigVaultAddress` for
   positions. Pass `nextPageToken` back as `pageToken` with the same filters.

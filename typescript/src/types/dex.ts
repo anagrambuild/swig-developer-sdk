@@ -125,29 +125,20 @@ export interface DexTransaction {
 }
 
 /**
- * Slots are inclusive. `protocol`, `actionType` and `swigVaultAddress` must
- * match the same action; a matching transaction keeps all of the Swig's actions.
+ * Every filter is optional and they combine with AND. Slots are inclusive.
+ * `protocol`, `actionType` and `swigVaultAddress` must match the same action;
+ * a matching transaction keeps all of the Swig's actions.
  */
-export type DexTransactionFilter =
-  | { kind: 'startSlot'; value: bigint }
-  | { kind: 'endSlot'; value: bigint }
-  | { kind: 'protocol'; value: DexProtocol }
-  | { kind: 'actionType'; value: DexActionType }
-  | { kind: 'swigVaultAddress'; value: string };
-
-/** Each filter applies to the position. */
-export type DexPositionFilter =
-  | { kind: 'positionStatus'; value: DexPositionStatus }
-  | { kind: 'protocol'; value: DexProtocol }
-  | { kind: 'swigVaultAddress'; value: string };
-
 export interface ListDexTransactionsArgs {
   swigConfigAddress: string;
   network?: Network;
   pageSize?: number;
   pageToken?: string;
-  /** Combined with AND, in any order; at most one filter of each kind. */
-  filters?: DexTransactionFilter[];
+  startSlot?: number;
+  endSlot?: number;
+  protocol?: DexProtocol;
+  actionType?: DexActionType;
+  swigVaultAddress?: string;
 }
 
 export interface ListDexTransactionsResult {
@@ -199,13 +190,15 @@ export interface DexClosedPosition extends DexPositionBase {
 
 export type DexPosition = DexOpenPosition | DexClosedPosition;
 
+/** Every filter is optional, applies to the position, and they combine with AND. */
 export interface ListDexPositionsArgs {
   swigConfigAddress: string;
   network?: Network;
   pageSize?: number;
   pageToken?: string;
-  /** Combined with AND, in any order; at most one filter of each kind. */
-  filters?: DexPositionFilter[];
+  positionStatus?: DexPositionStatus;
+  protocol?: DexProtocol;
+  swigVaultAddress?: string;
 }
 
 export interface ListDexPositionsResult {
@@ -216,22 +209,16 @@ export interface ListDexPositionsResult {
 
 export interface DexAssetAmountWire {
   mintAddress?: string;
-  mint_address?: string;
   amountRaw?: string;
-  amount_raw?: string;
   decimals?: number;
 }
 
 /** The fields every action message may carry; each action uses its own subset. */
 export interface DexActionWire {
   protocolInstruction?: string;
-  protocol_instruction?: string;
   protocolActorAddress?: string;
-  protocol_actor_address?: string;
   dexPoolAddress?: string;
-  dex_pool_address?: string;
   dexPositionAddress?: string;
-  dex_position_address?: string;
   input?: DexAssetAmountWire;
   output?: DexAssetAmountWire;
   deposits?: DexAssetAmountWire[];
@@ -242,49 +229,34 @@ export interface DexActionWire {
 export interface DexActionPayloadWire {
   swap?: DexActionWire;
   positionOpen?: DexActionWire;
-  position_open?: DexActionWire;
   liquidityAdd?: DexActionWire;
-  liquidity_add?: DexActionWire;
   liquidityRemove?: DexActionWire;
-  liquidity_remove?: DexActionWire;
   positionRebalance?: DexActionWire;
-  position_rebalance?: DexActionWire;
   feeClaim?: DexActionWire;
-  fee_claim?: DexActionWire;
   rewardClaim?: DexActionWire;
-  reward_claim?: DexActionWire;
   positionClose?: DexActionWire;
-  position_close?: DexActionWire;
 }
 
 export interface DexTransactionActionWire {
   actionIndex?: number;
-  action_index?: number;
   swigVaultAddress?: string;
-  swig_vault_address?: string;
   actingRoleId?: number;
-  acting_role_id?: number;
   protocol?: string;
   dexProgramAddress?: string;
-  dex_program_address?: string;
   action?: DexActionPayloadWire;
 }
 
 export interface DexTransactionWire {
   swigConfigAddress?: string;
-  swig_config_address?: string;
   transactionSignature?: string;
-  transaction_signature?: string;
   slot?: number | string;
   blockTime?: string;
-  block_time?: string;
   actions?: DexTransactionActionWire[];
 }
 
 export interface ListDexTransactionsWire {
   transactions?: DexTransactionWire[];
   nextPageToken?: string;
-  next_page_token?: string;
 }
 
 export interface GetDexTransactionWire {
@@ -293,44 +265,28 @@ export interface GetDexTransactionWire {
 
 export interface DexRaydiumClmmPositionWire {
   liquidityRaw?: string;
-  liquidity_raw?: string;
   tickLowerIndex?: number;
-  tick_lower_index?: number;
   tickUpperIndex?: number;
-  tick_upper_index?: number;
   tokenFeesOwed0?: string;
-  token_fees_owed_0?: string;
   tokenFeesOwed1?: string;
-  token_fees_owed_1?: string;
   rewardAmountsOwed?: string[];
-  reward_amounts_owed?: string[];
 }
 
 export interface DexPositionWire {
   swigConfigAddress?: string;
-  swig_config_address?: string;
   swigVaultAddress?: string;
-  swig_vault_address?: string;
   protocol?: string;
   dexPositionAddress?: string;
-  dex_position_address?: string;
   open?: {
     dexPoolAddress?: string;
-    dex_pool_address?: string;
-    state?: {
-      raydiumClmm?: DexRaydiumClmmPositionWire;
-      raydium_clmm?: DexRaydiumClmmPositionWire;
-    };
+    state?: { raydiumClmm?: DexRaydiumClmmPositionWire };
   };
   closed?: Record<string, never>;
   updatedSlot?: number | string;
-  updated_slot?: number | string;
   sourceTransactionSignature?: string;
-  source_transaction_signature?: string;
 }
 
 export interface ListDexPositionsWire {
   positions?: DexPositionWire[];
   nextPageToken?: string;
-  next_page_token?: string;
 }

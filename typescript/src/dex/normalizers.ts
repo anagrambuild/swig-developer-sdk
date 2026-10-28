@@ -30,28 +30,28 @@ const PROTOCOLS: Record<string, DexProtocol> = {
 export function normalizeDexTransactionsPage(
   response: ListDexTransactionsWire,
 ): ListDexTransactionsResult {
-  const nextPageToken = response.nextPageToken ?? response.next_page_token;
   return {
     transactions: (response.transactions ?? []).map(normalizeDexTransaction),
-    ...(nextPageToken ? { nextPageToken } : {}),
+    ...(response.nextPageToken
+      ? { nextPageToken: response.nextPageToken }
+      : {}),
   };
 }
 
 export function normalizeDexTransaction(
   transaction: DexTransactionWire,
 ): DexTransaction {
-  const blockTime = transaction.blockTime ?? transaction.block_time;
   return {
     swigConfigAddress: requiredString(
-      transaction.swigConfigAddress ?? transaction.swig_config_address,
+      transaction.swigConfigAddress,
       'swigConfigAddress',
     ),
     transactionSignature: requiredString(
-      transaction.transactionSignature ?? transaction.transaction_signature,
+      transaction.transactionSignature,
       'transactionSignature',
     ),
     slot: integerField(transaction.slot, 'slot'),
-    ...(blockTime ? { blockTime } : {}),
+    ...(transaction.blockTime ? { blockTime: transaction.blockTime } : {}),
     actions: (transaction.actions ?? []).map(normalizeDexTransactionAction),
   };
 }
@@ -60,21 +60,15 @@ function normalizeDexTransactionAction(
   action: DexTransactionActionWire,
 ): DexTransactionAction {
   return {
-    actionIndex: integerField(
-      action.actionIndex ?? action.action_index,
-      'actionIndex',
-    ),
+    actionIndex: integerField(action.actionIndex, 'actionIndex'),
     swigVaultAddress: requiredString(
-      action.swigVaultAddress ?? action.swig_vault_address,
+      action.swigVaultAddress,
       'swigVaultAddress',
     ),
-    actingRoleId: integerField(
-      action.actingRoleId ?? action.acting_role_id,
-      'actingRoleId',
-    ),
+    actingRoleId: integerField(action.actingRoleId, 'actingRoleId'),
     protocol: normalizeDexProtocol(action.protocol),
     dexProgramAddress: requiredString(
-      action.dexProgramAddress ?? action.dex_program_address,
+      action.dexProgramAddress,
       'dexProgramAddress',
     ),
     action: normalizeDexAction(action.action),
@@ -88,69 +82,67 @@ function normalizeDexAction(payload?: DexActionPayloadWire): DexAction {
     return {
       type: 'swap',
       ...actionBase(wire.swap),
-      dexPoolAddress: poolAddress(wire.swap),
+      dexPoolAddress: requiredString(
+        wire.swap.dexPoolAddress,
+        'dexPoolAddress',
+      ),
       input: normalizeDexAssetAmount(wire.swap.input, 'input'),
       output: normalizeDexAssetAmount(wire.swap.output, 'output'),
     };
   }
-  const positionOpen = wire.positionOpen ?? wire.position_open;
-  if (positionOpen) {
+  if (wire.positionOpen) {
     return {
       type: 'position-open',
-      ...positionActionBase(positionOpen),
-      deposits: amounts(positionOpen.deposits),
+      ...positionActionBase(wire.positionOpen),
+      deposits: amounts(wire.positionOpen.deposits),
     };
   }
-  const liquidityAdd = wire.liquidityAdd ?? wire.liquidity_add;
-  if (liquidityAdd) {
+  if (wire.liquidityAdd) {
     return {
       type: 'liquidity-add',
-      ...positionActionBase(liquidityAdd),
-      deposits: amounts(liquidityAdd.deposits),
+      ...positionActionBase(wire.liquidityAdd),
+      deposits: amounts(wire.liquidityAdd.deposits),
     };
   }
-  const liquidityRemove = wire.liquidityRemove ?? wire.liquidity_remove;
-  if (liquidityRemove) {
+  if (wire.liquidityRemove) {
     return {
       type: 'liquidity-remove',
-      ...positionActionBase(liquidityRemove),
-      withdrawals: amounts(liquidityRemove.withdrawals),
+      ...positionActionBase(wire.liquidityRemove),
+      withdrawals: amounts(wire.liquidityRemove.withdrawals),
     };
   }
-  const rebalance = wire.positionRebalance ?? wire.position_rebalance;
-  if (rebalance) {
+  if (wire.positionRebalance) {
     return {
       type: 'position-rebalance',
-      ...positionActionBase(rebalance),
-      deposits: amounts(rebalance.deposits),
-      withdrawals: amounts(rebalance.withdrawals),
+      ...positionActionBase(wire.positionRebalance),
+      deposits: amounts(wire.positionRebalance.deposits),
+      withdrawals: amounts(wire.positionRebalance.withdrawals),
     };
   }
-  const feeClaim = wire.feeClaim ?? wire.fee_claim;
-  if (feeClaim) {
+  if (wire.feeClaim) {
     return {
       type: 'fee-claim',
-      ...positionActionBase(feeClaim),
-      claimed: amounts(feeClaim.claimed),
+      ...positionActionBase(wire.feeClaim),
+      claimed: amounts(wire.feeClaim.claimed),
     };
   }
-  const rewardClaim = wire.rewardClaim ?? wire.reward_claim;
-  if (rewardClaim) {
+  if (wire.rewardClaim) {
     return {
       type: 'reward-claim',
-      ...positionActionBase(rewardClaim),
-      claimed: amounts(rewardClaim.claimed),
+      ...positionActionBase(wire.rewardClaim),
+      claimed: amounts(wire.rewardClaim.claimed),
     };
   }
-  const positionClose = wire.positionClose ?? wire.position_close;
-  if (positionClose) {
-    const dexPoolAddress =
-      positionClose.dexPoolAddress ?? positionClose.dex_pool_address;
+  if (wire.positionClose) {
+    const { dexPoolAddress } = wire.positionClose;
     return {
       type: 'position-close',
-      ...actionBase(positionClose),
+      ...actionBase(wire.positionClose),
       ...(dexPoolAddress ? { dexPoolAddress } : {}),
-      dexPositionAddress: positionAddress(positionClose),
+      dexPositionAddress: requiredString(
+        wire.positionClose.dexPositionAddress,
+        'dexPositionAddress',
+      ),
     };
   }
   throw new Error('DEX response has an unknown action');
@@ -159,11 +151,11 @@ function normalizeDexAction(payload?: DexActionPayloadWire): DexAction {
 function actionBase(action: DexActionWire) {
   return {
     protocolInstruction: requiredString(
-      action.protocolInstruction ?? action.protocol_instruction,
+      action.protocolInstruction,
       'protocolInstruction',
     ),
     protocolActorAddress: requiredString(
-      action.protocolActorAddress ?? action.protocol_actor_address,
+      action.protocolActorAddress,
       'protocolActorAddress',
     ),
   };
@@ -172,23 +164,12 @@ function actionBase(action: DexActionWire) {
 function positionActionBase(action: DexActionWire) {
   return {
     ...actionBase(action),
-    dexPoolAddress: poolAddress(action),
-    dexPositionAddress: positionAddress(action),
+    dexPoolAddress: requiredString(action.dexPoolAddress, 'dexPoolAddress'),
+    dexPositionAddress: requiredString(
+      action.dexPositionAddress,
+      'dexPositionAddress',
+    ),
   };
-}
-
-function poolAddress(action: DexActionWire): string {
-  return requiredString(
-    action.dexPoolAddress ?? action.dex_pool_address,
-    'dexPoolAddress',
-  );
-}
-
-function positionAddress(action: DexActionWire): string {
-  return requiredString(
-    action.dexPositionAddress ?? action.dex_position_address,
-    'dexPositionAddress',
-  );
 }
 
 function amounts(list?: DexAssetAmountWire[]): DexAssetAmount[] {
@@ -202,51 +183,44 @@ function normalizeDexAssetAmount(
   field: string,
 ): DexAssetAmount {
   const wire = requiredField(amount, field);
-  const decimals = wire.decimals;
   return {
-    mintAddress: requiredString(
-      wire.mintAddress ?? wire.mint_address,
-      'mintAddress',
-    ),
-    amountRaw: signedUnitsField(wire.amountRaw ?? wire.amount_raw, 'amountRaw'),
-    ...(decimals === undefined
+    mintAddress: requiredString(wire.mintAddress, 'mintAddress'),
+    amountRaw: signedUnitsField(wire.amountRaw, 'amountRaw'),
+    ...(wire.decimals === undefined
       ? {}
-      : { decimals: integerField(decimals, 'decimals') }),
+      : { decimals: integerField(wire.decimals, 'decimals') }),
   };
 }
 
 export function normalizeDexPositionsPage(
   response: ListDexPositionsWire,
 ): ListDexPositionsResult {
-  const nextPageToken = response.nextPageToken ?? response.next_page_token;
   return {
     positions: (response.positions ?? []).map(normalizeDexPosition),
-    ...(nextPageToken ? { nextPageToken } : {}),
+    ...(response.nextPageToken
+      ? { nextPageToken: response.nextPageToken }
+      : {}),
   };
 }
 
 function normalizeDexPosition(position: DexPositionWire): DexPosition {
   const base = {
     swigConfigAddress: requiredString(
-      position.swigConfigAddress ?? position.swig_config_address,
+      position.swigConfigAddress,
       'swigConfigAddress',
     ),
     swigVaultAddress: requiredString(
-      position.swigVaultAddress ?? position.swig_vault_address,
+      position.swigVaultAddress,
       'swigVaultAddress',
     ),
     protocol: normalizeDexProtocol(position.protocol),
     dexPositionAddress: requiredString(
-      position.dexPositionAddress ?? position.dex_position_address,
+      position.dexPositionAddress,
       'dexPositionAddress',
     ),
-    updatedSlot: integerField(
-      position.updatedSlot ?? position.updated_slot,
-      'updatedSlot',
-    ),
+    updatedSlot: integerField(position.updatedSlot, 'updatedSlot'),
     sourceTransactionSignature: requiredString(
-      position.sourceTransactionSignature ??
-        position.source_transaction_signature,
+      position.sourceTransactionSignature,
       'sourceTransactionSignature',
     ),
   };
@@ -255,7 +229,7 @@ function normalizeDexPosition(position: DexPositionWire): DexPosition {
       ...base,
       status: 'open',
       dexPoolAddress: requiredString(
-        position.open.dexPoolAddress ?? position.open.dex_pool_address,
+        position.open.dexPoolAddress,
         'dexPoolAddress',
       ),
       state: normalizeDexPositionAccountState(position.open.state),
@@ -269,35 +243,18 @@ function normalizeDexPosition(position: DexPositionWire): DexPosition {
 function normalizeDexPositionAccountState(
   state: NonNullable<DexPositionWire['open']>['state'],
 ): DexPositionAccountState {
-  const clmm = state?.raydiumClmm ?? state?.raydium_clmm;
+  const clmm = state?.raydiumClmm;
   if (!clmm) throw new Error('DEX response is missing position account state');
   return {
     type: 'raydium-clmm',
-    liquidityRaw: unsignedUnitsField(
-      clmm.liquidityRaw ?? clmm.liquidity_raw,
-      'liquidityRaw',
+    liquidityRaw: unsignedUnitsField(clmm.liquidityRaw, 'liquidityRaw'),
+    tickLowerIndex: integerField(clmm.tickLowerIndex, 'tickLowerIndex'),
+    tickUpperIndex: integerField(clmm.tickUpperIndex, 'tickUpperIndex'),
+    tokenFeesOwed0: unsignedUnitsField(clmm.tokenFeesOwed0, 'tokenFeesOwed0'),
+    tokenFeesOwed1: unsignedUnitsField(clmm.tokenFeesOwed1, 'tokenFeesOwed1'),
+    rewardAmountsOwed: (clmm.rewardAmountsOwed ?? []).map((amount) =>
+      unsignedUnitsField(amount, 'rewardAmountsOwed'),
     ),
-    tickLowerIndex: integerField(
-      clmm.tickLowerIndex ?? clmm.tick_lower_index,
-      'tickLowerIndex',
-    ),
-    tickUpperIndex: integerField(
-      clmm.tickUpperIndex ?? clmm.tick_upper_index,
-      'tickUpperIndex',
-    ),
-    tokenFeesOwed0: unsignedUnitsField(
-      clmm.tokenFeesOwed0 ?? clmm.token_fees_owed_0,
-      'tokenFeesOwed0',
-    ),
-    tokenFeesOwed1: unsignedUnitsField(
-      clmm.tokenFeesOwed1 ?? clmm.token_fees_owed_1,
-      'tokenFeesOwed1',
-    ),
-    rewardAmountsOwed: (
-      clmm.rewardAmountsOwed ??
-      clmm.reward_amounts_owed ??
-      []
-    ).map((amount) => unsignedUnitsField(amount, 'rewardAmountsOwed')),
   };
 }
 

@@ -156,8 +156,8 @@ and `filters`; because they only read, the TypeScript SDK retries them like
   `startSlot` and `endSlot` (uint64 strings), and `protocol`, `actionType` and
   `swigVaultAddress` on one action; a matching transaction keeps all of the
   Swig's actions. Positions: `positionStatus`, `protocol` and
-  `swigVaultAddress`, each on the position. TypeScript takes
-  `{ kind, value }` objects.
+  `swigVaultAddress`, each on the position. The SDK takes each filter as an
+  optional argument.
 - `nextPageToken` is opaque and bound to the endpoint, network, Swig and
   filter set, whatever the order; reusing it otherwise is refused. An empty
   token means the last page.
