@@ -42,13 +42,10 @@ TypeScript is version `0.12.0`, Python is version `0.11.0`, and both default to
 | One transaction | `swig.dex.transactions.get` | `swig.dex.transactions.get` | same path encoding and representation as a list item |
 | Latest positions | `swig.dex.positions.list` | `swig.dex.positions.list` | same search body, filter list, and open/closed decoding by key presence |
 
-Both languages read the same captured responses in `fixtures/dex/`. Protocols,
-action types and position statuses decode through explicit tables, and an
-unrecognized or `*_UNSPECIFIED` value is refused rather than guessed. Amounts
-stay decimal strings in both languages. Filters are `{ kind, value }` objects in
-TypeScript (`DexTransactionFilter`, `DexPositionFilter`) and one frozen
-dataclass per kind in Python (`DexStartSlotFilter`, `DexProtocolFilter`, and so
-on); both send the same one-key wire objects in the order given.
+Protocols, action types and position statuses decode through explicit tables,
+and an unrecognized or `*_UNSPECIFIED` value is refused rather than guessed.
+Amounts stay decimal strings in both languages. Each filter is an optional
+argument (a keyword argument in Python), sent as a one-key wire object.
 
 ## Paymaster and submission
 

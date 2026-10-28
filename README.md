@@ -51,7 +51,6 @@ Create an API key in the [Swig dashboard](https://dashboard.onswig.com).
 ```text
 typescript/   @swig-wallet/developer-sdk sources and tests
 python/       swig-developer-sdk sources and tests
-fixtures/     API responses captured once and read by both packages' tests
 ```
 
 ## License

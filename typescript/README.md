@@ -421,23 +421,20 @@ API-key `GET`. All three only read, follow the retry policy, and never call
 Solana themselves.
 
 ```typescript
-const filters: DexTransactionFilter[] = [
-  { kind: 'startSlot', value: 357_000_000n },
-  { kind: 'endSlot', value: 358_000_000n },
-  { kind: 'protocol', value: 'raydium-clmm' },
-  { kind: 'actionType', value: 'swap' },
-  { kind: 'swigVaultAddress', value: swigVaultAddress },
-];
-
-const page = await swig.dex.transactions.list({
+const search: ListDexTransactionsArgs = {
   swigConfigAddress,
   network: 'mainnet',
-  pageSize: 25,
-  filters,
-});
+  startSlot: 357_000_000,
+  endSlot: 358_000_000,
+  protocol: 'raydium-clmm',
+  actionType: 'swap',
+  swigVaultAddress,
+};
+
+const page = await swig.dex.transactions.list({ ...search, pageSize: 25 });
 
 for (const transaction of page.transactions) {
-  for (const { action, protocol, swigVaultAddress } of transaction.actions) {
+  for (const { action, protocol } of transaction.actions) {
     if (action.type === 'swap') {
       console.log(protocol, action.input.amountRaw, action.output.amountRaw);
     }
@@ -446,10 +443,8 @@ for (const transaction of page.transactions) {
 
 if (page.nextPageToken) {
   const next = await swig.dex.transactions.list({
-    swigConfigAddress,
-    network: 'mainnet',
+    ...search,
     pageToken: page.nextPageToken,
-    filters,
   });
 }
 
@@ -460,9 +455,8 @@ const transaction = await swig.dex.transactions.get({
 });
 ```
 
-Transactions come newest first. `filters` is optional. Filters combine with
-AND, their order does not matter, and each kind may appear once; the API refuses
-a repeated kind. `startSlot` and `endSlot` are inclusive, and `protocol`,
+Transactions come newest first. Every filter is optional, and filters combine
+with AND. `startSlot` and `endSlot` are inclusive, and `protocol`,
 `actionType` and `swigVaultAddress` must all match the same action. A matching
 transaction still carries every DEX action the Swig executed in it. A page
 token is bound to the filters it was issued with; reusing it with other filters
@@ -472,7 +466,7 @@ is refused.
 const positions = await swig.dex.positions.list({
   swigConfigAddress,
   network: 'mainnet',
-  filters: [{ kind: 'positionStatus', value: 'open' }],
+  positionStatus: 'open',
 });
 
 for (const position of positions.positions) {

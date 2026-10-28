@@ -1,9 +1,7 @@
 import type {
   DexActionType,
-  DexPositionFilter,
   DexPositionStatus,
   DexProtocol,
-  DexTransactionFilter,
   GetDexTransactionArgs,
   ListDexPositionsArgs,
   ListDexTransactionsArgs,
@@ -30,13 +28,25 @@ export function transactionsSearch(
   args: ListDexTransactionsArgs,
   defaultNetwork?: Network,
 ): DexSearchRequest {
+  const filters: DexFilterWire[] = [];
+  if (args.startSlot !== undefined) {
+    filters.push({ startSlot: slotWire(args.startSlot, 'startSlot') });
+  }
+  if (args.endSlot !== undefined) {
+    filters.push({ endSlot: slotWire(args.endSlot, 'endSlot') });
+  }
+  if (args.protocol !== undefined) {
+    filters.push({ protocol: protocolWire(args.protocol) });
+  }
+  if (args.actionType !== undefined) {
+    filters.push({ actionType: actionTypeWire(args.actionType) });
+  }
+  if (args.swigVaultAddress !== undefined) {
+    filters.push({ swigVaultAddress: args.swigVaultAddress });
+  }
   return {
     path: `${swigPath(args.swigConfigAddress)}/dex/transactions:search`,
-    body: searchBody(
-      args,
-      defaultNetwork,
-      (args.filters ?? []).map(transactionFilterWire),
-    ),
+    body: searchBody(args, defaultNetwork, filters),
   };
 }
 
@@ -54,13 +64,19 @@ export function positionsSearch(
   args: ListDexPositionsArgs,
   defaultNetwork?: Network,
 ): DexSearchRequest {
+  const filters: DexFilterWire[] = [];
+  if (args.positionStatus !== undefined) {
+    filters.push({ positionStatus: positionStatusWire(args.positionStatus) });
+  }
+  if (args.protocol !== undefined) {
+    filters.push({ protocol: protocolWire(args.protocol) });
+  }
+  if (args.swigVaultAddress !== undefined) {
+    filters.push({ swigVaultAddress: args.swigVaultAddress });
+  }
   return {
     path: `${swigPath(args.swigConfigAddress)}/dex/positions:search`,
-    body: searchBody(
-      args,
-      defaultNetwork,
-      (args.filters ?? []).map(positionFilterWire),
-    ),
+    body: searchBody(args, defaultNetwork, filters),
   };
 }
 
@@ -83,40 +99,6 @@ function searchBody(
   };
 }
 
-function transactionFilterWire(filter: DexTransactionFilter): DexFilterWire {
-  switch (filter.kind) {
-    case 'startSlot':
-      return { startSlot: slotWire(filter.value, 'startSlot') };
-    case 'endSlot':
-      return { endSlot: slotWire(filter.value, 'endSlot') };
-    case 'protocol':
-      return { protocol: protocolWire(filter.value) };
-    case 'actionType':
-      return { actionType: actionTypeWire(filter.value) };
-    case 'swigVaultAddress':
-      return { swigVaultAddress: filter.value };
-    default:
-      throw new Error(
-        'filter kind must be startSlot, endSlot, protocol, actionType or swigVaultAddress',
-      );
-  }
-}
-
-function positionFilterWire(filter: DexPositionFilter): DexFilterWire {
-  switch (filter.kind) {
-    case 'positionStatus':
-      return { positionStatus: positionStatusWire(filter.value) };
-    case 'protocol':
-      return { protocol: protocolWire(filter.value) };
-    case 'swigVaultAddress':
-      return { swigVaultAddress: filter.value };
-    default:
-      throw new Error(
-        'filter kind must be positionStatus, protocol or swigVaultAddress',
-      );
-  }
-}
-
 function requiredNetwork(network?: Network, defaultNetwork?: Network): Network {
   const resolved = network ?? defaultNetwork;
   if (!resolved) throw new Error('network is required');
@@ -127,12 +109,12 @@ function swigPath(swigConfigAddress: string): string {
   return `/wallet/api/swig/${encodeURIComponent(swigConfigAddress)}`;
 }
 
-/** uint64 crosses the wire as a decimal string, so the bigint keeps its value. */
-function slotWire(slot: bigint, kind: string): string {
-  if (typeof slot !== 'bigint' || slot < 0n) {
-    throw new Error(`${kind} must be a non-negative bigint`);
+/** uint64 crosses the wire as a decimal string. */
+function slotWire(slot: number, field: string): string {
+  if (!Number.isSafeInteger(slot) || slot < 0) {
+    throw new Error(`${field} must be a non-negative integer`);
   }
-  return slot.toString();
+  return String(slot);
 }
 
 function protocolWire(protocol: DexProtocol): string {
