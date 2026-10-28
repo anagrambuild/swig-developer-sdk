@@ -257,62 +257,6 @@ class ListDexPositionsResult:
     next_page_token: str | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class DexStartSlotFilter:
-    """Inclusive."""
-
-    value: int
-    kind: Literal["startSlot"] = "startSlot"
-
-
-@dataclass(frozen=True, slots=True)
-class DexEndSlotFilter:
-    """Inclusive."""
-
-    value: int
-    kind: Literal["endSlot"] = "endSlot"
-
-
-@dataclass(frozen=True, slots=True)
-class DexProtocolFilter:
-    value: DexProtocol
-    kind: Literal["protocol"] = "protocol"
-
-
-@dataclass(frozen=True, slots=True)
-class DexActionTypeFilter:
-    value: DexActionType
-    kind: Literal["actionType"] = "actionType"
-
-
-@dataclass(frozen=True, slots=True)
-class DexSwigVaultAddressFilter:
-    value: str
-    kind: Literal["swigVaultAddress"] = "swigVaultAddress"
-
-
-@dataclass(frozen=True, slots=True)
-class DexPositionStatusFilter:
-    value: DexPositionStatus
-    kind: Literal["positionStatus"] = "positionStatus"
-
-
-#: Slots are inclusive. Protocol, action type and vault must match the same
-#: action; a matching transaction keeps all of the Swig's actions.
-DexTransactionFilter: TypeAlias = (
-    DexStartSlotFilter
-    | DexEndSlotFilter
-    | DexProtocolFilter
-    | DexActionTypeFilter
-    | DexSwigVaultAddressFilter
-)
-
-#: Each filter applies to the position.
-DexPositionFilter: TypeAlias = (
-    DexPositionStatusFilter | DexProtocolFilter | DexSwigVaultAddressFilter
-)
-
-
 class DexTransactionsClient:
     def __init__(
         self, http: HttpClient, default_network: Network | None = None
@@ -327,22 +271,35 @@ class DexTransactionsClient:
         network: Network | None = None,
         page_size: int | None = None,
         page_token: str | None = None,
-        filters: Sequence[DexTransactionFilter] = (),
+        start_slot: int | None = None,
+        end_slot: int | None = None,
+        protocol: DexProtocol | None = None,
+        action_type: DexActionType | None = None,
+        swig_vault_address: str | None = None,
     ) -> ListDexTransactionsResult:
         """Search the Swig's indexed DEX transactions, newest first, a page per call.
 
-        Only transactions the index interpreted are listed. Filters combine with
-        AND, in any order, with at most one of each kind. Pass next_page_token back
-        as page_token with the same filters; the last page has none, and nothing
-        pages automatically. Network resolves from the call, then client.
+        Only transactions the index interpreted are listed. Every filter is
+        optional and they combine with AND. Slots are inclusive; protocol,
+        action_type and swig_vault_address must match the same action. Pass
+        next_page_token back as page_token with the same filters; the last page
+        has none, and nothing pages automatically. Network resolves from the
+        call, then client.
         This search only reads, so it uses the client retry policy. API failures
         raise SDK errors."""
+        filters: list[dict[str, str]] = []
+        if start_slot is not None:
+            filters.append({"startSlot": _slot_param(start_slot, "start_slot")})
+        if end_slot is not None:
+            filters.append({"endSlot": _slot_param(end_slot, "end_slot")})
+        if protocol is not None:
+            filters.append({"protocol": _protocol_wire(protocol)})
+        if action_type is not None:
+            filters.append({"actionType": _action_type_wire(action_type)})
+        if swig_vault_address is not None:
+            filters.append({"swigVaultAddress": swig_vault_address})
         body = _search_body(
-            network,
-            self._default_network,
-            page_size,
-            page_token,
-            [_transaction_filter_wire(item) for item in filters],
+            network, self._default_network, page_size, page_token, filters
         )
         return _normalize_transactions_page(
             await self._http.post(
@@ -391,23 +348,28 @@ class DexPositionsClient:
         network: Network | None = None,
         page_size: int | None = None,
         page_token: str | None = None,
-        filters: Sequence[DexPositionFilter] = (),
+        position_status: DexPositionStatus | None = None,
+        protocol: DexProtocol | None = None,
+        swig_vault_address: str | None = None,
     ) -> ListDexPositionsResult:
         """Search the latest state of the Swig's DEX positions, a page per call.
 
         Positions held by the Swig's vault or any of its sub-accounts, ordered by
-        protocol and position address. Filters combine with AND, in any order,
-        with at most one of each kind. Pass next_page_token back as page_token
-        with the same filters; nothing pages automatically. Network resolves from
-        the call, then client.
+        protocol and position address. Every filter is optional, applies to the
+        position, and they combine with AND. Pass next_page_token back as
+        page_token with the same filters; nothing pages automatically. Network
+        resolves from the call, then client.
         This search only reads, so it uses the client retry policy. API failures
         raise SDK errors."""
+        filters: list[dict[str, str]] = []
+        if position_status is not None:
+            filters.append({"positionStatus": _position_status_wire(position_status)})
+        if protocol is not None:
+            filters.append({"protocol": _protocol_wire(protocol)})
+        if swig_vault_address is not None:
+            filters.append({"swigVaultAddress": swig_vault_address})
         body = _search_body(
-            network,
-            self._default_network,
-            page_size,
-            page_token,
-            [_position_filter_wire(item) for item in filters],
+            network, self._default_network, page_size, page_token, filters
         )
         return _normalize_positions_page(
             await self._http.post(
@@ -454,49 +416,6 @@ def _search_body(
     return body
 
 
-def _transaction_filter_wire(item: DexTransactionFilter) -> dict[str, str]:
-    """A filter on the wire: one key, named for its kind."""
-    if isinstance(item, DexStartSlotFilter):
-        return {"startSlot": _slot_param(item.value, "start_slot")}
-    if isinstance(item, DexEndSlotFilter):
-        return {"endSlot": _slot_param(item.value, "end_slot")}
-    if isinstance(item, DexProtocolFilter):
-        return {"protocol": _protocol_wire(item.value)}
-    if isinstance(item, DexActionTypeFilter):
-        return {
-            "actionType": _wire(
-                _ACTION_TYPE_WIRE,
-                item.value,
-                "action_type must be a supported DEX action type",
-            )
-        }
-    if isinstance(item, DexSwigVaultAddressFilter):
-        return {"swigVaultAddress": item.value}
-    raise ValueError(
-        "transaction filters must be DexStartSlotFilter, DexEndSlotFilter, "
-        "DexProtocolFilter, DexActionTypeFilter or DexSwigVaultAddressFilter"
-    )
-
-
-def _position_filter_wire(item: DexPositionFilter) -> dict[str, str]:
-    if isinstance(item, DexPositionStatusFilter):
-        return {
-            "positionStatus": _wire(
-                _POSITION_STATUS_WIRE,
-                item.value,
-                'position_status must be "open" or "closed"',
-            )
-        }
-    if isinstance(item, DexProtocolFilter):
-        return {"protocol": _protocol_wire(item.value)}
-    if isinstance(item, DexSwigVaultAddressFilter):
-        return {"swigVaultAddress": item.value}
-    raise ValueError(
-        "position filters must be DexPositionStatusFilter, DexProtocolFilter "
-        "or DexSwigVaultAddressFilter"
-    )
-
-
 def _swig_path(swig_config_address: str) -> str:
     return f"/wallet/api/swig/{quote(swig_config_address, safe='')}"
 
@@ -512,6 +431,22 @@ def _protocol_wire(protocol: DexProtocol) -> str:
     return _wire(_PROTOCOL_WIRE, protocol, "protocol must be a supported DEX protocol")
 
 
+def _action_type_wire(action_type: DexActionType) -> str:
+    return _wire(
+        _ACTION_TYPE_WIRE,
+        action_type,
+        "action_type must be a supported DEX action type",
+    )
+
+
+def _position_status_wire(position_status: DexPositionStatus) -> str:
+    return _wire(
+        _POSITION_STATUS_WIRE,
+        position_status,
+        'position_status must be "open" or "closed"',
+    )
+
+
 def _wire(table: Mapping[str, str], value: str, message: str) -> str:
     wire = table.get(value)
     if wire is None:
@@ -524,9 +459,7 @@ def _normalize_transactions_page(response: object) -> ListDexTransactionsResult:
     transactions = _sequence(body.get("transactions") or [], "transactions")
     return ListDexTransactionsResult(
         transactions=tuple(_normalize_transaction(item) for item in transactions),
-        next_page_token=_optional_string(
-            _pick(body, "nextPageToken", "next_page_token")
-        ),
+        next_page_token=_optional_string(body.get("nextPageToken")),
     )
 
 
@@ -535,34 +468,30 @@ def _normalize_transaction(value: object) -> DexTransaction:
     actions = _sequence(body.get("actions") or [], "actions")
     return DexTransaction(
         swig_config_address=_required_string(
-            _pick(body, "swigConfigAddress", "swig_config_address"),
+            body.get("swigConfigAddress"),
             "swigConfigAddress",
         ),
         transaction_signature=_required_string(
-            _pick(body, "transactionSignature", "transaction_signature"),
+            body.get("transactionSignature"),
             "transactionSignature",
         ),
         slot=_integer(body.get("slot"), "slot"),
         actions=tuple(_normalize_transaction_action(item) for item in actions),
-        block_time=_optional_string(_pick(body, "blockTime", "block_time")),
+        block_time=_optional_string(body.get("blockTime")),
     )
 
 
 def _normalize_transaction_action(value: object) -> DexTransactionAction:
     body = _mapping(value, "DEX action")
     return DexTransactionAction(
-        action_index=_integer(
-            _pick(body, "actionIndex", "action_index"), "actionIndex"
-        ),
+        action_index=_integer(body.get("actionIndex"), "actionIndex"),
         swig_vault_address=_required_string(
-            _pick(body, "swigVaultAddress", "swig_vault_address"), "swigVaultAddress"
+            body.get("swigVaultAddress"), "swigVaultAddress"
         ),
-        acting_role_id=_integer(
-            _pick(body, "actingRoleId", "acting_role_id"), "actingRoleId"
-        ),
+        acting_role_id=_integer(body.get("actingRoleId"), "actingRoleId"),
         protocol=_normalize_protocol(body.get("protocol")),
         dex_program_address=_required_string(
-            _pick(body, "dexProgramAddress", "dex_program_address"),
+            body.get("dexProgramAddress"),
             "dexProgramAddress",
         ),
         action=_normalize_action(body.get("action")),
@@ -582,7 +511,7 @@ def _normalize_action(value: object) -> DexAction:
             input=_normalize_amount(body.get("input"), "input"),
             output=_normalize_amount(body.get("output"), "output"),
         )
-    position_open = _pick(payload, "positionOpen", "position_open")
+    position_open = payload.get("positionOpen")
     if position_open is not None:
         body = _mapping(position_open, "positionOpen")
         return DexPositionOpenAction(
@@ -592,7 +521,7 @@ def _normalize_action(value: object) -> DexAction:
             dex_position_address=_position(body),
             deposits=_amounts(body.get("deposits")),
         )
-    liquidity_add = _pick(payload, "liquidityAdd", "liquidity_add")
+    liquidity_add = payload.get("liquidityAdd")
     if liquidity_add is not None:
         body = _mapping(liquidity_add, "liquidityAdd")
         return DexLiquidityAddAction(
@@ -602,7 +531,7 @@ def _normalize_action(value: object) -> DexAction:
             dex_position_address=_position(body),
             deposits=_amounts(body.get("deposits")),
         )
-    liquidity_remove = _pick(payload, "liquidityRemove", "liquidity_remove")
+    liquidity_remove = payload.get("liquidityRemove")
     if liquidity_remove is not None:
         body = _mapping(liquidity_remove, "liquidityRemove")
         return DexLiquidityRemoveAction(
@@ -612,7 +541,7 @@ def _normalize_action(value: object) -> DexAction:
             dex_position_address=_position(body),
             withdrawals=_amounts(body.get("withdrawals")),
         )
-    rebalance = _pick(payload, "positionRebalance", "position_rebalance")
+    rebalance = payload.get("positionRebalance")
     if rebalance is not None:
         body = _mapping(rebalance, "positionRebalance")
         return DexPositionRebalanceAction(
@@ -623,7 +552,7 @@ def _normalize_action(value: object) -> DexAction:
             deposits=_amounts(body.get("deposits")),
             withdrawals=_amounts(body.get("withdrawals")),
         )
-    fee_claim = _pick(payload, "feeClaim", "fee_claim")
+    fee_claim = payload.get("feeClaim")
     if fee_claim is not None:
         body = _mapping(fee_claim, "feeClaim")
         return DexFeeClaimAction(
@@ -633,7 +562,7 @@ def _normalize_action(value: object) -> DexAction:
             dex_position_address=_position(body),
             claimed=_amounts(body.get("claimed")),
         )
-    reward_claim = _pick(payload, "rewardClaim", "reward_claim")
+    reward_claim = payload.get("rewardClaim")
     if reward_claim is not None:
         body = _mapping(reward_claim, "rewardClaim")
         return DexRewardClaimAction(
@@ -643,43 +572,39 @@ def _normalize_action(value: object) -> DexAction:
             dex_position_address=_position(body),
             claimed=_amounts(body.get("claimed")),
         )
-    position_close = _pick(payload, "positionClose", "position_close")
+    position_close = payload.get("positionClose")
     if position_close is not None:
         body = _mapping(position_close, "positionClose")
         return DexPositionCloseAction(
             protocol_instruction=_instruction(body),
             protocol_actor_address=_actor(body),
             dex_position_address=_position(body),
-            dex_pool_address=_optional_string(
-                _pick(body, "dexPoolAddress", "dex_pool_address")
-            ),
+            dex_pool_address=_optional_string(body.get("dexPoolAddress")),
         )
     raise SwigResponseError("DEX response has an unknown action")
 
 
 def _instruction(body: Mapping[str, object]) -> str:
     return _required_string(
-        _pick(body, "protocolInstruction", "protocol_instruction"),
+        body.get("protocolInstruction"),
         "protocolInstruction",
     )
 
 
 def _actor(body: Mapping[str, object]) -> str:
     return _required_string(
-        _pick(body, "protocolActorAddress", "protocol_actor_address"),
+        body.get("protocolActorAddress"),
         "protocolActorAddress",
     )
 
 
 def _pool(body: Mapping[str, object]) -> str:
-    return _required_string(
-        _pick(body, "dexPoolAddress", "dex_pool_address"), "dexPoolAddress"
-    )
+    return _required_string(body.get("dexPoolAddress"), "dexPoolAddress")
 
 
 def _position(body: Mapping[str, object]) -> str:
     return _required_string(
-        _pick(body, "dexPositionAddress", "dex_position_address"),
+        body.get("dexPositionAddress"),
         "dexPositionAddress",
     )
 
@@ -694,12 +619,8 @@ def _normalize_amount(value: object, field: str) -> DexAssetAmount:
     body = _mapping(_required(value, field), field)
     decimals = body.get("decimals")
     return DexAssetAmount(
-        mint_address=_required_string(
-            _pick(body, "mintAddress", "mint_address"), "mintAddress"
-        ),
-        amount_raw=_units(
-            _pick(body, "amountRaw", "amount_raw"), "amountRaw", _SIGNED_INTEGER
-        ),
+        mint_address=_required_string(body.get("mintAddress"), "mintAddress"),
+        amount_raw=_units(body.get("amountRaw"), "amountRaw", _SIGNED_INTEGER),
         decimals=None if decimals is None else _integer(decimals, "decimals"),
     )
 
@@ -709,28 +630,26 @@ def _normalize_positions_page(response: object) -> ListDexPositionsResult:
     positions = _sequence(body.get("positions") or [], "positions")
     return ListDexPositionsResult(
         positions=tuple(_normalize_position(item) for item in positions),
-        next_page_token=_optional_string(
-            _pick(body, "nextPageToken", "next_page_token")
-        ),
+        next_page_token=_optional_string(body.get("nextPageToken")),
     )
 
 
 def _normalize_position(value: object) -> DexPosition:
     body = _mapping(value, "DEX position")
     swig_config_address = _required_string(
-        _pick(body, "swigConfigAddress", "swig_config_address"), "swigConfigAddress"
+        body.get("swigConfigAddress"), "swigConfigAddress"
     )
     swig_vault_address = _required_string(
-        _pick(body, "swigVaultAddress", "swig_vault_address"), "swigVaultAddress"
+        body.get("swigVaultAddress"), "swigVaultAddress"
     )
     protocol = _normalize_protocol(body.get("protocol"))
     dex_position_address = _required_string(
-        _pick(body, "dexPositionAddress", "dex_position_address"),
+        body.get("dexPositionAddress"),
         "dexPositionAddress",
     )
-    updated_slot = _integer(_pick(body, "updatedSlot", "updated_slot"), "updatedSlot")
+    updated_slot = _integer(body.get("updatedSlot"), "updatedSlot")
     source_transaction_signature = _required_string(
-        _pick(body, "sourceTransactionSignature", "source_transaction_signature"),
+        body.get("sourceTransactionSignature"),
         "sourceTransactionSignature",
     )
     opened = body.get("open")
@@ -744,7 +663,7 @@ def _normalize_position(value: object) -> DexPosition:
             updated_slot=updated_slot,
             source_transaction_signature=source_transaction_signature,
             dex_pool_address=_required_string(
-                _pick(state, "dexPoolAddress", "dex_pool_address"), "dexPoolAddress"
+                state.get("dexPoolAddress"), "dexPoolAddress"
             ),
             state=_normalize_account_state(state.get("state")),
         )
@@ -763,33 +682,29 @@ def _normalize_position(value: object) -> DexPosition:
 
 def _normalize_account_state(value: object) -> DexPositionAccountState:
     state = _mapping(value or {}, "position account state")
-    clmm = _pick(state, "raydiumClmm", "raydium_clmm")
+    clmm = state.get("raydiumClmm")
     if clmm is None:
         raise SwigResponseError("DEX response is missing position account state")
     body = _mapping(clmm, "raydiumClmm")
     rewards = _sequence(
-        _pick(body, "rewardAmountsOwed", "reward_amounts_owed") or [],
+        body.get("rewardAmountsOwed") or [],
         "rewardAmountsOwed",
     )
     return DexRaydiumClmmPositionState(
         liquidity_raw=_units(
-            _pick(body, "liquidityRaw", "liquidity_raw"),
+            body.get("liquidityRaw"),
             "liquidityRaw",
             _UNSIGNED_INTEGER,
         ),
-        tick_lower_index=_integer(
-            _pick(body, "tickLowerIndex", "tick_lower_index"), "tickLowerIndex"
-        ),
-        tick_upper_index=_integer(
-            _pick(body, "tickUpperIndex", "tick_upper_index"), "tickUpperIndex"
-        ),
+        tick_lower_index=_integer(body.get("tickLowerIndex"), "tickLowerIndex"),
+        tick_upper_index=_integer(body.get("tickUpperIndex"), "tickUpperIndex"),
         token_fees_owed_0=_units(
-            _pick(body, "tokenFeesOwed0", "token_fees_owed_0"),
+            body.get("tokenFeesOwed0"),
             "tokenFeesOwed0",
             _UNSIGNED_INTEGER,
         ),
         token_fees_owed_1=_units(
-            _pick(body, "tokenFeesOwed1", "token_fees_owed_1"),
+            body.get("tokenFeesOwed1"),
             "tokenFeesOwed1",
             _UNSIGNED_INTEGER,
         ),
@@ -816,13 +731,6 @@ def _sequence(value: object, field: str) -> Sequence[object]:
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
         return value
     raise SwigResponseError(f"DEX response has invalid {field}")
-
-
-def _pick(value: Mapping[str, object], *keys: str) -> object:
-    for key in keys:
-        if key in value:
-            return value[key]
-    return None
 
 
 def _required(value: object, field: str) -> object:

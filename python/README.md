@@ -324,42 +324,26 @@ API-key `GET`. All three only read, follow the retry policy, and never call
 Solana themselves.
 
 ```python
-from swig_developer_sdk import (
-    DexActionTypeFilter,
-    DexEndSlotFilter,
-    DexPositionStatusFilter,
-    DexProtocolFilter,
-    DexStartSlotFilter,
-    DexSwigVaultAddressFilter,
-)
-
-filters = [
-    DexStartSlotFilter(357_000_000),
-    DexEndSlotFilter(358_000_000),
-    DexProtocolFilter("raydium-clmm"),
-    DexActionTypeFilter("swap"),
-    DexSwigVaultAddressFilter(swig_vault_address),
-]
-
-page = await swig.dex.transactions.list(
-    swig_config_address=swig_config_address,
-    network="mainnet",
-    page_size=25,
-    filters=filters,
-)
-
-for transaction in page.transactions:
-    for executed in transaction.actions:
-        if executed.action.type == "swap":
-            print(executed.protocol, executed.action.input.amount_raw)
-
-if page.next_page_token:
-    next_page = await swig.dex.transactions.list(
+page_token = None
+while True:
+    page = await swig.dex.transactions.list(
         swig_config_address=swig_config_address,
         network="mainnet",
-        page_token=page.next_page_token,
-        filters=filters,
+        page_size=25,
+        page_token=page_token,
+        start_slot=357_000_000,
+        end_slot=358_000_000,
+        protocol="raydium-clmm",
+        action_type="swap",
+        swig_vault_address=swig_vault_address,
     )
+    for transaction in page.transactions:
+        for executed in transaction.actions:
+            if executed.action.type == "swap":
+                print(executed.protocol, executed.action.input.amount_raw)
+    if page.next_page_token is None:
+        break
+    page_token = page.next_page_token
 
 transaction = await swig.dex.transactions.get(
     swig_config_address=swig_config_address,
@@ -370,15 +354,13 @@ transaction = await swig.dex.transactions.get(
 positions = await swig.dex.positions.list(
     swig_config_address=swig_config_address,
     network="mainnet",
-    filters=[DexPositionStatusFilter("open")],
+    position_status="open",
 )
 ```
 
-Transactions come newest first. `filters` is optional and takes one dataclass
-per filter. Filters combine with AND, their order does not matter, and each
-kind may appear once; the API refuses a repeated kind. `DexStartSlotFilter` and
-`DexEndSlotFilter` are inclusive, and `DexProtocolFilter`,
-`DexActionTypeFilter` and `DexSwigVaultAddressFilter` must all match the same
+Transactions come newest first. Every filter is an optional keyword argument,
+and filters combine with AND. `start_slot` and `end_slot` are inclusive, and
+`protocol`, `action_type` and `swig_vault_address` must all match the same
 action. A matching transaction still carries every DEX action the Swig executed
 in it. A page token is bound to the filters it was issued with.
 
@@ -387,8 +369,8 @@ vault or any of its sub-accounts, enabled or not: a `DexOpenPosition` with its
 pool and decoded account, or a `DexClosedPosition` once the account no longer
 exists.
 `updated_slot` is the slot of the read the state came from. Positions take
-`DexPositionStatusFilter`, `DexProtocolFilter` and `DexSwigVaultAddressFilter`,
-each applied to the position. Latest state is currently recorded for Raydium
+`position_status`, `protocol` and `swig_vault_address`, each applied to the
+position. Latest state is currently recorded for Raydium
 CLMM positions only.
 
 `amount_raw` is a decimal integer string, signed for the action's
