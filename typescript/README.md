@@ -69,6 +69,7 @@ const swig = new SwigClient({
   matching retry returns the original paymaster response.
 - Ramp order creation retries because its required `requestId` makes replay
   safe. Transfer preparation and submission do not retry automatically.
+- DEX transaction and position lists retry like `GET`s; they only read.
 - `4xx` responses throw immediately as `SwigDeveloperSdkError`; `5xx` and
   network failures are what the retry policy covers.
 
@@ -459,9 +460,9 @@ Transactions come newest first. Every filter is optional, and filters combine
 with AND. `startSlot` and `endSlot` are inclusive, and `protocol`,
 `actionType` and `swigVaultAddress` must all match the same action. A matching
 transaction still carries every DEX action the Swig executed in it.
-`nextCursor` is the last transaction of the page and is absent on the last
-page; pass it back as `cursor` with the same filters. Positions page the same
-way.
+`pageSize` defaults to 25 and the backend caps it at 100. `nextCursor` is the
+last transaction of the page and is absent on the last page; pass it back as
+`cursor` with the same filters. Positions page the same way.
 
 ```typescript
 const positions = await swig.dex.positions.list({

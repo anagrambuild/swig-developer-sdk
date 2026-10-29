@@ -46,7 +46,7 @@ function normalizeDexTransactionCursor(
   cursor: DexTransactionCursorWire,
 ): DexTransactionCursor {
   return {
-    slot: integerField(cursor.slot, 'slot'),
+    slot: unsignedIntegerField(cursor.slot, 'slot'),
     transactionSignature: requiredString(
       cursor.transactionSignature,
       'transactionSignature',
@@ -57,6 +57,10 @@ function normalizeDexTransactionCursor(
 export function normalizeDexTransaction(
   transaction: DexTransactionWire,
 ): DexTransaction {
+  const { blockTime } = transaction;
+  if (blockTime !== undefined && typeof blockTime !== 'string') {
+    throw new Error('DEX response has invalid blockTime');
+  }
   return {
     swigConfigAddress: requiredString(
       transaction.swigConfigAddress,
@@ -66,8 +70,8 @@ export function normalizeDexTransaction(
       transaction.transactionSignature,
       'transactionSignature',
     ),
-    slot: integerField(transaction.slot, 'slot'),
-    ...(transaction.blockTime ? { blockTime: transaction.blockTime } : {}),
+    slot: unsignedIntegerField(transaction.slot, 'slot'),
+    ...(blockTime ? { blockTime } : {}),
     actions: (transaction.actions ?? []).map(normalizeDexTransactionAction),
   };
 }
@@ -76,12 +80,12 @@ function normalizeDexTransactionAction(
   action: DexTransactionActionWire,
 ): DexTransactionAction {
   return {
-    actionIndex: integerField(action.actionIndex, 'actionIndex'),
+    actionIndex: unsignedIntegerField(action.actionIndex, 'actionIndex'),
     swigVaultAddress: requiredString(
       action.swigVaultAddress,
       'swigVaultAddress',
     ),
-    actingRoleId: integerField(action.actingRoleId, 'actingRoleId'),
+    actingRoleId: unsignedIntegerField(action.actingRoleId, 'actingRoleId'),
     protocol: normalizeDexProtocol(action.protocol),
     dexProgramAddress: requiredString(
       action.dexProgramAddress,
@@ -154,7 +158,9 @@ function normalizeDexAction(payload?: DexActionPayloadWire): DexAction {
     return {
       type: 'position-close',
       ...actionBase(wire.positionClose),
-      ...(dexPoolAddress ? { dexPoolAddress } : {}),
+      ...(dexPoolAddress === undefined
+        ? {}
+        : { dexPoolAddress: requiredString(dexPoolAddress, 'dexPoolAddress') }),
       dexPositionAddress: requiredString(
         wire.positionClose.dexPositionAddress,
         'dexPositionAddress',
@@ -204,7 +210,7 @@ function normalizeDexAssetAmount(
     amountRaw: signedUnitsField(wire.amountRaw, 'amountRaw'),
     ...(wire.decimals === undefined
       ? {}
-      : { decimals: integerField(wire.decimals, 'decimals') }),
+      : { decimals: unsignedIntegerField(wire.decimals, 'decimals') }),
   };
 }
 
@@ -246,7 +252,7 @@ function normalizeDexPosition(position: DexPositionWire): DexPosition {
       position.dexPositionAddress,
       'dexPositionAddress',
     ),
-    updatedSlot: integerField(position.updatedSlot, 'updatedSlot'),
+    updatedSlot: unsignedIntegerField(position.updatedSlot, 'updatedSlot'),
     sourceTransactionSignature: requiredString(
       position.sourceTransactionSignature,
       'sourceTransactionSignature',
@@ -263,8 +269,7 @@ function normalizeDexPosition(position: DexPositionWire): DexPosition {
       state: normalizeDexPositionAccountState(position.open.state),
     };
   }
-  // Key presence, not truthiness: a closed position arrives as an empty object.
-  if ('closed' in position) return { ...base, status: 'closed' };
+  if (position.closed) return { ...base, status: 'closed' };
   throw new Error('DEX response is missing position state');
 }
 
@@ -287,9 +292,11 @@ function normalizeDexPositionAccountState(
 }
 
 function normalizeDexProtocol(value?: string): DexProtocol {
-  const protocol = value ? PROTOCOLS[value] : undefined;
-  if (!protocol) throw new Error('DEX response has invalid protocol');
-  return protocol;
+  // Own keys only, so a name such as `toString` is not read off the prototype.
+  if (value === undefined || !Object.hasOwn(PROTOCOLS, value)) {
+    throw new Error('DEX response has invalid protocol');
+  }
+  return PROTOCOLS[value];
 }
 
 export function requiredField<TValue>(
@@ -324,7 +331,13 @@ function signedUnitsField(value: unknown, field: string): string {
   return value;
 }
 
-/** uint64 arrives as a decimal string and 32-bit integers as numbers. */
+/** uint64 arrives as a decimal string and uint32 as a number. */
+function unsignedIntegerField(value: unknown, field: string): number {
+  const parsed = integerField(value, field);
+  if (parsed < 0) throw new Error(`DEX response has invalid ${field}`);
+  return parsed;
+}
+
 function integerField(value: unknown, field: string): number {
   const parsed =
     typeof value === 'string' && /^-?\d+$/.test(value) ? Number(value) : value;

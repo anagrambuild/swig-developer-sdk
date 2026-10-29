@@ -9,6 +9,9 @@ import type {
 } from '../types/index.js';
 import { toProtoNetwork } from '../wallets/normalizers.js';
 
+/** page_size is a uint32; the backend reads 0 as 25 and caps it at 100. */
+const MAX_PAGE_SIZE_WIRE = 0xffff_ffff;
+
 /** A filter on the wire: one key, named for its kind. */
 type DexFilterWire = Record<string, string>;
 
@@ -63,9 +66,9 @@ export function transactionPath(
   args: GetDexTransactionArgs,
   defaultNetwork?: Network,
 ): string {
-  const query = new URLSearchParams({
-    network: toProtoNetwork(requiredNetwork(args.network, defaultNetwork)),
-  });
+  const network = args.network ?? defaultNetwork;
+  if (!network) throw new Error('network is required');
+  const query = new URLSearchParams({ network: toProtoNetwork(network) });
   return `${swigPath(args.swigConfigAddress)}/dex/transactions/${encodeURIComponent(args.transactionSignature)}?${query.toString()}`;
 }
 
@@ -103,22 +106,22 @@ function listBody(
 ): DexListBodyWire {
   if (
     args.pageSize !== undefined &&
-    (!Number.isSafeInteger(args.pageSize) || args.pageSize < 0)
+    (!Number.isSafeInteger(args.pageSize) ||
+      args.pageSize < 0 ||
+      args.pageSize > MAX_PAGE_SIZE_WIRE)
   ) {
-    throw new Error('pageSize must be a non-negative integer');
+    throw new Error(
+      `pageSize must be an integer from 0 to ${MAX_PAGE_SIZE_WIRE}`,
+    );
   }
+  const network = args.network ?? defaultNetwork;
+  if (!network) throw new Error('network is required');
   return {
-    network: toProtoNetwork(requiredNetwork(args.network, defaultNetwork)),
+    network: toProtoNetwork(network),
     ...(args.pageSize !== undefined ? { pageSize: args.pageSize } : {}),
     ...(cursor ? { cursor } : {}),
     ...(filters.length > 0 ? { filters } : {}),
   };
-}
-
-function requiredNetwork(network?: Network, defaultNetwork?: Network): Network {
-  const resolved = network ?? defaultNetwork;
-  if (!resolved) throw new Error('network is required');
-  return resolved;
 }
 
 function swigPath(swigConfigAddress: string): string {
@@ -128,7 +131,9 @@ function swigPath(swigConfigAddress: string): string {
 /** uint64 crosses the wire as a decimal string. */
 function slotWire(slot: number, field: string): string {
   if (!Number.isSafeInteger(slot) || slot < 0) {
-    throw new Error(`${field} must be a non-negative integer`);
+    throw new Error(
+      `${field} must be an integer from 0 to ${Number.MAX_SAFE_INTEGER}`,
+    );
   }
   return String(slot);
 }

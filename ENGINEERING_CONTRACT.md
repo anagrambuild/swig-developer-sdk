@@ -34,6 +34,8 @@ entrypoints. Application-owned signing helpers now use the dedicated
   backend resolves a replay before any eligibility or credential check.
 - Ramp quote requests never retry. A retried quote is a different quote, so the
   caller decides whether to ask again.
+- DEX transaction and position lists retry like `GET`s. They POST only to carry
+  their filters and change nothing.
 
 ## Python client lifetime and errors
 
@@ -140,8 +142,10 @@ SDKs preserve it as `token`, `native-sol`, or `unspecified`.
 Source: `anagrambuild/swig-dev-portal` `APIQueryDexService`
 (`backend/proto/wallet/api_dex.proto`, package `api_dex.v1`). The routes read
 the backend's DEX index only; they never call Solana, parse transactions, or
-write. The two lists take a JSON body of `network`, `pageSize`, `cursor` and
-`filters`; because they only read, both SDKs retry them like `GET`s.
+write to the index. The two lists take a JSON body of `network`, `pageSize`,
+`cursor` and `filters`; because they only read, both SDKs retry them like
+`GET`s. Every call, a retried attempt included, counts as one API query against
+the organization's allowance.
 
 - Ownership is the API key's organization: an unknown, inactive, or another
   organization's Swig answers 404, as does a transaction the Swig did not act
@@ -151,7 +155,8 @@ write. The two lists take a JSON body of `network`, `pageSize`, `cursor` and
   defaults to 25 and is capped at 100.
 - `filters` is a list of one-key objects such as `{"startSlot": "357000000"}`.
   They combine with AND in any order, and each kind may appear once; a repeated
-  kind or an explicit `*_UNSPECIFIED` value is refused. Transactions: inclusive
+  kind, an explicit `*_UNSPECIFIED` value, or a `startSlot` after `endSlot` is
+  refused. Transactions: inclusive
   `startSlot` and `endSlot` (uint64 strings), and `protocol`, `actionType` and
   `swigVaultAddress` on one action; a matching transaction keeps all of the
   Swig's actions. Positions: `positionStatus`, `protocol` and
