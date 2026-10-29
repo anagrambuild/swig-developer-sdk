@@ -416,12 +416,12 @@ const policy = await swig.wallets.getPolicy(policyId);
 ## DEX history and positions
 
 `swig.dex` reads the DEX activity the backend indexed for a Swig your API key's
-organization owns. The two lists are API-key `POST` searches and `get` is an
-API-key `GET`. All three only read, follow the retry policy, and never call
-Solana themselves.
+organization owns. The two lists are API-key `POST`s that carry their filters
+in the body, and `get` is an API-key `GET`. All three only read, follow the
+retry policy, and never call Solana themselves.
 
 ```typescript
-const search: ListDexTransactionsArgs = {
+const filters: ListDexTransactionsArgs = {
   swigConfigAddress,
   network: 'mainnet',
   startSlot: 357_000_000,
@@ -431,7 +431,7 @@ const search: ListDexTransactionsArgs = {
   swigVaultAddress,
 };
 
-const page = await swig.dex.transactions.list({ ...search, pageSize: 25 });
+const page = await swig.dex.transactions.list({ ...filters, pageSize: 25 });
 
 for (const transaction of page.transactions) {
   for (const { action, protocol } of transaction.actions) {
@@ -441,10 +441,10 @@ for (const transaction of page.transactions) {
   }
 }
 
-if (page.nextPageToken) {
+if (page.nextCursor) {
   const next = await swig.dex.transactions.list({
-    ...search,
-    pageToken: page.nextPageToken,
+    ...filters,
+    cursor: page.nextCursor,
   });
 }
 
@@ -458,9 +458,10 @@ const transaction = await swig.dex.transactions.get({
 Transactions come newest first. Every filter is optional, and filters combine
 with AND. `startSlot` and `endSlot` are inclusive, and `protocol`,
 `actionType` and `swigVaultAddress` must all match the same action. A matching
-transaction still carries every DEX action the Swig executed in it. A page
-token is bound to the filters it was issued with; reusing it with other filters
-is refused.
+transaction still carries every DEX action the Swig executed in it.
+`nextCursor` is the last transaction of the page and is absent on the last
+page; pass it back as `cursor` with the same filters. Positions page the same
+way.
 
 ```typescript
 const positions = await swig.dex.positions.list({

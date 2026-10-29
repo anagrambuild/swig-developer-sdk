@@ -55,7 +55,8 @@ function actionOf(
   };
 }
 
-// Responses below are copied from the backend over mainnet data.
+// Responses below are copied from the backend over mainnet data. The backend
+// sets `nextCursor` to the last row of a page and omits it on the last page.
 
 const TRANSACTIONS_PAGE = {
   transactions: [
@@ -110,7 +111,11 @@ const TRANSACTIONS_PAGE = {
       ],
     },
   ],
-  nextPageToken: 'next-page-token',
+  nextCursor: {
+    slot: '449761692',
+    transactionSignature:
+      '5ic74krw5dwJAHpdagUqheKqj7cRE1wSTPTGzFjRSLFTewpGjsXA1DVk8C2d5QEJSefbjqBr7QczLLVfK7kbF9ra',
+  },
 };
 
 const POSITIONS_PAGE = {
@@ -148,11 +153,10 @@ const POSITIONS_PAGE = {
         '1oQ6eAYNazkVJ4MCL9sohmt3uh6dfrQZvs5GVYDnuez9ZEipgXJ8UBR4igpK47ga9drVpPfokCV3wxEcaCJG4es',
     },
   ],
-  nextPageToken: '',
 };
 
 describe('DexClient', () => {
-  test('searches transactions with every filter in the body', async () => {
+  test('lists transactions with every filter in the body', async () => {
     const requests: CapturedRequest[] = [];
     const swig = client((request) => {
       requests.push(request);
@@ -163,7 +167,7 @@ describe('DexClient', () => {
       swigConfigAddress: SWIG,
       network: 'mainnet',
       pageSize: 2,
-      pageToken: 'previous-token',
+      cursor: { slot: 449_761_800, transactionSignature: 'previous-signature' },
       startSlot: 449_000_000,
       endSlot: 450_000_000,
       protocol: 'raydium-clmm',
@@ -173,12 +177,12 @@ describe('DexClient', () => {
 
     expect(requests[0].method).toBe('POST');
     expect(requests[0].url.pathname).toBe(
-      `/wallet/api/swig/${SWIG}/dex/transactions:search`,
+      `/wallet/api/swig/${SWIG}/dex/transactions`,
     );
     expect(requests[0].body).toEqual({
       network: 'NETWORK_MAINNET',
       pageSize: 2,
-      pageToken: 'previous-token',
+      cursor: { slot: '449761800', transactionSignature: 'previous-signature' },
       filters: [
         { startSlot: '449000000' },
         { endSlot: '450000000' },
@@ -187,7 +191,11 @@ describe('DexClient', () => {
         { swigVaultAddress: VAULT },
       ],
     });
-    expect(page.nextPageToken).toBe('next-page-token');
+    expect(page.nextCursor).toEqual({
+      slot: 449761692,
+      transactionSignature:
+        TRANSACTIONS_PAGE.transactions[1].transactionSignature,
+    });
     expect(page.transactions.map((transaction) => transaction.slot)).toEqual([
       449761733, 449761692,
     ]);
@@ -222,7 +230,7 @@ describe('DexClient', () => {
     const requests: CapturedRequest[] = [];
     const swig = client((request) => {
       requests.push(request);
-      return { transactions: [], nextPageToken: '' };
+      return { transactions: [] };
     });
 
     const page = await swig.dex.transactions.list({ swigConfigAddress: SWIG });
@@ -269,7 +277,7 @@ describe('DexClient', () => {
     });
   });
 
-  test('searches positions with every filter and decodes open and closed', async () => {
+  test('lists positions with every filter and decodes open and closed', async () => {
     const requests: CapturedRequest[] = [];
     const swig = client((request) => {
       requests.push(request);
@@ -287,7 +295,7 @@ describe('DexClient', () => {
 
     expect(requests[0].method).toBe('POST');
     expect(requests[0].url.pathname).toBe(
-      `/wallet/api/swig/${SWIG}/dex/positions:search`,
+      `/wallet/api/swig/${SWIG}/dex/positions`,
     );
     expect(requests[0].body).toEqual({
       network: 'NETWORK_MAINNET',
@@ -298,7 +306,7 @@ describe('DexClient', () => {
         { swigVaultAddress: VAULT },
       ],
     });
-    expect(page.nextPageToken).toBeUndefined();
+    expect(page.nextCursor).toBeUndefined();
     expect(page.positions).toEqual([
       {
         swigConfigAddress: SWIG,
@@ -329,6 +337,55 @@ describe('DexClient', () => {
         sourceTransactionSignature:
           '1oQ6eAYNazkVJ4MCL9sohmt3uh6dfrQZvs5GVYDnuez9ZEipgXJ8UBR4igpK47ga9drVpPfokCV3wxEcaCJG4es',
         status: 'closed',
+      },
+    ]);
+  });
+
+  test('pages by passing nextCursor back as cursor', async () => {
+    const [open] = POSITIONS_PAGE.positions;
+    const bodies: unknown[] = [];
+    const swig = client((request) => {
+      bodies.push(request.body);
+      return request.url.pathname.endsWith('/dex/positions')
+        ? {
+            positions: [open],
+            nextCursor: {
+              protocol: open.protocol,
+              dexPositionAddress: open.dexPositionAddress,
+            },
+          }
+        : TRANSACTIONS_PAGE;
+    });
+
+    const transactions = await swig.dex.transactions.list({
+      swigConfigAddress: SWIG,
+    });
+    const positions = await swig.dex.positions.list({
+      swigConfigAddress: SWIG,
+    });
+    await swig.dex.transactions.list({
+      swigConfigAddress: SWIG,
+      cursor: transactions.nextCursor,
+    });
+    await swig.dex.positions.list({
+      swigConfigAddress: SWIG,
+      cursor: positions.nextCursor,
+    });
+
+    expect(positions.nextCursor).toEqual({
+      protocol: 'raydium-clmm',
+      dexPositionAddress: open.dexPositionAddress,
+    });
+    expect(bodies).toEqual([
+      { network: 'NETWORK_DEVNET' },
+      { network: 'NETWORK_DEVNET' },
+      { network: 'NETWORK_DEVNET', cursor: TRANSACTIONS_PAGE.nextCursor },
+      {
+        network: 'NETWORK_DEVNET',
+        cursor: {
+          protocol: 'DEX_PROTOCOL_RAYDIUM_CLMM',
+          dexPositionAddress: open.dexPositionAddress,
+        },
       },
     ]);
   });
@@ -431,8 +488,8 @@ describe('DexClient', () => {
     ]);
   });
 
-  test('retries a search on a transient failure, as it only reads', async () => {
-    for (const [search, empty] of [
+  test('retries a list on a transient failure, as it only reads', async () => {
+    for (const [list, empty] of [
       [
         (swig: SwigClient) =>
           swig.dex.transactions.list({ swigConfigAddress: SWIG }),
@@ -454,7 +511,7 @@ describe('DexClient', () => {
         { maxRetries: 1, retryDelay: 0 },
       );
 
-      await search(swig);
+      await list(swig);
       expect(attempts).toBe(2);
     }
   });
@@ -491,6 +548,10 @@ describe('DexClient', () => {
         'invalid amountRaw',
       ],
       [withAction({ actingRoleId: undefined }), 'invalid actingRoleId'],
+      [
+        { transactions: [], nextCursor: { slot: '449761692' } },
+        'missing transactionSignature',
+      ],
     ] as const) {
       await expect(
         client(() => response).dex.transactions.list({
@@ -510,6 +571,15 @@ describe('DexClient', () => {
         swigConfigAddress: SWIG,
       }),
     ).rejects.toThrow('missing position state');
+    await expect(
+      client(() => ({
+        positions: [],
+        nextCursor: {
+          protocol: 'DEX_PROTOCOL_UNSPECIFIED',
+          dexPositionAddress: POSITION,
+        },
+      })).dex.positions.list({ swigConfigAddress: SWIG }),
+    ).rejects.toThrow('invalid protocol');
   });
 
   test('rejects invalid arguments before sending a request', async () => {
@@ -544,6 +614,14 @@ describe('DexClient', () => {
         () =>
           swig.dex.transactions.list({ swigConfigAddress: SWIG, endSlot: 1.5 }),
         'endSlot must be a non-negative integer',
+      ],
+      [
+        () =>
+          swig.dex.transactions.list({
+            swigConfigAddress: SWIG,
+            cursor: { slot: -1, transactionSignature: 'signature' },
+          }),
+        'cursor.slot must be a non-negative integer',
       ],
       [
         () =>

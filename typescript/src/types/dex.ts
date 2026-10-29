@@ -133,7 +133,7 @@ export interface ListDexTransactionsArgs {
   swigConfigAddress: string;
   network?: Network;
   pageSize?: number;
-  pageToken?: string;
+  cursor?: DexTransactionCursor;
   startSlot?: number;
   endSlot?: number;
   protocol?: DexProtocol;
@@ -141,10 +141,16 @@ export interface ListDexTransactionsArgs {
   swigVaultAddress?: string;
 }
 
+/** The last transaction of a page; the next page starts after it. */
+export interface DexTransactionCursor {
+  slot: number;
+  transactionSignature: string;
+}
+
 export interface ListDexTransactionsResult {
   transactions: DexTransaction[];
-  /** Absent on the last page; otherwise pass it back as `pageToken` with the same filters. */
-  nextPageToken?: string;
+  /** Absent on the last page; otherwise pass it back as `cursor` with the same filters. */
+  nextCursor?: DexTransactionCursor;
 }
 
 export interface GetDexTransactionArgs {
@@ -195,16 +201,22 @@ export interface ListDexPositionsArgs {
   swigConfigAddress: string;
   network?: Network;
   pageSize?: number;
-  pageToken?: string;
+  cursor?: DexPositionCursor;
   positionStatus?: DexPositionStatus;
   protocol?: DexProtocol;
   swigVaultAddress?: string;
 }
 
+/** The last position of a page; the next page starts after it. */
+export interface DexPositionCursor {
+  protocol: DexProtocol;
+  dexPositionAddress: string;
+}
+
 export interface ListDexPositionsResult {
   positions: DexPosition[];
-  /** Absent on the last page; otherwise pass it back as `pageToken` with the same filters. */
-  nextPageToken?: string;
+  /** Absent on the last page; otherwise pass it back as `cursor` with the same filters. */
+  nextCursor?: DexPositionCursor;
 }
 
 export interface DexAssetAmountWire {
@@ -254,9 +266,14 @@ export interface DexTransactionWire {
   actions?: DexTransactionActionWire[];
 }
 
+export interface DexTransactionCursorWire {
+  slot?: number | string;
+  transactionSignature?: string;
+}
+
 export interface ListDexTransactionsWire {
   transactions?: DexTransactionWire[];
-  nextPageToken?: string;
+  nextCursor?: DexTransactionCursorWire;
 }
 
 export interface GetDexTransactionWire {
@@ -286,7 +303,12 @@ export interface DexPositionWire {
   sourceTransactionSignature?: string;
 }
 
+export interface DexPositionCursorWire {
+  protocol?: string;
+  dexPositionAddress?: string;
+}
+
 export interface ListDexPositionsWire {
   positions?: DexPositionWire[];
-  nextPageToken?: string;
+  nextCursor?: DexPositionCursorWire;
 }
