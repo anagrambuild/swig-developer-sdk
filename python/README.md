@@ -73,6 +73,7 @@ Use your application cancellation scope for an overall operation deadline.
   matching retry returns the original paymaster response.
 - Ramp order creation retries because its required `request_id` makes replay
   safe. Transfer preparation and submission do not retry automatically.
+- DEX transaction and position lists retry like `GET`s; they only read.
 - `4xx` responses raise `SwigDeveloperSdkError` immediately.
 
 ## Create a wallet
@@ -362,7 +363,8 @@ Transactions come newest first. Every filter is an optional keyword argument,
 and filters combine with AND. `start_slot` and `end_slot` are inclusive, and
 `protocol`, `action_type` and `swig_vault_address` must all match the same
 action. A matching transaction still carries every DEX action the Swig executed
-in it. `next_cursor` is the last transaction of the page and is `None` on the
+in it. `page_size` defaults to 25 and the backend caps it at 100.
+`next_cursor` is the last transaction of the page and is `None` on the
 last page; pass it back as `cursor` with the same filters. Positions page the
 same way.
 

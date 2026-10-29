@@ -59,8 +59,13 @@ _POSITION_STATUS_WIRE: dict[str, str] = {
     "closed": "POSITION_STATUS_CLOSED",
 }
 
-_SIGNED_INTEGER = re.compile(r"-?\d+")
-_UNSIGNED_INTEGER = re.compile(r"\d+")
+# ASCII digits only: in a str pattern, \d also matches other scripts' digits.
+_SIGNED_INTEGER = re.compile(r"-?[0-9]+")
+_UNSIGNED_INTEGER = re.compile(r"[0-9]+")
+# page_size is a uint32; the backend reads 0 as 25 and caps it at 100.
+_MAX_PAGE_SIZE_WIRE = 2**32 - 1
+# The backend reads slots as i64.
+_MAX_SLOT_WIRE = 2**63 - 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -299,10 +304,11 @@ class DexTransactionsClient:
         optional and they combine with AND. Slots are inclusive; protocol,
         action_type and swig_vault_address must match the same action. Pass
         next_cursor back as cursor with the same filters; the last page has
-        none, and nothing pages automatically. Network resolves from the call,
-        then client.
-        This list only reads, so it uses the client retry policy. API failures
-        raise SDK errors."""
+        none, and nothing pages automatically. page_size 0 or None means 25,
+        and the backend caps it at 100. Network resolves from the call, then
+        client.
+        This list only reads, so it uses the client retry policy. Invalid
+        arguments raise ValueError; API failures raise SDK errors."""
         filters: list[dict[str, str]] = []
         if start_slot is not None:
             filters.append({"startSlot": _slot_param(start_slot, "start_slot")})
@@ -379,10 +385,11 @@ class DexPositionsClient:
         Positions held by the Swig's vault or any of its sub-accounts, ordered by
         protocol and position address. Every filter is optional, applies to the
         position, and they combine with AND. Pass next_cursor back as cursor
-        with the same filters; nothing pages automatically. Network resolves
-        from the call, then client.
-        This list only reads, so it uses the client retry policy. API failures
-        raise SDK errors."""
+        with the same filters; nothing pages automatically. page_size 0 or None
+        means 25, and the backend caps it at 100. Network resolves from the
+        call, then client.
+        This list only reads, so it uses the client retry policy. Invalid
+        arguments raise ValueError; API failures raise SDK errors."""
         filters: list[dict[str, str]] = []
         if position_status is not None:
             filters.append({"positionStatus": _position_status_wire(position_status)})
@@ -426,16 +433,18 @@ def _list_body(
     cursor: dict[str, str] | None,
     filters: list[dict[str, str]],
 ) -> dict[str, object]:
+    if page_size is not None and (
+        isinstance(page_size, bool)
+        or not isinstance(page_size, int)
+        or not 0 <= page_size <= _MAX_PAGE_SIZE_WIRE
+    ):
+        raise ValueError(
+            f"page_size must be an integer from 0 to {_MAX_PAGE_SIZE_WIRE}"
+        )
     body: dict[str, object] = {
         "network": to_proto_network(require_network(network, default_network))
     }
     if page_size is not None:
-        if (
-            isinstance(page_size, bool)
-            or not isinstance(page_size, int)
-            or page_size < 0
-        ):
-            raise ValueError("page_size must be a non-negative integer")
         body["pageSize"] = page_size
     if cursor is not None:
         body["cursor"] = cursor
@@ -450,8 +459,12 @@ def _swig_path(swig_config_address: str) -> str:
 
 def _slot_param(slot: int, field: str) -> str:
     """uint64 crosses the wire as a decimal string."""
-    if isinstance(slot, bool) or not isinstance(slot, int) or slot < 0:
-        raise ValueError(f"{field} must be a non-negative integer")
+    if (
+        isinstance(slot, bool)
+        or not isinstance(slot, int)
+        or not 0 <= slot <= _MAX_SLOT_WIRE
+    ):
+        raise ValueError(f"{field} must be an integer from 0 to {_MAX_SLOT_WIRE}")
     return str(slot)
 
 
@@ -508,6 +521,9 @@ def _normalize_transaction_cursor(value: object) -> DexTransactionCursor:
 def _normalize_transaction(value: object) -> DexTransaction:
     body = _mapping(value, "DEX transaction")
     actions = _sequence(body.get("actions") or [], "actions")
+    block_time = body.get("blockTime")
+    if block_time is not None and not isinstance(block_time, str):
+        raise SwigResponseError("DEX response has invalid blockTime")
     return DexTransaction(
         swig_config_address=_required_string(
             body.get("swigConfigAddress"),
@@ -517,20 +533,20 @@ def _normalize_transaction(value: object) -> DexTransaction:
             body.get("transactionSignature"),
             "transactionSignature",
         ),
-        slot=_integer(body.get("slot"), "slot"),
+        slot=_unsigned_integer(body.get("slot"), "slot"),
         actions=tuple(_normalize_transaction_action(item) for item in actions),
-        block_time=_optional_string(body.get("blockTime")),
+        block_time=block_time or None,
     )
 
 
 def _normalize_transaction_action(value: object) -> DexTransactionAction:
     body = _mapping(value, "DEX action")
     return DexTransactionAction(
-        action_index=_integer(body.get("actionIndex"), "actionIndex"),
+        action_index=_unsigned_integer(body.get("actionIndex"), "actionIndex"),
         swig_vault_address=_required_string(
             body.get("swigVaultAddress"), "swigVaultAddress"
         ),
-        acting_role_id=_integer(body.get("actingRoleId"), "actingRoleId"),
+        acting_role_id=_unsigned_integer(body.get("actingRoleId"), "actingRoleId"),
         protocol=_normalize_protocol(body.get("protocol")),
         dex_program_address=_required_string(
             body.get("dexProgramAddress"),
@@ -617,11 +633,12 @@ def _normalize_action(value: object) -> DexAction:
     position_close = payload.get("positionClose")
     if position_close is not None:
         body = _mapping(position_close, "positionClose")
+        pool = body.get("dexPoolAddress")
         return DexPositionCloseAction(
             protocol_instruction=_instruction(body),
             protocol_actor_address=_actor(body),
             dex_position_address=_position(body),
-            dex_pool_address=_optional_string(body.get("dexPoolAddress")),
+            dex_pool_address=None if pool is None else _pool(body),
         )
     raise SwigResponseError("DEX response has an unknown action")
 
@@ -663,7 +680,7 @@ def _normalize_amount(value: object, field: str) -> DexAssetAmount:
     return DexAssetAmount(
         mint_address=_required_string(body.get("mintAddress"), "mintAddress"),
         amount_raw=_units(body.get("amountRaw"), "amountRaw", _SIGNED_INTEGER),
-        decimals=None if decimals is None else _integer(decimals, "decimals"),
+        decimals=None if decimals is None else _unsigned_integer(decimals, "decimals"),
     )
 
 
@@ -703,7 +720,7 @@ def _normalize_position(value: object) -> DexPosition:
         body.get("dexPositionAddress"),
         "dexPositionAddress",
     )
-    updated_slot = _integer(body.get("updatedSlot"), "updatedSlot")
+    updated_slot = _unsigned_integer(body.get("updatedSlot"), "updatedSlot")
     source_transaction_signature = _required_string(
         body.get("sourceTransactionSignature"),
         "sourceTransactionSignature",
@@ -723,8 +740,10 @@ def _normalize_position(value: object) -> DexPosition:
             ),
             state=_normalize_account_state(state.get("state")),
         )
-    # Key presence, not truthiness: a closed position arrives as an empty object.
-    if "closed" in body:
+    # A closed position arrives as an empty object, which is falsy, so test for None.
+    closed = body.get("closed")
+    if closed is not None:
+        _mapping(closed, "closed")
         return DexClosedPosition(
             swig_config_address=swig_config_address,
             swig_vault_address=swig_vault_address,
@@ -801,10 +820,6 @@ def _required_string(value: object, field: str) -> str:
     raise SwigResponseError(f"DEX response is missing {field}")
 
 
-def _optional_string(value: object) -> str | None:
-    return value if isinstance(value, str) and value else None
-
-
 def _units(value: object, field: str, pattern: re.Pattern[str]) -> str:
     """A decimal integer string, kept as one so a value past 2^53 survives."""
     if not isinstance(value, str) or not pattern.fullmatch(value):
@@ -812,12 +827,23 @@ def _units(value: object, field: str, pattern: re.Pattern[str]) -> str:
     return value
 
 
+def _unsigned_integer(value: object, field: str) -> int:
+    """uint64 arrives as a decimal string and uint32 as a number."""
+    parsed = _integer(value, field)
+    if parsed < 0:
+        raise SwigResponseError(f"DEX response has invalid {field}")
+    return parsed
+
+
 def _integer(value: object, field: str) -> int:
-    """uint64 arrives as a decimal string and 32-bit integers as numbers."""
     if isinstance(value, bool):
         raise SwigResponseError(f"DEX response has invalid {field}")
     if isinstance(value, int):
         return value
     if isinstance(value, str) and _SIGNED_INTEGER.fullmatch(value):
-        return int(value)
+        try:
+            return int(value)
+        except ValueError as error:
+            # int() refuses a digit string past its length limit.
+            raise SwigResponseError(f"DEX response has invalid {field}") from error
     raise SwigResponseError(f"DEX response has invalid {field}")
