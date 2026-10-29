@@ -319,18 +319,18 @@ policy = await swig.wallets.get_policy(policy_id)
 ## DEX history and positions
 
 `swig.dex` reads the DEX activity the backend indexed for a Swig your API key's
-organization owns. The two lists are API-key `POST` searches and `get` is an
-API-key `GET`. All three only read, follow the retry policy, and never call
-Solana themselves.
+organization owns. The two lists are API-key `POST`s that carry their filters
+in the body, and `get` is an API-key `GET`. All three only read, follow the
+retry policy, and never call Solana themselves.
 
 ```python
-page_token = None
+cursor = None
 while True:
     page = await swig.dex.transactions.list(
         swig_config_address=swig_config_address,
         network="mainnet",
         page_size=25,
-        page_token=page_token,
+        cursor=cursor,
         start_slot=357_000_000,
         end_slot=358_000_000,
         protocol="raydium-clmm",
@@ -341,9 +341,9 @@ while True:
         for executed in transaction.actions:
             if executed.action.type == "swap":
                 print(executed.protocol, executed.action.input.amount_raw)
-    if page.next_page_token is None:
+    if page.next_cursor is None:
         break
-    page_token = page.next_page_token
+    cursor = page.next_cursor
 
 transaction = await swig.dex.transactions.get(
     swig_config_address=swig_config_address,
@@ -362,7 +362,9 @@ Transactions come newest first. Every filter is an optional keyword argument,
 and filters combine with AND. `start_slot` and `end_slot` are inclusive, and
 `protocol`, `action_type` and `swig_vault_address` must all match the same
 action. A matching transaction still carries every DEX action the Swig executed
-in it. A page token is bound to the filters it was issued with.
+in it. `next_cursor` is the last transaction of the page and is `None` on the
+last page; pass it back as `cursor` with the same filters. Positions page the
+same way.
 
 A position is the latest known on-chain state of a position held by the Swig's
 vault or any of its sub-accounts, enabled or not: a `DexOpenPosition` with its

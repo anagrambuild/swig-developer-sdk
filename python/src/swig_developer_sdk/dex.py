@@ -195,11 +195,19 @@ class DexTransaction:
 
 
 @dataclass(frozen=True, slots=True)
+class DexTransactionCursor:
+    """The last transaction of a page; the next page starts after it."""
+
+    slot: int
+    transaction_signature: str
+
+
+@dataclass(frozen=True, slots=True)
 class ListDexTransactionsResult:
     transactions: tuple[DexTransaction, ...]
-    #: None on the last page; otherwise pass it back as ``page_token`` with the
-    #: same filters.
-    next_page_token: str | None = None
+    #: None on the last page; otherwise pass it back as ``cursor`` with the same
+    #: filters.
+    next_cursor: DexTransactionCursor | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -250,11 +258,19 @@ DexPosition: TypeAlias = DexOpenPosition | DexClosedPosition
 
 
 @dataclass(frozen=True, slots=True)
+class DexPositionCursor:
+    """The last position of a page; the next page starts after it."""
+
+    protocol: DexProtocol
+    dex_position_address: str
+
+
+@dataclass(frozen=True, slots=True)
 class ListDexPositionsResult:
     positions: tuple[DexPosition, ...]
-    #: None on the last page; otherwise pass it back as ``page_token`` with the
-    #: same filters.
-    next_page_token: str | None = None
+    #: None on the last page; otherwise pass it back as ``cursor`` with the same
+    #: filters.
+    next_cursor: DexPositionCursor | None = None
 
 
 class DexTransactionsClient:
@@ -270,22 +286,22 @@ class DexTransactionsClient:
         swig_config_address: str,
         network: Network | None = None,
         page_size: int | None = None,
-        page_token: str | None = None,
+        cursor: DexTransactionCursor | None = None,
         start_slot: int | None = None,
         end_slot: int | None = None,
         protocol: DexProtocol | None = None,
         action_type: DexActionType | None = None,
         swig_vault_address: str | None = None,
     ) -> ListDexTransactionsResult:
-        """Search the Swig's indexed DEX transactions, newest first, a page per call.
+        """List the Swig's indexed DEX transactions, newest first, a page per call.
 
         Only transactions the index interpreted are listed. Every filter is
         optional and they combine with AND. Slots are inclusive; protocol,
         action_type and swig_vault_address must match the same action. Pass
-        next_page_token back as page_token with the same filters; the last page
-        has none, and nothing pages automatically. Network resolves from the
-        call, then client.
-        This search only reads, so it uses the client retry policy. API failures
+        next_cursor back as cursor with the same filters; the last page has
+        none, and nothing pages automatically. Network resolves from the call,
+        then client.
+        This list only reads, so it uses the client retry policy. API failures
         raise SDK errors."""
         filters: list[dict[str, str]] = []
         if start_slot is not None:
@@ -298,12 +314,18 @@ class DexTransactionsClient:
             filters.append({"actionType": _action_type_wire(action_type)})
         if swig_vault_address is not None:
             filters.append({"swigVaultAddress": swig_vault_address})
-        body = _search_body(
-            network, self._default_network, page_size, page_token, filters
+        cursor_wire: dict[str, str] | None = None
+        if cursor is not None:
+            cursor_wire = {
+                "slot": _slot_param(cursor.slot, "cursor.slot"),
+                "transactionSignature": cursor.transaction_signature,
+            }
+        body = _list_body(
+            network, self._default_network, page_size, cursor_wire, filters
         )
         return _normalize_transactions_page(
             await self._http.post(
-                f"{_swig_path(swig_config_address)}/dex/transactions:search",
+                f"{_swig_path(swig_config_address)}/dex/transactions",
                 body,
                 retry=True,
             )
@@ -347,19 +369,19 @@ class DexPositionsClient:
         swig_config_address: str,
         network: Network | None = None,
         page_size: int | None = None,
-        page_token: str | None = None,
+        cursor: DexPositionCursor | None = None,
         position_status: DexPositionStatus | None = None,
         protocol: DexProtocol | None = None,
         swig_vault_address: str | None = None,
     ) -> ListDexPositionsResult:
-        """Search the latest state of the Swig's DEX positions, a page per call.
+        """List the latest state of the Swig's DEX positions, a page per call.
 
         Positions held by the Swig's vault or any of its sub-accounts, ordered by
         protocol and position address. Every filter is optional, applies to the
-        position, and they combine with AND. Pass next_page_token back as
-        page_token with the same filters; nothing pages automatically. Network
-        resolves from the call, then client.
-        This search only reads, so it uses the client retry policy. API failures
+        position, and they combine with AND. Pass next_cursor back as cursor
+        with the same filters; nothing pages automatically. Network resolves
+        from the call, then client.
+        This list only reads, so it uses the client retry policy. API failures
         raise SDK errors."""
         filters: list[dict[str, str]] = []
         if position_status is not None:
@@ -368,12 +390,18 @@ class DexPositionsClient:
             filters.append({"protocol": _protocol_wire(protocol)})
         if swig_vault_address is not None:
             filters.append({"swigVaultAddress": swig_vault_address})
-        body = _search_body(
-            network, self._default_network, page_size, page_token, filters
+        cursor_wire: dict[str, str] | None = None
+        if cursor is not None:
+            cursor_wire = {
+                "protocol": _protocol_wire(cursor.protocol),
+                "dexPositionAddress": cursor.dex_position_address,
+            }
+        body = _list_body(
+            network, self._default_network, page_size, cursor_wire, filters
         )
         return _normalize_positions_page(
             await self._http.post(
-                f"{_swig_path(swig_config_address)}/dex/positions:search",
+                f"{_swig_path(swig_config_address)}/dex/positions",
                 body,
                 retry=True,
             )
@@ -391,11 +419,11 @@ class DexClient:
         self.positions = DexPositionsClient(http, default_network)
 
 
-def _search_body(
+def _list_body(
     network: Network | None,
     default_network: Network | None,
     page_size: int | None,
-    page_token: str | None,
+    cursor: dict[str, str] | None,
     filters: list[dict[str, str]],
 ) -> dict[str, object]:
     body: dict[str, object] = {
@@ -409,8 +437,8 @@ def _search_body(
         ):
             raise ValueError("page_size must be a non-negative integer")
         body["pageSize"] = page_size
-    if page_token:
-        body["pageToken"] = page_token
+    if cursor is not None:
+        body["cursor"] = cursor
     if filters:
         body["filters"] = filters
     return body
@@ -457,9 +485,23 @@ def _wire(table: Mapping[str, str], value: str, message: str) -> str:
 def _normalize_transactions_page(response: object) -> ListDexTransactionsResult:
     body = _mapping(response, "DEX transactions response")
     transactions = _sequence(body.get("transactions") or [], "transactions")
+    next_cursor = body.get("nextCursor")
     return ListDexTransactionsResult(
         transactions=tuple(_normalize_transaction(item) for item in transactions),
-        next_page_token=_optional_string(body.get("nextPageToken")),
+        next_cursor=None
+        if next_cursor is None
+        else _normalize_transaction_cursor(next_cursor),
+    )
+
+
+def _normalize_transaction_cursor(value: object) -> DexTransactionCursor:
+    body = _mapping(value, "DEX cursor")
+    return DexTransactionCursor(
+        slot=_integer(body.get("slot"), "slot"),
+        transaction_signature=_required_string(
+            body.get("transactionSignature"),
+            "transactionSignature",
+        ),
     )
 
 
@@ -628,9 +670,23 @@ def _normalize_amount(value: object, field: str) -> DexAssetAmount:
 def _normalize_positions_page(response: object) -> ListDexPositionsResult:
     body = _mapping(response, "DEX positions response")
     positions = _sequence(body.get("positions") or [], "positions")
+    next_cursor = body.get("nextCursor")
     return ListDexPositionsResult(
         positions=tuple(_normalize_position(item) for item in positions),
-        next_page_token=_optional_string(body.get("nextPageToken")),
+        next_cursor=None
+        if next_cursor is None
+        else _normalize_position_cursor(next_cursor),
+    )
+
+
+def _normalize_position_cursor(value: object) -> DexPositionCursor:
+    body = _mapping(value, "DEX cursor")
+    return DexPositionCursor(
+        protocol=_normalize_protocol(body.get("protocol")),
+        dex_position_address=_required_string(
+            body.get("dexPositionAddress"),
+            "dexPositionAddress",
+        ),
     )
 
 

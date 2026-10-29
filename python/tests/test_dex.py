@@ -15,12 +15,14 @@ from swig_developer_sdk import (
     DexLiquidityRemoveAction,
     DexOpenPosition,
     DexPositionCloseAction,
+    DexPositionCursor,
     DexPositionOpenAction,
     DexPositionRebalanceAction,
     DexRaydiumClmmPositionState,
     DexRewardClaimAction,
     DexSwapAction,
     DexTransactionAction,
+    DexTransactionCursor,
     RetryOptions,
     SwigClient,
     SwigDeveloperSdkError,
@@ -50,7 +52,8 @@ def action_of(
     }
 
 
-# Responses below are copied from the backend over mainnet data.
+# Responses below are copied from the backend over mainnet data. The backend
+# sets nextCursor to the last row of a page and omits it on the last page.
 
 TRANSACTIONS_PAGE: dict[str, Any] = {
     "transactions": [
@@ -113,7 +116,12 @@ TRANSACTIONS_PAGE: dict[str, Any] = {
             ],
         },
     ],
-    "nextPageToken": "next-page-token",
+    "nextCursor": {
+        "slot": "449761692",
+        "transactionSignature": (
+            "5ic74krw5dwJAHpdagUqheKqj7cRE1wSTPTGzFjRSLFTewpGjsXA1DVk8C2d5QEJSefbjqBr7QczLLVfK7kbF9ra"
+        ),
+    },
 }
 
 POSITIONS_PAGE: dict[str, Any] = {
@@ -153,7 +161,6 @@ POSITIONS_PAGE: dict[str, Any] = {
             ),
         },
     ],
-    "nextPageToken": "",
 }
 
 
@@ -187,7 +194,7 @@ def body(request: httpx.Request) -> object:
     return json.loads(request.content)
 
 
-async def test_searches_transactions_with_every_filter_in_the_body() -> None:
+async def test_lists_transactions_with_every_filter_in_the_body() -> None:
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> object:
@@ -198,7 +205,9 @@ async def test_searches_transactions_with_every_filter_in_the_body() -> None:
         swig_config_address=SWIG,
         network="mainnet",
         page_size=2,
-        page_token="previous-token",
+        cursor=DexTransactionCursor(
+            slot=449_761_800, transaction_signature="previous-signature"
+        ),
         start_slot=449_000_000,
         end_slot=450_000_000,
         protocol="raydium-clmm",
@@ -207,11 +216,11 @@ async def test_searches_transactions_with_every_filter_in_the_body() -> None:
     )
 
     assert requests[0].method == "POST"
-    assert requests[0].url.path == f"/wallet/api/swig/{SWIG}/dex/transactions:search"
+    assert requests[0].url.path == f"/wallet/api/swig/{SWIG}/dex/transactions"
     assert body(requests[0]) == {
         "network": "NETWORK_MAINNET",
         "pageSize": 2,
-        "pageToken": "previous-token",
+        "cursor": {"slot": "449761800", "transactionSignature": "previous-signature"},
         "filters": [
             {"startSlot": "449000000"},
             {"endSlot": "450000000"},
@@ -220,7 +229,12 @@ async def test_searches_transactions_with_every_filter_in_the_body() -> None:
             {"swigVaultAddress": VAULT},
         ],
     }
-    assert page.next_page_token == "next-page-token"
+    assert page.next_cursor == DexTransactionCursor(
+        slot=449761692,
+        transaction_signature=TRANSACTIONS_PAGE["transactions"][1][
+            "transactionSignature"
+        ],
+    )
     assert [transaction.slot for transaction in page.transactions] == [
         449761733,
         449761692,
@@ -256,13 +270,13 @@ async def test_sends_only_the_client_network_when_no_filter_is_set() -> None:
 
     def handler(request: httpx.Request) -> object:
         requests.append(request)
-        return {"transactions": [], "nextPageToken": ""}
+        return {"transactions": []}
 
     page = await client(handler).dex.transactions.list(swig_config_address=SWIG)
 
     assert body(requests[0]) == {"network": "NETWORK_DEVNET"}
     assert page.transactions == ()
-    assert page.next_page_token is None
+    assert page.next_cursor is None
 
 
 async def test_gets_one_transaction_by_signature() -> None:
@@ -302,9 +316,7 @@ async def test_gets_one_transaction_by_signature() -> None:
     )
 
 
-async def test_searches_positions_with_every_filter_and_decodes_open_and_closed() -> (
-    None
-):
+async def test_lists_positions_with_every_filter_and_decodes_open_and_closed() -> None:
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> object:
@@ -321,7 +333,7 @@ async def test_searches_positions_with_every_filter_and_decodes_open_and_closed(
     )
 
     assert requests[0].method == "POST"
-    assert requests[0].url.path == f"/wallet/api/swig/{SWIG}/dex/positions:search"
+    assert requests[0].url.path == f"/wallet/api/swig/{SWIG}/dex/positions"
     assert body(requests[0]) == {
         "network": "NETWORK_MAINNET",
         "pageSize": 25,
@@ -331,7 +343,7 @@ async def test_searches_positions_with_every_filter_and_decodes_open_and_closed(
             {"swigVaultAddress": VAULT},
         ],
     }
-    assert page.next_page_token is None
+    assert page.next_cursor is None
     assert page.positions == (
         DexOpenPosition(
             swig_config_address=SWIG,
@@ -363,6 +375,50 @@ async def test_searches_positions_with_every_filter_and_decodes_open_and_closed(
             ),
         ),
     )
+
+
+async def test_pages_by_passing_next_cursor_back_as_cursor() -> None:
+    opened = POSITIONS_PAGE["positions"][0]
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> object:
+        requests.append(request)
+        if request.url.path.endswith("/dex/positions"):
+            return {
+                "positions": [opened],
+                "nextCursor": {
+                    "protocol": opened["protocol"],
+                    "dexPositionAddress": opened["dexPositionAddress"],
+                },
+            }
+        return TRANSACTIONS_PAGE
+
+    swig = client(handler)
+    transactions = await swig.dex.transactions.list(swig_config_address=SWIG)
+    positions = await swig.dex.positions.list(swig_config_address=SWIG)
+    await swig.dex.transactions.list(
+        swig_config_address=SWIG, cursor=transactions.next_cursor
+    )
+    await swig.dex.positions.list(
+        swig_config_address=SWIG, cursor=positions.next_cursor
+    )
+
+    assert positions.next_cursor == DexPositionCursor(
+        protocol="raydium-clmm",
+        dex_position_address=opened["dexPositionAddress"],
+    )
+    assert [body(request) for request in requests] == [
+        {"network": "NETWORK_DEVNET"},
+        {"network": "NETWORK_DEVNET"},
+        {"network": "NETWORK_DEVNET", "cursor": TRANSACTIONS_PAGE["nextCursor"]},
+        {
+            "network": "NETWORK_DEVNET",
+            "cursor": {
+                "protocol": "DEX_PROTOCOL_RAYDIUM_CLMM",
+                "dexPositionAddress": opened["dexPositionAddress"],
+            },
+        },
+    ]
 
 
 async def test_decodes_every_other_action_kind() -> None:
@@ -471,7 +527,7 @@ async def test_decodes_every_other_action_kind() -> None:
 
 
 @pytest.mark.parametrize("resource", ["transactions", "positions"])
-async def test_retries_a_search_on_a_transient_failure(resource: str) -> None:
+async def test_retries_a_list_on_a_transient_failure(resource: str) -> None:
     attempts = 0
 
     def handler(request: httpx.Request) -> object:
@@ -519,6 +575,10 @@ def with_action(change: dict[str, Any]) -> dict[str, Any]:
             "invalid amountRaw",
         ),
         (with_action({"actingRoleId": None}), "invalid actingRoleId"),
+        (
+            {"transactions": [], "nextCursor": {"slot": "449761692"}},
+            "missing transactionSignature",
+        ),
     ],
 )
 async def test_refuses_a_transaction_outside_the_contract(
@@ -542,6 +602,17 @@ async def test_refuses_a_missing_transaction_or_position_state() -> None:
     assert (refused.value.code, refused.value.status_code) == ("INVALID_RESPONSE", 502)
     with pytest.raises(SwigResponseError, match="missing position state"):
         await client(lambda _: {"positions": [stateless]}).dex.positions.list(
+            swig_config_address=SWIG
+        )
+    unspecified_cursor = {
+        "positions": [],
+        "nextCursor": {
+            "protocol": "DEX_PROTOCOL_UNSPECIFIED",
+            "dexPositionAddress": POSITION,
+        },
+    }
+    with pytest.raises(SwigResponseError, match="invalid protocol"):
+        await client(lambda _: unspecified_cursor).dex.positions.list(
             swig_config_address=SWIG
         )
 
@@ -570,6 +641,13 @@ async def test_rejects_invalid_arguments_before_sending_a_request() -> None:
         await swig.dex.transactions.list(
             swig_config_address=SWIG,
             end_slot=1.5,  # type: ignore[arg-type]
+        )
+    with pytest.raises(
+        ValueError, match=r"cursor\.slot must be a non-negative integer"
+    ):
+        await swig.dex.transactions.list(
+            swig_config_address=SWIG,
+            cursor=DexTransactionCursor(slot=-1, transaction_signature="signature"),
         )
     with pytest.raises(ValueError, match='position_status must be "open" or "closed"'):
         await swig.dex.positions.list(
