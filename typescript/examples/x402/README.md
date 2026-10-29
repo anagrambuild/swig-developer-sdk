@@ -16,8 +16,9 @@ endpoint used to provision the example assets and run the local facilitator.
 From the repository root:
 
 ```sh
+cd typescript
 bun install
-cp typescript/examples/x402/.env.example typescript/examples/x402/.env.local
+cp examples/x402/.env.example examples/x402/.env.local
 ```
 
 Set the following values in `.env.local`:
