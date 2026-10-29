@@ -3,6 +3,7 @@ import {
   HttpClient,
   resolveRetryOptions,
 } from '../../core/index.js';
+import { DexClient } from '../../dex/index.js';
 import { ParticipantSetsClient } from '../../participant-sets/index.js';
 import { PaymasterClient } from '../../paymaster/index.js';
 import { RampClient } from '../../ramp/index.js';
@@ -13,6 +14,7 @@ import { WalletsClient } from '../../wallets/index.js';
 export class SwigClient {
   readonly #http: HttpClient;
   readonly defaultNetwork: SwigClientConfig['network'];
+  readonly dex: DexClient;
   readonly paymaster: PaymasterClient;
   readonly participantSets: ParticipantSetsClient;
   readonly ramp: RampClient;
@@ -27,6 +29,7 @@ export class SwigClient {
       fetch: config.fetch ?? fetch,
       retry: resolveRetryOptions(config.retryOptions),
     });
+    this.dex = new DexClient(this.#http, this.defaultNetwork);
     this.paymaster = new PaymasterClient(this.#http, this.defaultNetwork);
     this.participantSets = new ParticipantSetsClient(
       this.#http,

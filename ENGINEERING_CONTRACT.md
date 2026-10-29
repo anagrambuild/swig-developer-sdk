@@ -10,7 +10,7 @@ migration. It is an engineering review artifact, not a product tutorial.
   `6fc9e22`, preserved with `git subtree split`.
 - Standalone repository: `anagrambuild/swig-developer-sdk`.
 - Public API base URL: `https://api.onswig.com`.
-- TypeScript package: `@swig-wallet/developer-sdk` version `0.11.1`.
+- TypeScript package: `@swig-wallet/developer-sdk` version `0.12.0`.
 - Python package: `swig-developer-sdk` version `0.10.0`.
 
 The `0.9.0` TypeScript release removes the browser proxy and framework adapter
@@ -128,6 +128,52 @@ advertise them as usable integration flows.
 
 Token balances and token transactions carry `assetKind` in ProtoJSON. Both
 SDKs preserve it as `token`, `native-sol`, or `unspecified`.
+
+## DEX API
+
+| Method | Route | Authentication |
+| --- | --- | --- |
+| POST | `/wallet/api/swig/{swig_config_address}/dex/transactions` | API key |
+| GET | `/wallet/api/swig/{swig_config_address}/dex/transactions/{transaction_signature}` | API key |
+| POST | `/wallet/api/swig/{swig_config_address}/dex/positions` | API key |
+
+Source: `anagrambuild/swig-dev-portal` `APIQueryDexService`
+(`backend/proto/wallet/api_dex.proto`, package `api_dex.v1`). The routes read
+the backend's DEX index only; they never call Solana, parse transactions, or
+write. The two lists take a JSON body of `network`, `pageSize`, `cursor` and
+`filters`; because they only read, the TypeScript SDK retries them like
+`GET`s.
+
+- Ownership is the API key's organization: an unknown, inactive, or another
+  organization's Swig answers 404, as does a transaction the Swig did not act
+  in. `network` is required (`NETWORK_MAINNET` or `NETWORK_DEVNET`).
+- Transactions are newest first on `(slot, transactionSignature)`. Positions
+  are ordered by `(protocol, dexPositionAddress)`, never by state. Page size
+  defaults to 25 and is capped at 100.
+- `filters` is a list of one-key objects such as `{"startSlot": "357000000"}`.
+  They combine with AND in any order, and each kind may appear once; a repeated
+  kind or an explicit `*_UNSPECIFIED` value is refused. Transactions: inclusive
+  `startSlot` and `endSlot` (uint64 strings), and `protocol`, `actionType` and
+  `swigVaultAddress` on one action; a matching transaction keeps all of the
+  Swig's actions. Positions: `positionStatus`, `protocol` and
+  `swigVaultAddress`, each on the position. The SDK takes each filter as an
+  optional argument.
+- `nextCursor` is the last row of a page, by its sort key:
+  `{slot, transactionSignature}` for transactions (`slot` a uint64 string) and
+  `{protocol, dexPositionAddress}` for positions. It is absent on the last
+  page. Send it back as `cursor` with the same filters to read the next page;
+  the backend does not tie a cursor to the filters it came from.
+- Only transactions the index interpreted are listed. Parser and indexer status
+  never cross the API.
+- Amounts are ProtoJSON decimal strings, signed for the action's
+  `protocolActorAddress`, which is the router's account on a routed trade. The
+  TypeScript SDK keeps them as strings. Slots are uint64 strings decoded to integers;
+  `actingRoleId` is a required uint32 number, the Swig role that authorized
+  the action.
+- Positions are those the Swig's vault or any of its sub-accounts, enabled or
+  not, last acted on: open (pool plus decoded account state, Raydium CLMM
+  today) or closed (`{}`), decoded by key presence. `updatedSlot` is the slot of the
+  on-chain read behind the state.
 
 ## Paymaster API
 

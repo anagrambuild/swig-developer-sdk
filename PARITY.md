@@ -3,7 +3,7 @@
 Python mirrors the TypeScript server SDK by behavior and client hierarchy
 except for features explicitly marked as pending. Python uses snake_case names
 and keyword arguments; TypeScript uses camelCase and options objects.
-TypeScript is version `0.11.1`, Python is version `0.10.0`, and both default to
+TypeScript is version `0.12.0`, Python is version `0.10.0`, and both default to
 `https://api.onswig.com`.
 
 ## Client surface
@@ -33,6 +33,19 @@ TypeScript is version `0.11.1`, Python is version `0.10.0`, and both default to
 | Token transactions | `wallet.listTokenTransactions` | `wallet.list_token_transactions` | same `limit`, direction, and `assetKind` normalization |
 | Rent claimer | `wallet.getRentClaimer` | pending | finalized recipient read; `null` when unset |
 | Roles | `wallet.listRoles` | `wallet.list_roles` | same role, authority, and action normalization |
+
+## DEX reads
+
+| Surface | TypeScript | Python | Parity target |
+| --- | --- | --- | --- |
+| Transaction history | `swig.dex.transactions.list` | pending | same list body, filter list, cursor, and action decoding |
+| One transaction | `swig.dex.transactions.get` | pending | same path encoding and representation as a list item |
+| Latest positions | `swig.dex.positions.list` | pending | same list body, filter list, cursor, and open/closed decoding by key presence |
+
+Protocols, action types and position statuses decode through explicit tables,
+and an unrecognized or `*_UNSPECIFIED` value is refused rather than guessed.
+Amounts stay decimal strings. Each filter is an optional argument, sent as a
+one-key wire object.
 
 ## Paymaster and submission
 
