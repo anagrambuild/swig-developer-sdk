@@ -3,11 +3,21 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "swig-developer-sdk-repository",
+      "name": "@swig-wallet/developer-sdk",
+      "dependencies": {
+        "@solana/web3.js": "^1.98.0",
+        "@swig-wallet/lib": "^2.1.0",
+        "@x402/core": "2.21.0",
+        "bs58": "^6.0.0",
+      },
       "devDependencies": {
         "@eslint/eslintrc": "^3.3.1",
         "@eslint/js": "^9.27.0",
+        "@noble/curves": "^1.8.2",
+        "@noble/hashes": "^1.7.0",
         "@solana/kit": "^5.4.0",
+        "@solana/spl-token": "^0.4.13",
+        "@types/bun": "^1.2.5",
         "@types/express": "^5.0.3",
         "@types/node": "^22.13.10",
         "@typescript-eslint/eslint-plugin": "^8.26.1",
@@ -20,31 +30,8 @@
         "globals": "^16.2.0",
         "prettier": "^3.3.3",
         "prettier-plugin-organize-imports": "^4.0.0",
-        "typescript": "^5.8.2",
-      },
-    },
-    "typescript": {
-      "name": "@swig-wallet/developer-sdk",
-      "version": "0.11.1",
-      "dependencies": {
-        "@solana/web3.js": "^1.98.0",
-        "@swig-wallet/lib": "^2.1.0",
-        "@x402/core": "2.21.0",
-        "bs58": "^6.0.0",
-      },
-      "devDependencies": {
-        "@noble/curves": "^1.8.2",
-        "@noble/hashes": "^1.7.0",
-        "@solana/spl-token": "^0.4.13",
-        "@types/bun": "^1.2.5",
-        "@typescript-eslint/eslint-plugin": "^8.26.1",
-        "@typescript-eslint/parser": "^8.26.1",
-        "eslint": "^9.22.0",
-        "eslint-config-prettier": "^10.1.1",
-        "prettier": "^3.3.3",
-        "prettier-plugin-organize-imports": "^4.0.0",
         "tsup": "^8.2.0",
-        "typescript": "^5.5.3",
+        "typescript": "^5.8.2",
       },
     },
   },
@@ -308,8 +295,6 @@
     "@swc/helpers": ["@swc/helpers@0.5.23", "", { "dependencies": { "tslib": "^2.8.0" } }, "sha512-5lSsMOTXURePglDfvuAQUqkGek9Hg2kksOYay2m0+XR++b2NWYL/4sWyuvVBIs8oKnJaxkdi9whaL/sqN13afw=="],
 
     "@swig-wallet/coder": ["@swig-wallet/coder@2.1.0", "", { "dependencies": { "@solana/kit": "^2.1.0" } }, "sha512-xVqgiEjL9wMfmIqBqm3+gQ1s6GNdCuhorVhSd0JoY2+4nG7I9ovcMBTTYxiiB9PMXAbc2SMK3j7KIjE11S5Uwg=="],
-
-    "@swig-wallet/developer-sdk": ["@swig-wallet/developer-sdk@workspace:typescript"],
 
     "@swig-wallet/lib": ["@swig-wallet/lib@2.1.0", "", { "dependencies": { "@noble/curves": "^1.8.2", "@noble/hashes": "^1.7.0", "@solana-program/token": "^0.5.1", "@solana/kit": "^2.1.0", "@swig-wallet/coder": "2.1.0", "bn.js": "^5.2.2" } }, "sha512-C3bM+4rjPt4/sY4Nr9TkGoReq5iLCsu3rdk0/wJq2ttXxArzRLj5vaGliIdSGzRfkqxA/c+vhel9huzm/psogg=="],
 

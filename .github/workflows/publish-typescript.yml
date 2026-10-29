@@ -15,6 +15,9 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: typescript
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,7 +31,7 @@ jobs:
       - name: Verify release tag
         shell: bash
         run: |
-          package_version="$(node -p "require('./typescript/package.json').version")"
+          package_version="$(node -p "require('./package.json').version")"
           expected_tag="typescript-v${package_version}"
           if [[ "${GITHUB_REF_NAME}" != "${expected_tag}" ]]; then
             echo "Expected tag ${expected_tag}, got ${GITHUB_REF_NAME}" >&2
@@ -41,7 +44,7 @@ jobs:
           fi
       - run: bun run check
       - run: bun run build
-      - run: npm publish --workspace typescript --provenance --access public
+      - run: npm publish --provenance --access public
         env:
           NPM_CONFIG_PROVENANCE: true
 
