@@ -12,22 +12,25 @@ import { toProtoNetwork } from '../wallets/normalizers.js';
 /** A filter on the wire: one key, named for its kind. */
 type DexFilterWire = Record<string, string>;
 
-interface DexSearchBodyWire {
+/** A cursor on the wire: the key fields of the previous page's last row. */
+type DexCursorWire = Record<string, string>;
+
+interface DexListBodyWire {
   network: string;
   pageSize?: number;
-  pageToken?: string;
+  cursor?: DexCursorWire;
   filters?: DexFilterWire[];
 }
 
-interface DexSearchRequest {
+interface DexListRequest {
   path: string;
-  body: DexSearchBodyWire;
+  body: DexListBodyWire;
 }
 
-export function transactionsSearch(
+export function transactionsRequest(
   args: ListDexTransactionsArgs,
   defaultNetwork?: Network,
-): DexSearchRequest {
+): DexListRequest {
   const filters: DexFilterWire[] = [];
   if (args.startSlot !== undefined) {
     filters.push({ startSlot: slotWire(args.startSlot, 'startSlot') });
@@ -44,9 +47,15 @@ export function transactionsSearch(
   if (args.swigVaultAddress !== undefined) {
     filters.push({ swigVaultAddress: args.swigVaultAddress });
   }
+  const cursor = args.cursor
+    ? {
+        slot: slotWire(args.cursor.slot, 'cursor.slot'),
+        transactionSignature: args.cursor.transactionSignature,
+      }
+    : undefined;
   return {
-    path: `${swigPath(args.swigConfigAddress)}/dex/transactions:search`,
-    body: searchBody(args, defaultNetwork, filters),
+    path: `${swigPath(args.swigConfigAddress)}/dex/transactions`,
+    body: listBody(args, defaultNetwork, cursor, filters),
   };
 }
 
@@ -60,10 +69,10 @@ export function transactionPath(
   return `${swigPath(args.swigConfigAddress)}/dex/transactions/${encodeURIComponent(args.transactionSignature)}?${query.toString()}`;
 }
 
-export function positionsSearch(
+export function positionsRequest(
   args: ListDexPositionsArgs,
   defaultNetwork?: Network,
-): DexSearchRequest {
+): DexListRequest {
   const filters: DexFilterWire[] = [];
   if (args.positionStatus !== undefined) {
     filters.push({ positionStatus: positionStatusWire(args.positionStatus) });
@@ -74,17 +83,24 @@ export function positionsSearch(
   if (args.swigVaultAddress !== undefined) {
     filters.push({ swigVaultAddress: args.swigVaultAddress });
   }
+  const cursor = args.cursor
+    ? {
+        protocol: protocolWire(args.cursor.protocol),
+        dexPositionAddress: args.cursor.dexPositionAddress,
+      }
+    : undefined;
   return {
-    path: `${swigPath(args.swigConfigAddress)}/dex/positions:search`,
-    body: searchBody(args, defaultNetwork, filters),
+    path: `${swigPath(args.swigConfigAddress)}/dex/positions`,
+    body: listBody(args, defaultNetwork, cursor, filters),
   };
 }
 
-function searchBody(
-  args: { network?: Network; pageSize?: number; pageToken?: string },
+function listBody(
+  args: { network?: Network; pageSize?: number },
   defaultNetwork: Network | undefined,
+  cursor: DexCursorWire | undefined,
   filters: DexFilterWire[],
-): DexSearchBodyWire {
+): DexListBodyWire {
   if (
     args.pageSize !== undefined &&
     (!Number.isSafeInteger(args.pageSize) || args.pageSize < 0)
@@ -94,7 +110,7 @@ function searchBody(
   return {
     network: toProtoNetwork(requiredNetwork(args.network, defaultNetwork)),
     ...(args.pageSize !== undefined ? { pageSize: args.pageSize } : {}),
-    ...(args.pageToken ? { pageToken: args.pageToken } : {}),
+    ...(cursor ? { cursor } : {}),
     ...(filters.length > 0 ? { filters } : {}),
   };
 }

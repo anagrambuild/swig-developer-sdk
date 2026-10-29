@@ -6,11 +6,15 @@ import type {
   DexAssetAmountWire,
   DexPosition,
   DexPositionAccountState,
+  DexPositionCursor,
+  DexPositionCursorWire,
   DexPositionWire,
   DexProtocol,
   DexTransaction,
   DexTransactionAction,
   DexTransactionActionWire,
+  DexTransactionCursor,
+  DexTransactionCursorWire,
   DexTransactionWire,
   ListDexPositionsResult,
   ListDexPositionsWire,
@@ -32,9 +36,21 @@ export function normalizeDexTransactionsPage(
 ): ListDexTransactionsResult {
   return {
     transactions: (response.transactions ?? []).map(normalizeDexTransaction),
-    ...(response.nextPageToken
-      ? { nextPageToken: response.nextPageToken }
+    ...(response.nextCursor
+      ? { nextCursor: normalizeDexTransactionCursor(response.nextCursor) }
       : {}),
+  };
+}
+
+function normalizeDexTransactionCursor(
+  cursor: DexTransactionCursorWire,
+): DexTransactionCursor {
+  return {
+    slot: integerField(cursor.slot, 'slot'),
+    transactionSignature: requiredString(
+      cursor.transactionSignature,
+      'transactionSignature',
+    ),
   };
 }
 
@@ -197,9 +213,21 @@ export function normalizeDexPositionsPage(
 ): ListDexPositionsResult {
   return {
     positions: (response.positions ?? []).map(normalizeDexPosition),
-    ...(response.nextPageToken
-      ? { nextPageToken: response.nextPageToken }
+    ...(response.nextCursor
+      ? { nextCursor: normalizeDexPositionCursor(response.nextCursor) }
       : {}),
+  };
+}
+
+function normalizeDexPositionCursor(
+  cursor: DexPositionCursorWire,
+): DexPositionCursor {
+  return {
+    protocol: normalizeDexProtocol(cursor.protocol),
+    dexPositionAddress: requiredString(
+      cursor.dexPositionAddress,
+      'dexPositionAddress',
+    ),
   };
 }
 

@@ -38,9 +38,9 @@ TypeScript is version `0.12.0`, Python is version `0.11.0`, and both default to
 
 | Surface | TypeScript | Python | Parity target |
 | --- | --- | --- | --- |
-| Transaction history | `swig.dex.transactions.list` | `swig.dex.transactions.list` | same search body, filter list, page token, and action decoding |
+| Transaction history | `swig.dex.transactions.list` | `swig.dex.transactions.list` | same list body, filter list, cursor, and action decoding |
 | One transaction | `swig.dex.transactions.get` | `swig.dex.transactions.get` | same path encoding and representation as a list item |
-| Latest positions | `swig.dex.positions.list` | `swig.dex.positions.list` | same search body, filter list, and open/closed decoding by key presence |
+| Latest positions | `swig.dex.positions.list` | `swig.dex.positions.list` | same list body, filter list, cursor, and open/closed decoding by key presence |
 
 Protocols, action types and position statuses decode through explicit tables,
 and an unrecognized or `*_UNSPECIFIED` value is refused rather than guessed.

@@ -11,7 +11,7 @@
 - Narrow a list with optional filter arguments, combined with AND: inclusive
   `startSlot`/`endSlot`, `protocol`, `actionType` and `swigVaultAddress` for
   transactions, and `positionStatus`, `protocol` and `swigVaultAddress` for
-  positions. Pass `nextPageToken` back as `pageToken` with the same filters.
+  positions. Pass `nextCursor` back as `cursor` with the same filters.
 - Actions decode into a `DexAction` union keyed by `type`, and positions into
   `DexOpenPosition` or `DexClosedPosition`. `amountRaw` stays a signed decimal
   string for the action's `protocolActorAddress`, which is the router's account

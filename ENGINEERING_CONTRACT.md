@@ -133,15 +133,15 @@ SDKs preserve it as `token`, `native-sol`, or `unspecified`.
 
 | Method | Route | Authentication |
 | --- | --- | --- |
-| POST | `/wallet/api/swig/{swig_config_address}/dex/transactions:search` | API key |
+| POST | `/wallet/api/swig/{swig_config_address}/dex/transactions` | API key |
 | GET | `/wallet/api/swig/{swig_config_address}/dex/transactions/{transaction_signature}` | API key |
-| POST | `/wallet/api/swig/{swig_config_address}/dex/positions:search` | API key |
+| POST | `/wallet/api/swig/{swig_config_address}/dex/positions` | API key |
 
 Source: `anagrambuild/swig-dev-portal` `APIQueryDexService`
 (`backend/proto/wallet/api_dex.proto`, package `api_dex.v1`). The routes read
 the backend's DEX index only; they never call Solana, parse transactions, or
-write. The two searches take a JSON body of `network`, `pageSize`, `pageToken`
-and `filters`; because they only read, both SDKs retry them like `GET`s.
+write. The two lists take a JSON body of `network`, `pageSize`, `cursor` and
+`filters`; because they only read, both SDKs retry them like `GET`s.
 
 - Ownership is the API key's organization: an unknown, inactive, or another
   organization's Swig answers 404, as does a transaction the Swig did not act
@@ -157,9 +157,11 @@ and `filters`; because they only read, both SDKs retry them like `GET`s.
   Swig's actions. Positions: `positionStatus`, `protocol` and
   `swigVaultAddress`, each on the position. Both SDKs take each filter as an
   optional argument.
-- `nextPageToken` is opaque and bound to the endpoint, network, Swig and
-  filter set, whatever the order; reusing it otherwise is refused. An empty
-  token means the last page.
+- `nextCursor` is the last row of a page, by its sort key:
+  `{slot, transactionSignature}` for transactions (`slot` a uint64 string) and
+  `{protocol, dexPositionAddress}` for positions. It is absent on the last
+  page. Send it back as `cursor` with the same filters to read the next page;
+  the backend does not tie a cursor to the filters it came from.
 - Only transactions the index interpreted are listed. Parser and indexer status
   never cross the API.
 - Amounts are ProtoJSON decimal strings, signed for the action's

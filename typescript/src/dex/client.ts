@@ -18,9 +18,9 @@ import {
   requiredField,
 } from './normalizers.js';
 import {
-  positionsSearch,
+  positionsRequest,
   transactionPath,
-  transactionsSearch,
+  transactionsRequest,
 } from './requests.js';
 
 /** Read-only DEX history and latest positions of a Swig the API key's organization owns. */
@@ -44,8 +44,8 @@ export class DexTransactionsClient {
   list = async (
     args: ListDexTransactionsArgs,
   ): Promise<ListDexTransactionsResult> => {
-    const { path, body } = transactionsSearch(args, this.defaultNetwork);
-    // A search only reads, so it retries like a GET.
+    const { path, body } = transactionsRequest(args, this.defaultNetwork);
+    // A list only reads, so it retries like a GET.
     return normalizeDexTransactionsPage(
       await this.http.post<ListDexTransactionsWire>(path, body, {
         retry: true,
@@ -72,7 +72,7 @@ export class DexPositionsClient {
   list = async (
     args: ListDexPositionsArgs,
   ): Promise<ListDexPositionsResult> => {
-    const { path, body } = positionsSearch(args, this.defaultNetwork);
+    const { path, body } = positionsRequest(args, this.defaultNetwork);
     return normalizeDexPositionsPage(
       await this.http.post<ListDexPositionsWire>(path, body, { retry: true }),
     );
