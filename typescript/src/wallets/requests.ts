@@ -1,7 +1,11 @@
+import bs58 from 'bs58';
+
 import type {
+  AddAuthorizationLockArgs,
   AddRecoveryAuthorityArgs,
   AddRoleAction,
   AddRoleArgs,
+  Amount,
   BuildTransactionArgs,
   CancelRecoveryArgs,
   ConfigureRecoveryArgs,
@@ -11,6 +15,7 @@ import type {
   NetworkWire,
   PrepareArgs,
   PrepareOperation,
+  RemoveAuthorizationLockArgs,
   SetRentClaimerArgs,
   StartRecoveryArgs,
   SwapArgs,
@@ -496,7 +501,9 @@ function resolveRequesterAuthority(
     | BuildTransactionArgs
     | CancelRecoveryArgs
     | AddRecoveryAuthorityArgs
-    | AddRoleArgs,
+    | AddRoleArgs
+    | AddAuthorizationLockArgs
+    | RemoveAuthorizationLockArgs,
 ): NonNullable<
   | TransferArgs['requesterAuthority']
   | SwapArgs['requesterAuthority']
@@ -505,6 +512,8 @@ function resolveRequesterAuthority(
   | CancelRecoveryArgs['requesterAuthority']
   | AddRecoveryAuthorityArgs['requesterAuthority']
   | AddRoleArgs['requesterAuthority']
+  | AddAuthorizationLockArgs['requesterAuthority']
+  | RemoveAuthorizationLockArgs['requesterAuthority']
 > {
   const requesterAuthority =
     args.requesterAuthority ?? wallet.requesterAuthority;
@@ -542,4 +551,96 @@ export function setRentClaimerRequest(
     requesterAuthority,
     rentClaimer: args.rentClaimer,
   };
+}
+
+const MAX_UINT32 = 4_294_967_295;
+const MAX_UINT64 = 18_446_744_073_709_551_615n;
+
+export function addAuthorizationLockRequest(
+  wallet: WalletHandle,
+  args: AddAuthorizationLockArgs,
+  defaultNetwork?: Network,
+) {
+  const hasExpirySlot = args.expirySlot !== undefined;
+  const hasDurationSlots = args.durationSlots !== undefined;
+  if (hasExpirySlot === hasDurationSlots) {
+    throw new Error(
+      'provide exactly one authorization lock expiry: expirySlot or durationSlots',
+    );
+  }
+  if (args.mint !== undefined && !isPublicKey(args.mint)) {
+    throw new Error('mint must be a base58-encoded 32-byte public key');
+  }
+  const amount = normalizeUint64(args.amount, 'amount');
+  if (BigInt(amount) === 0n) {
+    throw new Error('amount must be greater than zero');
+  }
+  const requesterAuthority = resolveRequesterAuthority(wallet, args);
+  return {
+    network: toProtoNetwork(
+      resolveNetwork(args.network, wallet.network, defaultNetwork),
+    ),
+    feePayer: args.feePayer,
+    swigAddress: wallet.swigConfigAddress,
+    requesterAuthority: walletAuthorityRequest(requesterAuthority),
+    ...(args.mint === undefined ? {} : { mint: args.mint }),
+    amount,
+    ...(args.expirySlot === undefined
+      ? {}
+      : { expirySlot: normalizeUint64(args.expirySlot, 'expirySlot') }),
+    ...(args.durationSlots === undefined
+      ? {}
+      : {
+          durationSlots: normalizeUint64(args.durationSlots, 'durationSlots'),
+        }),
+  };
+}
+
+export function removeAuthorizationLockRequest(
+  wallet: WalletHandle,
+  args: RemoveAuthorizationLockArgs,
+  defaultNetwork?: Network,
+) {
+  if (
+    !Number.isInteger(args.lockId) ||
+    args.lockId < 0 ||
+    args.lockId > MAX_UINT32
+  ) {
+    throw new Error('lockId must be an unsigned 32-bit integer');
+  }
+  const requesterAuthority = resolveRequesterAuthority(wallet, args);
+  return {
+    network: toProtoNetwork(
+      resolveNetwork(args.network, wallet.network, defaultNetwork),
+    ),
+    feePayer: args.feePayer,
+    swigAddress: wallet.swigConfigAddress,
+    requesterAuthority: walletAuthorityRequest(requesterAuthority),
+    lockId: args.lockId,
+  };
+}
+
+/** uint64 crosses the wire as a decimal string so values above 2^53 survive. */
+function normalizeUint64(value: Amount, field: string): string {
+  if (typeof value === 'number' && !Number.isSafeInteger(value)) {
+    throw new Error(
+      `${field} numbers must be safe integers; use a bigint or decimal string for larger values`,
+    );
+  }
+  const normalized = normalizeAmount(value);
+  if (!/^\d+$/.test(normalized)) {
+    throw new Error(`${field} must be a non-negative decimal integer`);
+  }
+  if (BigInt(normalized) > MAX_UINT64) {
+    throw new Error(`${field} must fit in an unsigned 64-bit integer`);
+  }
+  return normalized;
+}
+
+function isPublicKey(value: string): boolean {
+  try {
+    return bs58.decode(value).length === 32;
+  } catch {
+    return false;
+  }
 }

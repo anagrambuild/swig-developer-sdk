@@ -1,5 +1,9 @@
 import type {
   Amount,
+  AuthorizationLock,
+  AuthorizationLocksResult,
+  AuthorizationLocksWire,
+  AuthorizationLockWire,
   ClientSignatureRequest,
   ClientSignatureRequestWire,
   CreateWalletResponseWire,
@@ -253,6 +257,60 @@ export function normalizeSwigRoles(
   };
 }
 
+export function normalizeAuthorizationLocks(
+  response: AuthorizationLocksWire,
+): AuthorizationLocksResult {
+  if (!response || typeof response !== 'object' || Array.isArray(response)) {
+    throw new Error('Invalid authorization-lock response');
+  }
+  const locks = response.locks ?? [];
+  if (!Array.isArray(locks)) {
+    throw new Error('Invalid authorization-lock response');
+  }
+  return {
+    locks: locks.map(normalizeAuthorizationLock),
+    currentSlot: readUint64(
+      response.currentSlot ?? response.current_slot,
+      'currentSlot',
+    ),
+    nextLockId: readNumber(
+      response.nextLockId ?? response.next_lock_id,
+      'nextLockId',
+    ),
+  };
+}
+
+function normalizeAuthorizationLock(
+  response: AuthorizationLockWire,
+): AuthorizationLock {
+  if (!response || typeof response !== 'object' || Array.isArray(response)) {
+    throw new Error('Invalid authorization-lock response');
+  }
+  const mint = response.mint;
+  if (
+    mint !== undefined &&
+    mint !== null &&
+    (typeof mint !== 'string' || !mint)
+  ) {
+    throw new Error('Invalid authorization-lock response');
+  }
+  return {
+    lockId: readNumber(response.lockId ?? response.lock_id, 'lockId'),
+    roleId: readNumber(response.roleId ?? response.role_id, 'roleId'),
+    assetAccount: readString(
+      response.assetAccount ?? response.asset_account,
+      'assetAccount',
+    ),
+    ...(mint ? { mint } : {}),
+    amount: readUint64(response.amount, 'amount'),
+    expirySlot: readUint64(
+      response.expirySlot ?? response.expiry_slot,
+      'expirySlot',
+    ),
+    active: readBoolean(response.active, 'active'),
+  };
+}
+
 function normalizeSwigRole(
   response: NonNullable<ListSwigRolesWire['roles']>[number],
 ): SwigRole {
@@ -487,6 +545,14 @@ function normalizePreparedTransactionKind(
     case 'PREPARED_TRANSACTION_KIND_SET_RENT_CLAIMER':
     case 6:
       return 'set-rent-claimer';
+    case 'add-authorization-lock':
+    case 'PREPARED_TRANSACTION_KIND_ADD_AUTHORIZATION_LOCK':
+    case 7:
+      return 'add-authorization-lock';
+    case 'remove-authorization-lock':
+    case 'PREPARED_TRANSACTION_KIND_REMOVE_AUTHORIZATION_LOCK':
+    case 8:
+      return 'remove-authorization-lock';
     case 'x402-payment':
     case 'PREPARED_TRANSACTION_KIND_X402_PAYMENT':
     case 5:
@@ -615,6 +681,17 @@ function readNumber(value: unknown, field: string): number {
     if (Number.isFinite(parsed)) {
       return parsed;
     }
+  }
+  throw new Error(`Response is missing ${field}`);
+}
+
+/** uint64 arrives as a ProtoJSON decimal string; keep it a string. */
+function readUint64(value: unknown, field: string): string {
+  if (typeof value === 'string' && /^\d+$/.test(value)) {
+    return value;
+  }
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) {
+    return String(value);
   }
   throw new Error(`Response is missing ${field}`);
 }

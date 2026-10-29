@@ -219,3 +219,28 @@ export interface SetRentClaimerArgs {
   requesterAuthority?: Extract<WalletAuthority, { ed25519: unknown }>;
   network?: Network;
 }
+
+/**
+ * Exactly one expiry form, matching the backend oneof: an absolute slot or a
+ * duration in slots from the current slot.
+ */
+export type AuthorizationLockExpiry =
+  | { expirySlot: Amount; durationSlots?: never }
+  | { durationSlots: Amount; expirySlot?: never };
+
+export type AddAuthorizationLockArgs = {
+  feePayer: string;
+  /** SPL mint to reserve. Omit for native SOL. */
+  mint?: string;
+  /** Lamports for native SOL, or token base units for an SPL mint. */
+  amount: Amount;
+  requesterAuthority?: WalletAuthority;
+  network?: Network;
+} & AuthorizationLockExpiry;
+
+export interface RemoveAuthorizationLockArgs {
+  feePayer: string;
+  lockId: number;
+  requesterAuthority?: WalletAuthority;
+  network?: Network;
+}
