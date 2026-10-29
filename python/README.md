@@ -749,8 +749,3 @@ paymaster phase was skipped.
 
 Jupiter is not covered by this script, since it needs a mainnet-backed
 Surfpool.
-
-## Parity
-
-See the repository [parity matrix](../PARITY.md) for the complete mapped
-surface against `@swig-wallet/developer-sdk`.
