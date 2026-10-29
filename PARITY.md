@@ -40,10 +40,12 @@ TypeScript is version `0.12.0`, Python is version `0.10.0`, and both default to
 | --- | --- | --- | --- |
 | Transaction history | `swig.dex.transactions.list` | pending | same list body, filter list, cursor, and action decoding |
 | One transaction | `swig.dex.transactions.get` | pending | same path encoding and representation as a list item |
-| Latest positions | `swig.dex.positions.list` | pending | same list body, filter list, cursor, and open/closed decoding by key presence |
+| Latest positions | `swig.dex.positions.list` | pending | same list body, filter list, cursor, and open/closed decoding |
 
-Protocols, action types and position statuses decode through explicit tables,
-and an unrecognized or `*_UNSPECIFIED` value is refused rather than guessed.
+Protocols decode through an explicit table, and an unrecognized or
+`*_UNSPECIFIED` protocol is refused rather than guessed. Actions decode by the
+single key of their payload and positions by whether `open` or `closed` is set.
+Filter arguments encode through explicit tables.
 Amounts stay decimal strings. Each filter is an optional argument, sent as a
 one-key wire object.
 

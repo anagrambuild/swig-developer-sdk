@@ -132,8 +132,9 @@ export interface DexTransaction {
 export interface ListDexTransactionsArgs {
   swigConfigAddress: string;
   network?: Network;
+  /** 0 or absent means 25; the backend caps it at 100. */
   pageSize?: number;
-  cursor?: DexTransactionCursor;
+  cursor?: DexTransactionCursor | undefined;
   startSlot?: number;
   endSlot?: number;
   protocol?: DexProtocol;
@@ -200,8 +201,9 @@ export type DexPosition = DexOpenPosition | DexClosedPosition;
 export interface ListDexPositionsArgs {
   swigConfigAddress: string;
   network?: Network;
+  /** 0 or absent means 25; the backend caps it at 100. */
   pageSize?: number;
-  cursor?: DexPositionCursor;
+  cursor?: DexPositionCursor | undefined;
   positionStatus?: DexPositionStatus;
   protocol?: DexProtocol;
   swigVaultAddress?: string;
