@@ -17,6 +17,8 @@ TypeScript is version `0.11.1`, Python is version `0.10.0`, and both default to
 | Transfers | `wallet.transfer.sol/token/splToken` | `wallet.transfer.sol/token/spl_token` | same endpoints and prepared transaction output |
 | Jupiter swap | `wallet.swap.jupiter` | `wallet.swap.jupiter` | same optional swap controls |
 | Rent-claimer preparation | `wallet.setRentClaimer` | pending | direct Ed25519 set-once preparation through the backend |
+| Authorization lock creation | `wallet.addAuthorizationLock` | `wallet.add_authorization_lock` | same expiry oneof, positive uint64 amount, optional mint, and prepared transaction |
+| Authorization lock removal | `wallet.removeAuthorizationLock` | `wallet.remove_authorization_lock` | same uint32 lock id and prepared transaction |
 | Custom transaction | `wallet.buildTransaction` | `wallet.build_transaction` | same custom preparation request and instruction shape |
 | Policy read | `swig.wallets.getPolicy` | `swig.wallets.get_policy` | same raw policy metadata |
 | ParticipantSet creation | `swig.participantSets.create` | `swig.participant_sets.create` | same standard authority members and prepared transaction |
@@ -32,6 +34,7 @@ TypeScript is version `0.11.1`, Python is version `0.10.0`, and both default to
 | Token balances | `wallet.listTokenBalances` | `wallet.list_token_balances` | same normalization, totals, and `assetKind` discriminator |
 | Token transactions | `wallet.listTokenTransactions` | `wallet.list_token_transactions` | same `limit`, direction, and `assetKind` normalization |
 | Rent claimer | `wallet.getRentClaimer` | pending | finalized recipient read; `null` when unset |
+| Authorization locks | `wallet.getAuthorizationLocks` | `wallet.get_authorization_locks` | live lock read; uint64 values as decimal strings; mint absent for SOL |
 | Roles | `wallet.listRoles` | `wallet.list_roles` | same role, authority, and action normalization |
 
 ## Paymaster and submission

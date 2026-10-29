@@ -1,8 +1,11 @@
 import type {
+  AddAuthorizationLockArgs,
   AddRoleArgs,
+  AuthorizationLocksResult,
   BuildTransactionArgs,
   CancelRecoveryArgs,
   ExecuteRecoveryArgs,
+  GetAuthorizationLocksArgs,
   ListSwigRolesResult,
   ListSwigTokenBalancesResult,
   ListSwigTokenTransactionsArgs,
@@ -13,6 +16,7 @@ import type {
   PreparedTransaction,
   PreparedTransactionsResult,
   PrepareRecoverySetupArgs,
+  RemoveAuthorizationLockArgs,
   SetRentClaimerArgs,
   StartRecoveryArgs,
   SwapArgs,
@@ -100,6 +104,24 @@ export class WalletHandle {
   /** Read the finalized on-chain rent recipient through the backend. Unset is null. */
   getRentClaimer = (args?: WalletReadArgs): Promise<string | null> =>
     this.wallets.getRentClaimer(this, args);
+
+  /** Prepare an authorization lock through the backend. Caller signs and submits. */
+  addAuthorizationLock = (
+    args: AddAuthorizationLockArgs,
+  ): Promise<PreparedTransaction> =>
+    this.wallets.addAuthorizationLock(this, args);
+
+  /** Prepare an own-lock release or expired-lock prune. Caller signs and submits. */
+  removeAuthorizationLock = (
+    args: RemoveAuthorizationLockArgs,
+  ): Promise<PreparedTransaction> =>
+    this.wallets.removeAuthorizationLock(this, args);
+
+  /** Read the live on-chain authorization locks through the backend. */
+  getAuthorizationLocks = (
+    args?: GetAuthorizationLocksArgs,
+  ): Promise<AuthorizationLocksResult> =>
+    this.wallets.getAuthorizationLocks(this, args);
 
   listTokenBalances = (
     args?: WalletReadArgs,

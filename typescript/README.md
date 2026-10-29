@@ -386,6 +386,47 @@ These methods require the backend rent-claimer routes. Python support is
 pending. See the [rent-claimer guide](https://build.onswig.com/developer-sdk/rent-claimers)
 for separate, complete server examples.
 
+### Authorization locks
+
+An authorization lock reserves part of the wallet's SOL or token balance until
+an expiry slot. While it is active, no role can spend below the reserved
+amount, and only the role that created it can release it early. A role with
+`All`, `AllButManageAuthority`, `ManageAuthority`, or
+`ManageAuthorizationLocks` can prune another role's expired lock.
+
+```typescript
+const locks = await wallet.getAuthorizationLocks({ includeExpired: true });
+// locks.locks[].lockId, roleId, assetAccount, mint, amount, expirySlot, active
+// locks.currentSlot, locks.nextLockId
+```
+
+The backend reads live chain state. `mint` is absent for native SOL. `amount`,
+`expirySlot`, and `currentSlot` are decimal strings, so values above 2^53
+survive.
+
+```typescript
+const prepared = await wallet.addAuthorizationLock({
+  feePayer,
+  mint: usdcMint, // omit for native SOL
+  amount: 25_000_000n, // token base units, or lamports for SOL
+  durationSlots: 9_000, // or expirySlot, never both
+});
+
+const released = await wallet.removeAuthorizationLock({ feePayer, lockId: 0 });
+```
+
+`amount` must be positive, and number inputs must be safe integers; use a
+`bigint` or decimal string for larger values. Pass exactly one of `expirySlot`
+or `durationSlots`. A `mint`, when given, must be a base58 public key. The
+requester's role needs `ManageAuthorizationLocks`, whose `max_duration_slots`
+caps the lock's duration. The program enforces every lock rule; the SDK only
+prepares transactions and reads state.
+
+Both setters return an unsigned prepared transaction with kind
+`add-authorization-lock` or `remove-authorization-lock`. Sign it with the
+requester and fee payer, then submit it. The POSTs are not retried
+automatically.
+
 ### Roles
 
 `wallet.listRoles()` returns the on-chain roles attached to the Swig, which is

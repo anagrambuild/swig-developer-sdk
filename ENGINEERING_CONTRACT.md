@@ -56,6 +56,8 @@ Supported preparation routes:
 | POST | `/transaction/prepare/batch` |
 | POST | `/transaction/wallet/create` |
 | POST | `/transaction/wallet/rent-claimer/set` |
+| POST | `/transaction/wallet/authorization-lock/add` |
+| POST | `/transaction/wallet/authorization-lock/remove` |
 | POST | `/transaction/transfer/sol` |
 | POST | `/transaction/transfer/spl-token` |
 | POST | `/transaction/swap/jupiter` |
@@ -74,6 +76,24 @@ rejects an existing recipient. The response wraps the normal prepared
 transaction with kind `set-rent-claimer`; native requester and fee-payer
 signatures are still required even though `signatureRequests` is empty.
 The SDK performs HTTP transport only. Python support is pending.
+
+Authorization-lock reads use API-key
+`GET /transaction/wallet/{swig_address}/authorization-locks?network=NETWORK_MAINNET`
+with optional `include_expired`. The response reads live chain state and lists
+each lock's `lockId`, `roleId`, `assetAccount`, optional `mint` (absent for
+native SOL), `amount`, `expirySlot`, and `active`, plus `currentSlot` and
+`nextLockId`. Both SDKs keep the uint64 values as decimal strings.
+
+The add route takes an optional `mint`, a positive uint64 `amount` (lamports
+or token base units), and exactly one of `expirySlot` or `durationSlots`. The
+remove route takes a uint32 `lockId` and releases the caller's own lock or
+prunes an expired one. Both return the normal prepared transaction with kind
+`add-authorization-lock` or `remove-authorization-lock`. Creating a lock needs
+`ManageAuthorizationLocks` on the requester's role. Only the creating role can
+release an active lock; a role with `All`, `AllButManageAuthority`,
+`ManageAuthority`, or `ManageAuthorizationLocks` can prune an expired one. The
+program enforces every lock rule, and the SDKs perform input validation and
+HTTP transport only.
 
 ParticipantSet setup and stateless approval compilation use:
 

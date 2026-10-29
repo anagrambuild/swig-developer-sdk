@@ -25,6 +25,8 @@ PreparedTransactionKind = Literal[
     "configure-recovery",
     "create-participant-set",
     "x402-payment",
+    "add-authorization-lock",
+    "remove-authorization-lock",
 ]
 SignatureScheme = Literal["secp256r1", "secp256k1"]
 
@@ -540,6 +542,18 @@ def _normalize_kind(value: object) -> PreparedTransactionKind | None:
         5,
     ):
         return "x402-payment"
+    if value in (
+        "add-authorization-lock",
+        "PREPARED_TRANSACTION_KIND_ADD_AUTHORIZATION_LOCK",
+        7,
+    ):
+        return "add-authorization-lock"
+    if value in (
+        "remove-authorization-lock",
+        "PREPARED_TRANSACTION_KIND_REMOVE_AUTHORIZATION_LOCK",
+        8,
+    ):
+        return "remove-authorization-lock"
     return None
 
 
@@ -724,6 +738,10 @@ def _prepared_transaction_kind_to_wire(
         "configure-recovery": "PREPARED_TRANSACTION_KIND_CONFIGURE_RECOVERY",
         "create-participant-set": "PREPARED_TRANSACTION_KIND_CREATE_PARTICIPANT_SET",
         "x402-payment": "PREPARED_TRANSACTION_KIND_X402_PAYMENT",
+        "add-authorization-lock": "PREPARED_TRANSACTION_KIND_ADD_AUTHORIZATION_LOCK",
+        "remove-authorization-lock": (
+            "PREPARED_TRANSACTION_KIND_REMOVE_AUTHORIZATION_LOCK"
+        ),
     }
     return values.get(kind) if kind is not None else None
 

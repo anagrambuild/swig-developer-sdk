@@ -310,6 +310,45 @@ is the protocol authority type discriminant. `action_data` is the raw
 per-action payload, so read it against the protocol's action definitions rather
 than assuming a fixed shape.
 
+### Authorization locks
+
+An authorization lock reserves part of the wallet's SOL or token balance until
+an expiry slot. While it is active, no role can spend below the reserved
+amount, and only the role that created it can release it early. A role with
+`All`, `AllButManageAuthority`, `ManageAuthority`, or
+`ManageAuthorizationLocks` can prune another role's expired lock.
+
+```python
+result = await wallet.get_authorization_locks(include_expired=True)
+# result.locks[].lock_id, role_id, asset_account, mint, amount, expiry_slot, active
+# result.current_slot, result.next_lock_id
+```
+
+The backend reads live chain state. `mint` is `None` for native SOL. `amount`,
+`expiry_slot`, and `current_slot` are decimal strings, matching the wire.
+
+```python
+prepared = await wallet.add_authorization_lock(
+    fee_payer=fee_payer,
+    mint=usdc_mint,  # omit for native SOL
+    amount=25_000_000,  # token base units, or lamports for SOL
+    duration_slots=9_000,  # or expiry_slot, never both
+)
+
+released = await wallet.remove_authorization_lock(fee_payer=fee_payer, lock_id=0)
+```
+
+`amount` must be a positive integer or decimal string. Pass exactly one of
+`expiry_slot` or `duration_slots`. A `mint`, when given, must be a base58
+public key. The requester's role needs `ManageAuthorizationLocks`, whose
+`max_duration_slots` caps the lock's duration. The program enforces every lock
+rule; the SDK only prepares transactions and reads state.
+
+Both setters return an unsigned prepared transaction with kind
+`add-authorization-lock` or `remove-authorization-lock`. Sign it with the
+requester and fee payer, then submit it. The POSTs are not retried
+automatically.
+
 Policy metadata is a separate read:
 
 ```python

@@ -1,5 +1,20 @@
 # @swig-wallet/developer-sdk
 
+## Unreleased
+
+### Minor Changes
+
+- Add `wallet.addAuthorizationLock(...)` to prepare an unsigned transaction
+  that reserves part of a wallet's SOL or token balance until an expiry slot,
+  given as exactly one of `expirySlot` or `durationSlots`. The requester's role
+  needs `ManageAuthorizationLocks`; the application signs and submits.
+- Add `wallet.removeAuthorizationLock(...)` to prepare an unsigned transaction
+  that releases the caller's own lock or prunes an expired one.
+- Add `wallet.getAuthorizationLocks()` to read a wallet's live authorization
+  locks, the current slot, and the next lock id through the backend API.
+- Recognize the `add-authorization-lock` and `remove-authorization-lock`
+  prepared transaction kinds.
+
 ## 0.11.1
 
 ### Patch Changes
