@@ -3,7 +3,7 @@
 Python mirrors the TypeScript server SDK by behavior and client hierarchy
 except for features explicitly marked as pending. Python uses snake_case names
 and keyword arguments; TypeScript uses camelCase and options objects.
-TypeScript is version `0.12.0`, Python is version `0.10.0`, and both default to
+TypeScript is version `0.12.0`, Python is version `0.11.0`, and both default to
 `https://api.onswig.com`.
 
 ## Client surface
@@ -38,14 +38,14 @@ TypeScript is version `0.12.0`, Python is version `0.10.0`, and both default to
 
 | Surface | TypeScript | Python | Parity target |
 | --- | --- | --- | --- |
-| Transaction history | `swig.dex.transactions.list` | pending | same list body, filter list, cursor, and action decoding |
-| One transaction | `swig.dex.transactions.get` | pending | same path encoding and representation as a list item |
-| Latest positions | `swig.dex.positions.list` | pending | same list body, filter list, cursor, and open/closed decoding by key presence |
+| Transaction history | `swig.dex.transactions.list` | `swig.dex.transactions.list` | same list body, filter list, cursor, and action decoding |
+| One transaction | `swig.dex.transactions.get` | `swig.dex.transactions.get` | same path encoding and representation as a list item |
+| Latest positions | `swig.dex.positions.list` | `swig.dex.positions.list` | same list body, filter list, cursor, and open/closed decoding by key presence |
 
 Protocols, action types and position statuses decode through explicit tables,
 and an unrecognized or `*_UNSPECIFIED` value is refused rather than guessed.
-Amounts stay decimal strings. Each filter is an optional argument, sent as a
-one-key wire object.
+Amounts stay decimal strings in both languages. Each filter is an optional
+argument (a keyword argument in Python), sent as a one-key wire object.
 
 ## Paymaster and submission
 
