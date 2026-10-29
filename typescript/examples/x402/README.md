@@ -64,7 +64,7 @@ bun run example:x402:setup
 
 ## Run the complete flow
 
-Build the in-workspace developer SDK, then run the example:
+Build the SDK package, then run the example:
 
 ```sh
 bun run build
