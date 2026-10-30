@@ -10,3 +10,4 @@ pub mod sponsor_bundle;
 pub mod swap;
 pub mod token_transfer;
 pub mod wallet_reads;
+pub mod x402_payment;
