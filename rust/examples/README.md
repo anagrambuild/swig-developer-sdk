@@ -1,6 +1,6 @@
 # Rust SDK examples
 
-3 standalone flows: 3 runnable Cargo examples.
+4 standalone flows: 4 runnable Cargo examples.
 Keygen is a separate utility binary. The package is unpublished;
 the SDK remains the default workspace member.
 
@@ -15,6 +15,7 @@ Signer loading and transaction construction stay in each signing flow.
 | [wallet_reads.rs](src/wallet_reads.rs) | `--example wallet_reads` | Read roles, balances, history, and optionally a policy |
 | [ed25519_transfer.rs](src/ed25519_transfer.rs) | `--example ed25519_transfer` | Create or reuse a wallet, fund if needed, transfer SOL, sponsor, confirm |
 | [secp256r1_transfer.rs](src/secp256r1_transfer.rs) | `--example secp256r1_transfer` | Create or reuse a secp256r1 wallet, sign a SOL transfer, sponsor, confirm |
+| [token_transfer.rs](src/token_transfer.rs) | `--example token_transfer` | Create or reuse a wallet, transfer funded tokens, sponsor, confirm |
 
 ## Setup
 
@@ -74,6 +75,7 @@ Set only the selected flow's inputs.
 | `SWIG_SECP256K1_PRIVATE_KEY`, `SWIG_SECP256R1_PRIVATE_KEY` | Each is a 32-byte secret encoded as 64 hex characters |
 | `SWIG_RPC_URL` | Required for transaction flows: a nonempty HTTP(S) RPC URL on the selected chain |
 | `SWIG_DESTINATION`, `SWIG_AMOUNT_LAMPORTS` | Separate transfer recipient and SOL amount; default 1,000,000 lamports |
+| `SWIG_TOKEN_MINT`, `SWIG_TOKEN_AMOUNT_RAW` | Token mint and amount in base units; amount defaults to one raw unit |
 
 ## Wallet reuse and funding
 
@@ -91,7 +93,8 @@ through that generated key. Recipients must differ from the requester,
 wallet, and config addresses.
 
 The paymaster supplies the fee payer and transaction fees. Fund the
-wallet with the SOL being transferred.
+wallet with the SOL or tokens being transferred. No Mainnet airdrop is
+attempted; Mainnet transfers require an explicit recipient.
 
 ## Read an existing wallet
 
@@ -130,6 +133,18 @@ or WebAuthn ceremony. It follows the same wallet reuse, recipient,
 
 ```sh
 cargo +1.87.0 run --locked -p swig-developer-sdk-examples --example secp256r1_transfer
+```
+
+## Run a token transfer
+
+Set `SWIG_API_KEY`, `SWIG_RPC_URL`, `SWIG_ED25519_PRIVATE_KEY`, and
+`SWIG_TOKEN_MINT`. Fund the wallet with at least `SWIG_TOKEN_AMOUNT_RAW`
+units of that mint; the default is one raw unit. If a wallet is created,
+fund its printed wallet address, save its `SWIG_CONFIG_ADDRESS`, and rerun.
+Devnet is the default; Mainnet requires an explicit recipient.
+
+```sh
+cargo +1.87.0 run --locked -p swig-developer-sdk-examples --example token_transfer
 ```
 
 ## Runner usage
