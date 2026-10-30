@@ -1,6 +1,6 @@
 # Rust SDK examples
 
-2 standalone flows: 2 runnable Cargo examples.
+3 standalone flows: 3 runnable Cargo examples.
 Keygen is a separate utility binary. The package is unpublished;
 the SDK remains the default workspace member.
 
@@ -14,6 +14,7 @@ Signer loading and transaction construction stay in each signing flow.
 | --- | --- | --- |
 | [wallet_reads.rs](src/wallet_reads.rs) | `--example wallet_reads` | Read roles, balances, history, and optionally a policy |
 | [ed25519_transfer.rs](src/ed25519_transfer.rs) | `--example ed25519_transfer` | Create or reuse a wallet, fund if needed, transfer SOL, sponsor, confirm |
+| [secp256r1_transfer.rs](src/secp256r1_transfer.rs) | `--example secp256r1_transfer` | Create or reuse a secp256r1 wallet, sign a SOL transfer, sponsor, confirm |
 
 ## Setup
 
@@ -119,6 +120,17 @@ cargo +1.87.0 run --locked -p swig-developer-sdk-examples --example ed25519_tran
 The default transfer is 1,000,000 lamports. When the wallet needs SOL,
 the flow requests exactly 2 SOL, confirms the airdrop, and rechecks the
 balance including rent. A faucet failure or insufficient balance stops it.
+
+## Run a secp256r1 SOL transfer
+
+Set `SWIG_API_KEY`, `SWIG_RPC_URL`, and `SWIG_SECP256R1_PRIVATE_KEY`.
+This Devnet-only flow uses a raw secp256r1 key, not a browser passkey
+or WebAuthn ceremony. It follows the same wallet reuse, recipient,
+1,000,000-lamport default, and fixed 2 SOL funding rules as Ed25519.
+
+```sh
+cargo +1.87.0 run --locked -p swig-developer-sdk-examples --example secp256r1_transfer
+```
 
 ## Runner usage
 
