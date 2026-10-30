@@ -2200,10 +2200,9 @@ def _authorization_lock_requester(
 ) -> WalletAuthority:
     authority = _requester_authority(wallet, requester_authority)
     wire = wallet_authority_to_wire(authority)
-    if not any(scheme in wire for scheme in ("ed25519", "secp256k1", "secp256r1")):
+    if "programExecProof" in wire:
         raise ValueError(
-            "Authorization lock requester_authority must use ed25519, secp256k1, "
-            "or secp256r1"
+            "Authorization lock requester_authority does not support programExecProof"
         )
     return authority
 

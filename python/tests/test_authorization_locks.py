@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import struct
 from collections.abc import Callable
@@ -8,6 +9,12 @@ from typing import cast
 
 import httpx
 import pytest
+from k1_reference import (
+    compressed_public_key,
+    keccak256,
+    recover_compressed,
+    sign_digest,
+)
 from solders.hash import Hash
 from solders.instruction import AccountMeta, Instruction
 from solders.message import Message
@@ -26,6 +33,10 @@ from swig_developer_sdk import (
     SwigResponseError,
     WalletAuthority,
     sign_prepared_swig_transaction,
+)
+from swig_developer_sdk.signers import (
+    create_participant_ed25519_signer,
+    sign_participant_set_approval,
 )
 
 USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
@@ -489,33 +500,70 @@ SYSVAR_INSTRUCTIONS_ID = Pubkey.from_string(
     "Sysvar1nstructions1111111111111111111111111"
 )
 SYSTEM_PROGRAM_ID = Pubkey.from_string("11111111111111111111111111111111")
+PERSONAL_SIGN_PREFIX = b"\x19Ethereum Signed Message:\n64"
 LOCK_CONFIG = Pubkey.new_unique()
-LOCK_FEE_PAYER = Pubkey.new_unique()
 LOCK_WALLET = Pubkey.new_unique()
+LOCK_FEE_PAYER = Pubkey.new_unique()
+LOCK_RENT_CLAIMER = Pubkey.new_unique()
+LOCK_PARTICIPANT_SET = Pubkey.new_unique()
 LOCK_SLOT = 345_678_901
 LOCK_COUNTER = 8
-SECP_PUBLIC_KEY = bytes([3, *range(41, 73)])
-SECP_MESSAGE_HASH = bytes(range(90, 122))
+K1_PRIVATE_KEY = 0x1F2E3D4C5B6A79880102030405060708090A0B0C0D0E0F101112131415161718
+K1_PUBLIC_KEY = compressed_public_key(K1_PRIVATE_KEY)
+R1_PUBLIC_KEY = bytes([3, *range(41, 73)])
 LOCK_ARGS_SIZE = {"add": 88, "remove": 16}
+LOCK_KIND_WIRE = {
+    "add": "PREPARED_TRANSACTION_KIND_ADD_AUTHORIZATION_LOCK",
+    "remove": "PREPARED_TRANSACTION_KIND_REMOVE_AUTHORIZATION_LOCK",
+}
 
 
 def _lock_args(route: str) -> bytes:
     """AddAuthorizationLockV1 / RemoveAuthorizationLockV1 fixed-size args."""
     if route == "add":
         return (
-            struct.pack("<HHI", 25, 0, 1)
+            struct.pack("<HHI", 25, 0, 4)
             + bytes(LOCK_WALLET)
             + bytes(32)
             + struct.pack("<QQ", 1_000_000, 9_000_000)
         )
-    return struct.pack("<HHIII", 26, 0, 1, 3, 0)
+    return struct.pack("<HHIII", 26, 0, 4, 3, 0)
 
 
-def _lock_authority_payload(scheme: str, sysvar_index: int) -> bytes:
-    head = struct.pack("<QI", LOCK_SLOT, LOCK_COUNTER)
-    if scheme == "secp256k1":
-        return head + bytes(65)
-    return head + bytes((sysvar_index,)) + bytes(4)
+def _lock_accounts(route: str, claimer: Pubkey) -> list[AccountMeta]:
+    """Add: swig, wallet, payer, system, asset. Remove: swig, wallet, payer,
+    system, rent claimer. Flags are merged to transaction level, as the dev
+    portal does before hashing."""
+    accounts = [
+        AccountMeta(LOCK_CONFIG, is_signer=False, is_writable=True),
+        AccountMeta(LOCK_WALLET, is_signer=False, is_writable=False),
+        AccountMeta(LOCK_FEE_PAYER, is_signer=True, is_writable=True),
+        AccountMeta(SYSTEM_PROGRAM_ID, is_signer=False, is_writable=False),
+        AccountMeta(LOCK_WALLET, is_signer=False, is_writable=False)
+        if route == "add"
+        else AccountMeta(claimer, is_signer=False, is_writable=True),
+    ]
+    return [
+        AccountMeta(
+            account.pubkey,
+            is_signer=any(o.is_signer for o in accounts if o.pubkey == account.pubkey),
+            is_writable=any(
+                o.is_writable for o in accounts if o.pubkey == account.pubkey
+            ),
+        )
+        for account in accounts
+    ]
+
+
+def _signed_payload(
+    args: bytes, accounts: list[tuple[Pubkey, bool, bool]], slot: int, counter: int
+) -> bytes:
+    """args || 40-byte AccountsPayload per account || slot || counter."""
+    metas = b"".join(
+        bytes(pubkey) + bytes((writable, signer)) + bytes(6)
+        for pubkey, writable, signer in accounts
+    )
+    return args + metas + struct.pack("<QI", slot, counter)
 
 
 def _r1_precompile(public_key: bytes, signature: bytes, message: bytes) -> bytes:
@@ -535,86 +583,140 @@ def _r1_precompile(public_key: bytes, signature: bytes, message: bytes) -> bytes
     return header + public_key + signature + message
 
 
-def _lock_backend_transaction(scheme: str, route: str) -> str:
-    accounts = [
-        AccountMeta(LOCK_CONFIG, is_signer=False, is_writable=True),
-        AccountMeta(LOCK_FEE_PAYER, is_signer=True, is_writable=True),
-        AccountMeta(SYSTEM_PROGRAM_ID, is_signer=False, is_writable=False),
-    ]
-    if route == "add":
-        accounts += [
-            AccountMeta(LOCK_WALLET, is_signer=False, is_writable=False),
-            AccountMeta(LOCK_WALLET, is_signer=False, is_writable=False),
-        ]
-    sysvar_index = len(accounts)
-    instructions = []
-    if scheme == "secp256r1":
+def _lock_backend_prepared(
+    requester: str, route: str, claimer: Pubkey
+) -> dict[str, object]:
+    args = _lock_args(route)
+    accounts = _lock_accounts(route, claimer)
+    head = struct.pack("<QI", LOCK_SLOT, LOCK_COUNTER)
+    instructions: list[Instruction] = []
+    request: dict[str, object] | None = None
+    if requester == "secp256k1":
+        message_hash = hashlib.sha256(
+            _signed_payload(
+                args,
+                [(a.pubkey, a.is_writable, a.is_signer) for a in accounts],
+                LOCK_SLOT,
+                LOCK_COUNTER,
+            )
+        ).digest()
+        data = args + head + bytes(65) + PERSONAL_SIGN_PREFIX
+        request = {"public_key": K1_PUBLIC_KEY, "hash": message_hash}
+    else:
+        sysvar_index = len(accounts)
         accounts.append(
             AccountMeta(SYSVAR_INSTRUCTIONS_ID, is_signer=False, is_writable=False)
         )
-        instructions.append(
-            Instruction(
-                SECP256R1_PROGRAM_ID,
-                _r1_precompile(SECP_PUBLIC_KEY, bytes(64), SECP_MESSAGE_HASH),
-                [],
+        if requester == "participant_set":
+            data = args + bytes((sysvar_index,))
+        else:
+            message_hash = keccak256(
+                _signed_payload(
+                    args,
+                    [(a.pubkey, a.is_writable, a.is_signer) for a in accounts],
+                    LOCK_SLOT,
+                    LOCK_COUNTER,
+                )
             )
-        )
-    instructions.append(
-        Instruction(
-            SWIG_PROGRAM_ID,
-            _lock_args(route) + _lock_authority_payload(scheme, sysvar_index),
-            accounts,
-        )
-    )
+            data = args + head + bytes((sysvar_index,)) + bytes(4)
+            instructions.append(
+                Instruction(
+                    SECP256R1_PROGRAM_ID,
+                    _r1_precompile(R1_PUBLIC_KEY, bytes(64), message_hash),
+                    [],
+                )
+            )
+            request = {"public_key": R1_PUBLIC_KEY, "hash": message_hash}
+    instructions.append(Instruction(SWIG_PROGRAM_ID, data, accounts))
     message = Message.new_with_blockhash(instructions, LOCK_FEE_PAYER, Hash.default())
-    return base64.b64encode(bytes(Transaction.new_unsigned(message))).decode()
-
-
-def _lock_backend_response(scheme: str, route: str) -> dict[str, object]:
-    """ProtoJSON as the dev portal returns it: enum names, uint64 slot string."""
-    return {
-        "transaction": {
-            "transaction": _lock_backend_transaction(scheme, route),
-            "transactionEncoding": "TRANSACTION_ENCODING_BASE64",
-            "wallet": {
-                "swigConfigAddress": str(LOCK_CONFIG),
-                "walletAddress": str(LOCK_WALLET),
-            },
-            "expiresAt": "2026-10-30T12:00:00Z",
-            "network": "NETWORK_DEVNET",
-            "recentBlockhash": str(Hash.default()),
-            "kind": (
-                "PREPARED_TRANSACTION_KIND_ADD_AUTHORIZATION_LOCK"
-                if route == "add"
-                else "PREPARED_TRANSACTION_KIND_REMOVE_AUTHORIZATION_LOCK"
-            ),
-            "signatureRequests": [
+    prepared: dict[str, object] = {
+        "transaction": base64.b64encode(
+            bytes(Transaction.new_unsigned(message))
+        ).decode(),
+        "transactionEncoding": "TRANSACTION_ENCODING_BASE64",
+        "wallet": {
+            "swigConfigAddress": str(LOCK_CONFIG),
+            "walletAddress": str(LOCK_WALLET),
+        },
+        "expiresAt": "2026-10-30T12:00:00Z",
+        "network": "NETWORK_DEVNET",
+        "recentBlockhash": str(Hash.default()),
+        "kind": LOCK_KIND_WIRE[route],
+    }
+    if request is not None:
+        prepared["signatureRequests"] = [
+            {
+                "scheme": (
+                    "AUTHORITY_SIGNATURE_SCHEME_SECP256K1"
+                    if requester == "secp256k1"
+                    else "AUTHORITY_SIGNATURE_SCHEME_SECP256R1"
+                ),
+                "signer": cast(bytes, request["public_key"]).hex(),
+                "messageHash": cast(bytes, request["hash"]).hex(),
+                "slot": str(LOCK_SLOT),
+                "counter": LOCK_COUNTER,
+            }
+        ]
+    else:
+        prepared["participantSetApprovalPlan"] = {
+            "participantSetAddress": str(LOCK_PARTICIPANT_SET),
+            "roleId": 4,
+            "expirationSlot": "345679000",
+            "nonce": 12,
+            "transactionDigest": "11" * 32,
+            "compilationEnvelope": "sealed-envelope",
+            "threshold": 1,
+            "members": [
                 {
-                    "scheme": (
-                        "AUTHORITY_SIGNATURE_SCHEME_SECP256K1"
-                        if scheme == "secp256k1"
-                        else "AUTHORITY_SIGNATURE_SCHEME_SECP256R1"
-                    ),
-                    "signer": SECP_PUBLIC_KEY.hex(),
-                    "messageHash": SECP_MESSAGE_HASH.hex(),
-                    "slot": str(LOCK_SLOT),
-                    "counter": LOCK_COUNTER,
+                    "memberIndex": 0,
+                    "authority": {"ed25519": {"publicKey": "member-ed25519"}},
+                    "challenge": "22" * 32,
                 }
             ],
         }
-    }
+    return prepared
 
 
-async def _prepare_lock(scheme: str, route: str) -> tuple[PreparedTransaction, object]:
-    bodies: list[object] = []
+def _lock_requester(requester: str) -> WalletAuthority:
+    if requester == "secp256k1":
+        return {"secp256k1": {"public_key": K1_PUBLIC_KEY.hex()}}
+    if requester == "secp256r1":
+        return {"secp256r1": {"public_key": R1_PUBLIC_KEY.hex()}}
+    return {"participant_set": {"address": str(LOCK_PARTICIPANT_SET), "role_id": 4}}
+
+
+async def _prepare_lock(
+    requester: str, route: str, claimer: Pubkey = LOCK_RENT_CLAIMER
+) -> tuple[SwigClient, PreparedTransaction, list[dict[str, object]]]:
+    bodies: list[dict[str, object]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        bodies.append(json.loads(request.content))
-        return httpx.Response(200, json=_lock_backend_response(scheme, route))
+        body = json.loads(request.content)
+        bodies.append({"path": request.url.path, **body})
+        if request.url.path == "/transaction/wallet/participant-set/compile":
+            prepared = body["preparedTransaction"]
+            return httpx.Response(
+                200,
+                json={
+                    "transaction": {
+                        "transaction": "compiled-base64",
+                        "transactionEncoding": "TRANSACTION_ENCODING_BASE64",
+                        "wallet": prepared["wallet"],
+                        "network": "NETWORK_DEVNET",
+                        "recentBlockhash": prepared["recentBlockhash"],
+                        "kind": prepared["kind"],
+                    },
+                    "authorizationExpirationSlot": "345679000",
+                },
+            )
+        return httpx.Response(
+            200,
+            json={"transaction": _lock_backend_prepared(requester, route, claimer)},
+        )
 
-    authority = cast(WalletAuthority, {scheme: {"public_key": SECP_PUBLIC_KEY.hex()}})
-    wallet = _client(handler, network="devnet").wallets.use(
-        str(LOCK_CONFIG), requester_authority=authority
+    swig = _client(handler, network="devnet")
+    wallet = swig.wallets.use(
+        str(LOCK_CONFIG), requester_authority=_lock_requester(requester)
     )
     if route == "add":
         prepared = await wallet.add_authorization_lock(
@@ -624,52 +726,115 @@ async def _prepare_lock(scheme: str, route: str) -> tuple[PreparedTransaction, o
         prepared = await wallet.remove_authorization_lock(
             fee_payer=str(LOCK_FEE_PAYER), lock_id=3
         )
-    return prepared, bodies[0]
+    return swig, prepared, bodies
 
 
-def _signed_lock_instructions(transaction: str) -> tuple[bytes, bytes | None]:
+def _signed_lock(
+    transaction: str,
+) -> tuple[bytes, list[tuple[Pubkey, bool, bool]], bytes | None]:
+    """The lock data, its accounts with transaction-level flags, and the
+    secp256r1 precompile data if present."""
     decoded = VersionedTransaction.from_bytes(base64.b64decode(transaction))
-    keys = decoded.message.account_keys
-    lock: bytes | None = None
+    message = decoded.message
+    header = message.header
+    keys = message.account_keys
+    signers = header.num_required_signatures
+    writable_signers = signers - header.num_readonly_signed_accounts
+    writable_unsigned = len(keys) - header.num_readonly_unsigned_accounts
+
+    def flags(index: int) -> tuple[Pubkey, bool, bool]:
+        is_signer = index < signers
+        writable = index < writable_signers if is_signer else index < writable_unsigned
+        return keys[index], writable, is_signer
+
+    lock: tuple[bytes, list[tuple[Pubkey, bool, bool]]] | None = None
     precompile: bytes | None = None
-    for instruction in decoded.message.instructions:
+    for instruction in message.instructions:
         program_id = keys[instruction.program_id_index]
         if program_id == SWIG_PROGRAM_ID:
-            lock = bytes(instruction.data)
+            lock = (bytes(instruction.data), [flags(i) for i in instruction.accounts])
         elif program_id == SECP256R1_PROGRAM_ID:
             precompile = bytes(instruction.data)
     assert lock is not None
-    return lock, precompile
+    return lock[0], lock[1], precompile
+
+
+def _recover_program_signer(transaction: str, route: str) -> bytes:
+    """state/src/authority/secp256k1.rs: recover from
+    keccak256(prefix || hex(sha256(args || accounts || slot || counter)))."""
+    data, accounts, _ = _signed_lock(transaction)
+    offset = LOCK_ARGS_SIZE[route]
+    slot, counter = struct.unpack_from("<QI", data, offset)
+    digest = hashlib.sha256(
+        _signed_payload(data[:offset], accounts, slot, counter)
+    ).digest()
+    signed_digest = keccak256(data[offset + 77 :] + digest.hex().encode("ascii"))
+    return recover_compressed(signed_digest, data[offset + 12 : offset + 77])
+
+
+def _personal_sign(message: bytes) -> Secp256k1SigningResult:
+    prefix = f"\x19Ethereum Signed Message:\n{len(message)}".encode("ascii")
+    return Secp256k1SigningResult(
+        signature=sign_digest(K1_PRIVATE_KEY, keccak256(prefix + message)),
+        prefix=prefix,
+    )
+
+
+def _raw_sign(message: bytes) -> Secp256k1SigningResult:
+    return Secp256k1SigningResult(
+        signature=sign_digest(K1_PRIVATE_KEY, keccak256(message))
+    )
 
 
 @pytest.mark.parametrize("route", ["add", "remove"])
-@pytest.mark.parametrize("with_prefix", [False, True])
-async def test_authorization_lock_secp256k1_signature_lands_after_slot_and_counter(
-    route: str, with_prefix: bool
+async def test_authorization_lock_secp256k1_keeps_the_server_prefix(
+    route: str,
 ) -> None:
-    prepared, body = await _prepare_lock("secp256k1", route)
-    assert body["requesterAuthority"] == {  # type: ignore[index]
-        "secp256k1": {"publicKey": SECP_PUBLIC_KEY.hex()}
+    _, prepared, bodies = await _prepare_lock("secp256k1", route)
+    assert bodies[0]["requesterAuthority"] == {
+        "secp256k1": {"publicKey": K1_PUBLIC_KEY.hex()}
     }
     assert prepared.kind == f"{route}-authorization-lock"
     assert prepared.signature_requests[0].scheme == "secp256k1"
     assert prepared.signature_requests[0].slot == LOCK_SLOT
-    signature = bytes(200 - index for index in range(64)) + bytes((28,))
-    prefix = b"\x19Ethereum Signed Message:\n64" if with_prefix else None
-
-    def sign(message: bytes) -> Secp256k1SigningResult:
-        assert message == SECP_MESSAGE_HASH.hex().encode("ascii")
-        return Secp256k1SigningResult(signature=signature, prefix=prefix)
+    original, _, _ = _signed_lock(prepared.transaction)
+    offset = LOCK_ARGS_SIZE[route]
+    assert original[offset + 77 :] == PERSONAL_SIGN_PREFIX
 
     signed = await sign_prepared_swig_transaction(
-        prepared, secp256k1={SECP_PUBLIC_KEY.hex(): sign}
+        prepared, secp256k1={K1_PUBLIC_KEY.hex(): _personal_sign}
     )
-    lock, _ = _signed_lock_instructions(signed.transaction)
-    offset = LOCK_ARGS_SIZE[route]
-    assert lock[:offset] == _lock_args(route)
-    assert struct.unpack_from("<QI", lock, offset) == (LOCK_SLOT, LOCK_COUNTER)
-    assert lock[offset + 12 : offset + 77] == signature
-    assert lock[offset + 77 :] == (prefix or b"")
+
+    data, _, _ = _signed_lock(signed.transaction)
+    assert len(data) == len(original)
+    assert data[: offset + 12] == original[: offset + 12]
+    assert data[offset + 12 : offset + 77] != bytes(65)
+    assert data[offset + 76] in (27, 28)
+    assert data[offset + 77 :] == PERSONAL_SIGN_PREFIX
+
+
+@pytest.mark.parametrize("route", ["add", "remove"])
+@pytest.mark.parametrize("signer", [_personal_sign, _raw_sign])
+async def test_authorization_lock_secp256k1_signature_verifies_like_the_program(
+    route: str, signer: Callable[[bytes], Secp256k1SigningResult]
+) -> None:
+    _, prepared, _ = await _prepare_lock("secp256k1", route)
+    messages: list[bytes] = []
+
+    def sign(message: bytes) -> Secp256k1SigningResult:
+        messages.append(message)
+        return signer(message)
+
+    signed = await sign_prepared_swig_transaction(prepared, secp256k1=sign)
+
+    assert messages == [prepared.signature_requests[0].message_hash.encode("ascii")]
+    assert _recover_program_signer(signed.transaction, route) == K1_PUBLIC_KEY
+
+
+async def test_authorization_lock_hashes_fee_payer_rent_claimer_as_signer() -> None:
+    _, prepared, _ = await _prepare_lock("secp256k1", "remove", LOCK_FEE_PAYER)
+    signed = await sign_prepared_swig_transaction(prepared, secp256k1=_personal_sign)
+    assert _recover_program_signer(signed.transaction, "remove") == K1_PUBLIC_KEY
 
 
 @pytest.mark.parametrize("route", ["add", "remove"])
@@ -677,52 +842,111 @@ async def test_authorization_lock_secp256k1_signature_lands_after_slot_and_count
 async def test_authorization_lock_secp256r1_signature_lands_in_preceding_precompile(
     route: str, with_prefix: bool
 ) -> None:
-    prepared, body = await _prepare_lock("secp256r1", route)
-    assert body["requesterAuthority"] == {  # type: ignore[index]
-        "secp256r1": {"publicKey": SECP_PUBLIC_KEY.hex()}
+    _, prepared, bodies = await _prepare_lock("secp256r1", route)
+    assert bodies[0]["requesterAuthority"] == {
+        "secp256r1": {"publicKey": R1_PUBLIC_KEY.hex()}
     }
+    message_hash = bytes.fromhex(prepared.signature_requests[0].message_hash)
     signature = bytes(range(64))
     message = bytes((9, 8, 7, 6)) if with_prefix else None
     prefix = bytes((1, 3, 5, 7)) if with_prefix else None
 
     def sign(challenge: bytes) -> PasskeySigningResult:
-        assert challenge == SECP_MESSAGE_HASH
+        assert challenge == message_hash
         return PasskeySigningResult(signature=signature, message=message, prefix=prefix)
 
     signed = await sign_prepared_swig_transaction(prepared, secp256r1=sign)
-    lock, precompile = _signed_lock_instructions(signed.transaction)
+    data, accounts, precompile = _signed_lock(signed.transaction)
     assert precompile is not None
     signature_offset, public_key_offset, message_offset = (
         struct.unpack_from("<H", precompile, position)[0] for position in (2, 6, 10)
     )
     assert precompile[signature_offset : signature_offset + 64] == signature
-    assert precompile[public_key_offset : public_key_offset + 33] == SECP_PUBLIC_KEY
-    assert precompile[message_offset:] == (message or SECP_MESSAGE_HASH)
+    assert precompile[public_key_offset : public_key_offset + 33] == R1_PUBLIC_KEY
+    assert precompile[message_offset:] == (message or message_hash)
     offset = LOCK_ARGS_SIZE[route]
-    assert lock[:offset] == _lock_args(route)
-    assert lock[offset : offset + 17] == _lock_authority_payload(
-        "secp256r1", 5 if route == "add" else 3
+    sysvar_index = len(accounts) - 1
+    assert accounts[sysvar_index][0] == SYSVAR_INSTRUCTIONS_ID
+    assert data[:offset] == _lock_args(route)
+    assert data[offset : offset + 17] == struct.pack(
+        "<QIB4x", LOCK_SLOT, LOCK_COUNTER, sysvar_index
     )
-    assert lock[offset + 17 :] == (prefix or b"")
+    assert data[offset + 17 :] == (prefix or b"")
 
 
-@pytest.mark.parametrize(
-    "authority",
-    [
-        {"program_exec_proof": {"role_id": 1, "zk_proof": "proof"}},
-        {"participant_set": {"address": "set"}},
-    ],
-)
-async def test_authorization_lock_writes_reject_unsupported_requesters(
-    authority: dict[str, object],
+@pytest.mark.parametrize("route", ["add", "remove"])
+async def test_authorization_lock_compiles_participant_set_approvals(
+    route: str,
 ) -> None:
+    swig, prepared, bodies = await _prepare_lock("participant_set", route)
+    assert bodies[0]["requesterAuthority"] == {
+        "participantSet": {
+            "participantSetAddress": str(LOCK_PARTICIPANT_SET),
+            "roleId": 4,
+        }
+    }
+    assert prepared.signature_requests == ()
+    plan = prepared.participant_set_approval_plan
+    assert plan is not None
+    assert plan.participant_set_address == str(LOCK_PARTICIPANT_SET)
+    assert plan.role_id == 4
+
+    signer = create_participant_ed25519_signer(
+        public_key="member-ed25519",
+        sign_message=lambda _: bytes([1]) * 64,
+    )
+    approvals = [
+        await sign_participant_set_approval(member, signer) for member in plan.members
+    ]
+    compiled = await swig.transactions.compile_participant_set_approvals(
+        prepared_transaction=prepared, approvals=approvals
+    )
+
+    compile_body = bodies[1]
+    assert compile_body["path"] == "/transaction/wallet/participant-set/compile"
+    wire = cast(dict[str, object], compile_body["preparedTransaction"])
+    assert wire["kind"] == LOCK_KIND_WIRE[route]
+    assert wire["transaction"] == prepared.transaction
+    assert wire["wallet"] == {
+        "swigConfigAddress": str(LOCK_CONFIG),
+        "walletAddress": str(LOCK_WALLET),
+    }
+    assert wire["participantSetApprovalPlan"] == {
+        "participantSetAddress": str(LOCK_PARTICIPANT_SET),
+        "roleId": 4,
+        "expirationSlot": "345679000",
+        "nonce": 12,
+        "transactionDigest": "11" * 32,
+        "compilationEnvelope": "sealed-envelope",
+        "threshold": 1,
+        "members": [
+            {
+                "memberIndex": 0,
+                "authority": {"ed25519": {"publicKey": "member-ed25519"}},
+                "challenge": "22" * 32,
+            }
+        ],
+    }
+    assert compile_body["approvals"] == [
+        {
+            "memberIndex": 0,
+            "ed25519": {"signature": base64.b64encode(bytes([1]) * 64).decode()},
+        }
+    ]
+    assert compiled.transaction.kind == f"{route}-authorization-lock"
+    assert compiled.transaction.signature_requests == ()
+    assert compiled.authorization_expiration_slot == "345679000"
+
+
+async def test_authorization_lock_writes_reject_program_exec_proof() -> None:
     def handler(_: httpx.Request) -> httpx.Response:
         raise AssertionError("request should not be sent")
 
     wallet = _client(handler).wallets.use(
-        "config", requester_authority=cast(WalletAuthority, authority)
+        "config",
+        requester_authority={"program_exec_proof": {"role_id": 1, "zk_proof": "p"}},
     )
-    message = "must use ed25519, secp256k1, or secp256r1"
+    message = "does not support programExecProof"
     with pytest.raises(ValueError, match=message):
         await wallet.add_authorization_lock(
             fee_payer="payer", amount=1, duration_slots=10

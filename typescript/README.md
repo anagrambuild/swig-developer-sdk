@@ -429,12 +429,19 @@ prepares transactions and reads state.
   transaction like any Ed25519 signer, and `signatureRequests` is empty.
 - `secp256k1` or `secp256r1`: a direct role key. The response carries a
   signature request, which `signPreparedSwigTransaction` fulfills the same way
-  it does for other routes: secp256k1 signatures go into the lock
-  instruction's authority payload, and secp256r1 signatures go into the
-  precompile instruction just before it.
+  it does for other routes. For secp256k1, the signer receives the
+  64-character hex of `messageHash` (for example through `personal_sign` with
+  `createSecp256k1EvmSigningFn`), and its signature goes into the lock
+  instruction's authority payload. The backend already places the EIP-191
+  prefix after the signature, and the SDK writes the signer's prefix there
+  once, so the bytes stay the same. For secp256r1, the signature goes into the
+  precompile instruction just before the lock.
+- `participantSet` (optionally with `roleId`): a ProgramExec role bound to the
+  set. The response carries `participantSetApprovalPlan`; collect member
+  approvals and call `swig.transactions.compileParticipantSetApprovals`, as in
+  [Configure and use a ParticipantSet](#configure-and-use-a-participantset).
 
-ProgramExec and ParticipantSet requesters are rejected before any request is
-sent.
+`programExecProof` requesters are rejected before any request is sent.
 
 ```typescript
 import { signPreparedSwigTransaction } from '@swig-wallet/developer-sdk/signers';
@@ -452,8 +459,8 @@ const signed = await signPreparedSwigTransaction(prepared, {
 
 Both setters return an unsigned prepared transaction with kind
 `add-authorization-lock` or `remove-authorization-lock`. Fulfill any signature
-requests, sign with the fee payer (and the Ed25519 requester, if that is the
-requester), then submit it. The POSTs are not retried automatically.
+requests or compile ParticipantSet approvals, sign with the fee payer (and the
+Ed25519 requester, if that is the requester), then submit it. The POSTs are not retried automatically.
 
 ### Roles
 
