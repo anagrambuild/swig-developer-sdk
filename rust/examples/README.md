@@ -1,6 +1,6 @@
 # Rust SDK examples
 
-7 standalone flows: 7 runnable Cargo examples.
+8 standalone flows: 7 runnable Cargo examples and 1 compile-only async function.
 Keygen is a separate utility binary. The package is unpublished;
 the SDK remains the default workspace member.
 
@@ -19,6 +19,7 @@ Signer loading and transaction construction stay in each signing flow.
 | [batch_transfer.rs](src/batch_transfer.rs) | `--example batch_transfer` | Prepare SOL and token transfers together, sign, sponsor, confirm |
 | [custom_transaction.rs](src/custom_transaction.rs) | `--example custom_transaction` | Build a Memo instruction locally, prepare through Swig, sign, sponsor, confirm |
 | [participant_transfer.rs](src/participant_transfer.rs) | `--example participant_transfer` | Create an Ed25519/secp256r1 set, grant a role, collect approvals, transfer |
+| [swap.rs](src/swap.rs) | Compile-only | Swap funded tokens through a configured Jupiter backend, sponsor, confirm |
 
 ## Setup
 
@@ -79,6 +80,7 @@ Set only the selected flow's inputs.
 | `SWIG_RPC_URL` | Required for transaction flows: a nonempty HTTP(S) RPC URL on the selected chain |
 | `SWIG_DESTINATION`, `SWIG_AMOUNT_LAMPORTS` | Separate transfer recipient and SOL amount; default 1,000,000 lamports |
 | `SWIG_TOKEN_MINT`, `SWIG_TOKEN_AMOUNT_RAW` | Token mint and amount in base units; amount defaults to one raw unit |
+| `SWIG_SWAP_INPUT_MINT`, `SWIG_SWAP_OUTPUT_MINT`, `SWIG_SWAP_AMOUNT_RAW` | Swap pair and input amount in base units; amount defaults to one raw unit |
 
 ## Wallet reuse and funding
 
@@ -192,6 +194,19 @@ Wallet reuse, recipient selection, the 1,000,000-lamport default, and fixed
 cargo +1.87.0 run --locked -p swig-developer-sdk-examples --example participant_transfer
 ```
 
+## Adapt a Jupiter swap
+
+This compile-only flow needs `SWIG_API_KEY`, `SWIG_RPC_URL`,
+`SWIG_ED25519_PRIVATE_KEY`, `SWIG_SWAP_INPUT_MINT`, and
+`SWIG_SWAP_OUTPUT_MINT`. `SWIG_SWAP_AMOUNT_RAW` defaults to one raw unit.
+It creates or reuses a wallet; fund that wallet's input token account before
+swapping. SOL input must already be wrapped.
+
+The backend needs configured Jupiter access and liquidity on the selected
+chain. Ordinary local/Devnet environments may have no suitable routes.
+Invoke `swig_developer_sdk_examples::swap::example().await` explicitly
+after satisfying these prerequisites.
+
 ## Runner usage
 
 Each runner supports `--help` and rejects unknown arguments before
@@ -202,6 +217,17 @@ cargo +1.87.0 run --locked -p swig-developer-sdk-examples --example wallet_reads
 ```
 
 Signing-flow `example()` functions take no arguments.
+
+Compile-only functions are built without executing their live operations.
+Calling them with valid settings can create wallets or spend funds.
+Copy a whole flow file into your application or invoke it explicitly:
+
+```rust
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> anyhow::Result<()> {
+    swig_developer_sdk_examples::swap::example().await
+}
+```
 
 ## Submission and verification
 
