@@ -1,6 +1,6 @@
 # Rust SDK examples
 
-4 standalone flows: 4 runnable Cargo examples.
+5 standalone flows: 5 runnable Cargo examples.
 Keygen is a separate utility binary. The package is unpublished;
 the SDK remains the default workspace member.
 
@@ -16,6 +16,7 @@ Signer loading and transaction construction stay in each signing flow.
 | [ed25519_transfer.rs](src/ed25519_transfer.rs) | `--example ed25519_transfer` | Create or reuse a wallet, fund if needed, transfer SOL, sponsor, confirm |
 | [secp256r1_transfer.rs](src/secp256r1_transfer.rs) | `--example secp256r1_transfer` | Create or reuse a secp256r1 wallet, sign a SOL transfer, sponsor, confirm |
 | [token_transfer.rs](src/token_transfer.rs) | `--example token_transfer` | Create or reuse a wallet, transfer funded tokens, sponsor, confirm |
+| [batch_transfer.rs](src/batch_transfer.rs) | `--example batch_transfer` | Prepare SOL and token transfers together, sign, sponsor, confirm |
 
 ## Setup
 
@@ -145,6 +146,19 @@ Devnet is the default; Mainnet requires an explicit recipient.
 
 ```sh
 cargo +1.87.0 run --locked -p swig-developer-sdk-examples --example token_transfer
+```
+
+## Run a batch transfer
+
+Set the same inputs as the token transfer and fund the selected token.
+This flow also transfers `SWIG_AMOUNT_LAMPORTS` SOL, defaulting to
+1,000,000 lamports. On Devnet it requests exactly 2 SOL when needed,
+confirms the airdrop, and checks the balance including rent.
+For Mainnet, fund the wallet with SOL and supply an explicit recipient;
+no Mainnet airdrop is attempted.
+
+```sh
+cargo +1.87.0 run --locked -p swig-developer-sdk-examples --example batch_transfer
 ```
 
 ## Runner usage
