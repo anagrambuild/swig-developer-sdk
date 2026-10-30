@@ -7,11 +7,15 @@ publish = false
 
 [dependencies]
 anyhow = "1"
+dotenvy = "0.15"
 hex = "0.4"
 k256 = { version = "0.13", features = ["ecdsa"] }
 p256 = { version = "0.13", features = ["ecdsa"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
 solana-keypair = "3.1"
+solana-pubkey = "=4.1.0"
+swig-developer-sdk = { path = "../sdk" }
+tokio = { version = "1", features = ["macros", "rt"] }
 
 [[bin]]
 name = "keygen"
