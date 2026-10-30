@@ -1,6 +1,6 @@
 # Rust SDK examples
 
-10 standalone flows: 7 runnable Cargo examples and 3 compile-only async functions.
+11 standalone flows: 8 runnable Cargo examples and 3 compile-only async functions.
 Keygen is a separate utility binary. The package is unpublished;
 the SDK remains the default workspace member.
 
@@ -22,6 +22,7 @@ Signer loading and transaction construction stay in each signing flow.
 | [swap.rs](src/swap.rs) | Compile-only | Swap funded tokens through a configured Jupiter backend, sponsor, confirm |
 | [sponsor_bundle.rs](src/sponsor_bundle.rs) | Compile-only | Build two native SOL transfers and a Jito tip, sponsor a Mainnet bundle, confirm |
 | [ramp_sell.rs](src/ramp_sell.rs) | Compile-only | Quote, create/read a sell order, prepare, sign, submit, confirm the deposit |
+| [x402_payment.rs](src/x402_payment.rs) | `--example x402_payment` | Reuse the funded demo wallet, check an offer, prepare/sign payment, request the resource |
 
 ## Setup
 
@@ -76,7 +77,7 @@ Set only the selected flow's inputs.
 | `SWIG_API_KEY` | Required for hosted SDK calls |
 | `SWIG_NETWORK` | Defaults to `devnet`; bundle and ramp require explicit `mainnet` |
 | `SWIG_API_URL` | Optional override; leave absent for the SDK's hosted API default |
-| `SWIG_CONFIG_ADDRESS`, `SWIG_WALLET_ADDRESS` | Existing config and optional matching wallet; reads require a config |
+| `SWIG_CONFIG_ADDRESS`, `SWIG_WALLET_ADDRESS` | Existing config and optional matching wallet; reads and x402 require a config |
 | `SWIG_ED25519_PRIVATE_KEY` | 64-byte Solana keypair encoded as 128 hex characters |
 | `SWIG_SECP256K1_PRIVATE_KEY`, `SWIG_SECP256R1_PRIVATE_KEY` | Each is a 32-byte secret encoded as 64 hex characters |
 | `SWIG_RPC_URL` | Required for transaction flows: a nonempty HTTP(S) RPC URL on the selected chain |
@@ -85,6 +86,7 @@ Set only the selected flow's inputs.
 | `SWIG_SWAP_INPUT_MINT`, `SWIG_SWAP_OUTPUT_MINT`, `SWIG_SWAP_AMOUNT_RAW` | Swap pair and input amount in base units; amount defaults to one raw unit |
 | `SWIG_RAMP_CONFIGURATION_ID`, `SWIG_RAMP_CUSTOMER_ID` | Configured sandbox provider and enrolled customer |
 | `SWIG_RAMP_COUNTRY`, `SWIG_RAMP_CURRENCY` | Ramp country and fiat currency; defaults `US` and `USD` |
+| `SWIG_X402_RESOURCE_URL`, `SWIG_X402_ASSET`, `SWIG_X402_PAY_TO`, `SWIG_X402_MAX_AMOUNT` | Approved resource, asset, recipient, and payment cap |
 
 ## Wallet reuse and funding
 
@@ -248,6 +250,47 @@ read the order separately for its final provider outcome.
 The flow stops on non-submission states and retains attempt context only
 in the running process. Resolve the original attempt before starting another
 sell. Production adaptation requires durable attempt storage and recovery.
+
+## Run an x402 payment
+
+This Devnet-only flow uses the
+[TypeScript x402 server](../../typescript/examples/x402/README.md) to
+prepare a wallet and mint and fund the wallet for one payment.
+Set `SWIG_API_KEY`, `SWIG_RPC_URL`, and `SWIG_ED25519_PRIVATE_KEY`
+in your untracked `rust/examples/.env`. Both processes read that file;
+the optional `SWIG_API_URL` override applies to both. Keep private keys there.
+
+In the first terminal, from the repository root:
+
+```sh
+cd typescript
+bun install
+bun run build
+bun --env-file=../rust/examples/.env --env-file=examples/x402/.env.local run examples/x402/run.ts --server-only
+```
+
+The TypeScript `examples/x402/.env.local` is optional. Copy
+`examples/x402/.env.example` there for server settings, or omit the second
+`--env-file` argument. Existing aliases
+must agree with the shared settings. Setup creates a wallet when no config
+is supplied. A supplied config must already exist; setup derives its wallet
+address when `SWIG_WALLET_ADDRESS` is absent, or checks it when supplied.
+
+Leave the servers running. Copy their public exports for
+`SWIG_CONFIG_ADDRESS`, `SWIG_WALLET_ADDRESS`, `SWIG_X402_RESOURCE_URL`,
+`SWIG_X402_ASSET`, `SWIG_X402_PAY_TO`, and `SWIG_X402_MAX_AMOUNT` into
+a second terminal at the repository root, then run:
+
+```sh
+cd rust/examples
+cargo +1.87.0 run --locked -p swig-developer-sdk-examples --example x402_payment
+```
+
+Rust requires that existing config and the approved resource, asset, recipient,
+and payment cap. It checks the offer and reuses the funded wallet.
+The resource's Swig-compatible facilitator alone settles the payment;
+do not also submit it through RPC or the paymaster. Stop the TypeScript
+servers with Ctrl-C after the request completes.
 
 ## Runner usage
 
