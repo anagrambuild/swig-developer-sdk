@@ -1,6 +1,6 @@
 # Rust SDK examples
 
-6 standalone flows: 6 runnable Cargo examples.
+7 standalone flows: 7 runnable Cargo examples.
 Keygen is a separate utility binary. The package is unpublished;
 the SDK remains the default workspace member.
 
@@ -18,6 +18,7 @@ Signer loading and transaction construction stay in each signing flow.
 | [token_transfer.rs](src/token_transfer.rs) | `--example token_transfer` | Create or reuse a wallet, transfer funded tokens, sponsor, confirm |
 | [batch_transfer.rs](src/batch_transfer.rs) | `--example batch_transfer` | Prepare SOL and token transfers together, sign, sponsor, confirm |
 | [custom_transaction.rs](src/custom_transaction.rs) | `--example custom_transaction` | Build a Memo instruction locally, prepare through Swig, sign, sponsor, confirm |
+| [participant_transfer.rs](src/participant_transfer.rs) | `--example participant_transfer` | Create an Ed25519/secp256r1 set, grant a role, collect approvals, transfer |
 
 ## Setup
 
@@ -170,6 +171,25 @@ The hosted API and Devnet are the defaults.
 
 ```sh
 cargo +1.87.0 run --locked -p swig-developer-sdk-examples --example custom_transaction
+```
+
+## Run a participant-set transfer
+
+Set `SWIG_API_KEY`, `SWIG_RPC_URL`, `SWIG_ED25519_PRIVATE_KEY`, and
+`SWIG_SECP256R1_PRIVATE_KEY`. This Devnet-only flow requires deployed
+ParticipantSet support in both the backend and Swig program.
+
+Every run creates a fresh 2-of-2 set and grants it a new `All` role,
+including when reusing a wallet. The Ed25519 manager also supplies the
+first participant's approval. The second participant uses the SDK's
+software WebAuthn envelope; the deployed backend and program must support
+that format. It is not a browser ceremony or a standalone raw P-256 signature.
+
+Wallet reuse, recipient selection, the 1,000,000-lamport default, and fixed
+2 SOL funding when needed follow the Ed25519 transfer rules.
+
+```sh
+cargo +1.87.0 run --locked -p swig-developer-sdk-examples --example participant_transfer
 ```
 
 ## Runner usage
