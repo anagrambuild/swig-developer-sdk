@@ -1,6 +1,6 @@
 # Rust SDK examples
 
-9 standalone flows: 7 runnable Cargo examples and 2 compile-only async functions.
+10 standalone flows: 7 runnable Cargo examples and 3 compile-only async functions.
 Keygen is a separate utility binary. The package is unpublished;
 the SDK remains the default workspace member.
 
@@ -21,6 +21,7 @@ Signer loading and transaction construction stay in each signing flow.
 | [participant_transfer.rs](src/participant_transfer.rs) | `--example participant_transfer` | Create an Ed25519/secp256r1 set, grant a role, collect approvals, transfer |
 | [swap.rs](src/swap.rs) | Compile-only | Swap funded tokens through a configured Jupiter backend, sponsor, confirm |
 | [sponsor_bundle.rs](src/sponsor_bundle.rs) | Compile-only | Build two native SOL transfers and a Jito tip, sponsor a Mainnet bundle, confirm |
+| [ramp_sell.rs](src/ramp_sell.rs) | Compile-only | Quote, create/read a sell order, prepare, sign, submit, confirm the deposit |
 
 ## Setup
 
@@ -73,7 +74,7 @@ Set only the selected flow's inputs.
 | Variable | Meaning |
 | --- | --- |
 | `SWIG_API_KEY` | Required for hosted SDK calls |
-| `SWIG_NETWORK` | Defaults to `devnet`; bundle requires explicit `mainnet` |
+| `SWIG_NETWORK` | Defaults to `devnet`; bundle and ramp require explicit `mainnet` |
 | `SWIG_API_URL` | Optional override; leave absent for the SDK's hosted API default |
 | `SWIG_CONFIG_ADDRESS`, `SWIG_WALLET_ADDRESS` | Existing config and optional matching wallet; reads require a config |
 | `SWIG_ED25519_PRIVATE_KEY` | 64-byte Solana keypair encoded as 128 hex characters |
@@ -82,6 +83,8 @@ Set only the selected flow's inputs.
 | `SWIG_DESTINATION`, `SWIG_AMOUNT_LAMPORTS` | Separate transfer recipient and SOL amount; default 1,000,000 lamports |
 | `SWIG_TOKEN_MINT`, `SWIG_TOKEN_AMOUNT_RAW` | Token mint and amount in base units; amount defaults to one raw unit |
 | `SWIG_SWAP_INPUT_MINT`, `SWIG_SWAP_OUTPUT_MINT`, `SWIG_SWAP_AMOUNT_RAW` | Swap pair and input amount in base units; amount defaults to one raw unit |
+| `SWIG_RAMP_CONFIGURATION_ID`, `SWIG_RAMP_CUSTOMER_ID` | Configured sandbox provider and enrolled customer |
+| `SWIG_RAMP_COUNTRY`, `SWIG_RAMP_CURRENCY` | Ramp country and fiat currency; defaults `US` and `USD` |
 
 ## Wallet reuse and funding
 
@@ -223,6 +226,28 @@ signing. Review the source's fixed tip recipient before adapting the flow.
 Invoke `swig_developer_sdk_examples::sponsor_bundle::example().await`
 explicitly. Preserve the ordered signed bundle and its reported IDs;
 reconcile an uncertain submission before rebuilding or rerunning.
+
+## Adapt a ramp sell
+
+This compile-only flow requires `SWIG_NETWORK=mainnet`, `SWIG_API_KEY`,
+`SWIG_RPC_URL`, `SWIG_ED25519_PRIVATE_KEY`, `SWIG_RAMP_CONFIGURATION_ID`,
+and `SWIG_RAMP_CUSTOMER_ID`. The backend needs a configured sandbox provider
+and an enrolled, eligible customer. Country and currency default to `US`
+and `USD` via `SWIG_RAMP_COUNTRY` and `SWIG_RAMP_CURRENCY`.
+
+Fund the created or reused wallet with Mainnet SOL for the sell.
+`SWIG_AMOUNT_LAMPORTS` defaults to 1,000,000 lamports. Provider sandbox
+mode does not make Mainnet transfers free. Provider steps can stop the flow
+before transfer preparation.
+
+Invoke `swig_developer_sdk_examples::ramp_sell::example().await` explicitly.
+Ramp owns deposit submission. Keep the order request ID, order ID, transfer ID,
+and signature. Deposit confirmation is separate from fiat settlement;
+read the order separately for its final provider outcome.
+
+The flow stops on non-submission states and retains attempt context only
+in the running process. Resolve the original attempt before starting another
+sell. Production adaptation requires durable attempt storage and recovery.
 
 ## Runner usage
 
