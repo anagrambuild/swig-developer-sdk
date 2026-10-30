@@ -1024,7 +1024,7 @@ class WalletsClient:
                 )
             }
         )
-        authority = _requester_authority(wallet, requester_authority)
+        authority = _authorization_lock_requester(wallet, requester_authority)
         response = await self._http.post(
             "/transaction/wallet/authorization-lock/add",
             {
@@ -1063,7 +1063,7 @@ class WalletsClient:
             or not 0 <= lock_id <= _MAX_UINT32
         ):
             raise ValueError("lock_id must be an unsigned 32-bit integer")
-        authority = _requester_authority(wallet, requester_authority)
+        authority = _authorization_lock_requester(wallet, requester_authority)
         response = await self._http.post(
             "/transaction/wallet/authorization-lock/remove",
             {
@@ -2193,6 +2193,19 @@ def _required_int(value: object, field: str) -> int:
 
 _MAX_UINT32 = 4_294_967_295
 _MAX_UINT64 = 18_446_744_073_709_551_615
+
+
+def _authorization_lock_requester(
+    wallet: WalletHandle, requester_authority: WalletAuthority | None
+) -> WalletAuthority:
+    authority = _requester_authority(wallet, requester_authority)
+    wire = wallet_authority_to_wire(authority)
+    if not any(scheme in wire for scheme in ("ed25519", "secp256k1", "secp256r1")):
+        raise ValueError(
+            "Authorization lock requester_authority must use ed25519, secp256k1, "
+            "or secp256r1"
+        )
+    return authority
 
 
 def _normalize_uint64(value: Amount, field: str) -> str:

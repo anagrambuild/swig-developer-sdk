@@ -575,7 +575,7 @@ export function addAuthorizationLockRequest(
   if (BigInt(amount) === 0n) {
     throw new Error('amount must be greater than zero');
   }
-  const requesterAuthority = resolveRequesterAuthority(wallet, args);
+  const requesterAuthority = resolveAuthorizationLockRequester(wallet, args);
   return {
     network: toProtoNetwork(
       resolveNetwork(args.network, wallet.network, defaultNetwork),
@@ -608,7 +608,7 @@ export function removeAuthorizationLockRequest(
   ) {
     throw new Error('lockId must be an unsigned 32-bit integer');
   }
-  const requesterAuthority = resolveRequesterAuthority(wallet, args);
+  const requesterAuthority = resolveAuthorizationLockRequester(wallet, args);
   return {
     network: toProtoNetwork(
       resolveNetwork(args.network, wallet.network, defaultNetwork),
@@ -618,6 +618,23 @@ export function removeAuthorizationLockRequest(
     requesterAuthority: walletAuthorityRequest(requesterAuthority),
     lockId: args.lockId,
   };
+}
+
+function resolveAuthorizationLockRequester(
+  wallet: WalletHandle,
+  args: AddAuthorizationLockArgs | RemoveAuthorizationLockArgs,
+) {
+  const requesterAuthority = resolveRequesterAuthority(wallet, args);
+  if (
+    !('ed25519' in requesterAuthority) &&
+    !('secp256k1' in requesterAuthority) &&
+    !('secp256r1' in requesterAuthority)
+  ) {
+    throw new Error(
+      'Authorization lock requesterAuthority must use ed25519, secp256k1, or secp256r1',
+    );
+  }
+  return requesterAuthority;
 }
 
 /** uint64 crosses the wire as a decimal string so values above 2^53 survive. */

@@ -95,6 +95,17 @@ release an active lock; a role with `All`, `AllButManageAuthority`,
 program enforces every lock rule, and the SDKs perform input validation and
 HTTP transport only.
 
+Lock requesters are Ed25519 (a direct role key or any session role's session
+key, which signs the transaction), Secp256k1, or Secp256r1; the SDKs reject
+ProgramExec and ParticipantSet requesters before sending. Secp requesters get a
+signature request that the Swig signing helpers fulfill as they do for SignV2:
+the authority payload starts after the fixed-size args (88 bytes for
+AddAuthorizationLockV1, discriminator 25; 16 bytes for
+RemoveAuthorizationLockV1, discriminator 26). A secp256k1 signature goes at
+payload offset 12 and any signing prefix after the 77-byte payload. A
+secp256r1 signature goes into the precompile instruction just before the lock
+instruction, and any passkey prefix after the 17-byte payload.
+
 ParticipantSet setup and stateless approval compilation use:
 
 | Method | Route |

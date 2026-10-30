@@ -22,6 +22,11 @@ from .transactions import (
 SECP256R1_PROGRAM_ID = Pubkey.from_string("Secp256r1SigVerify1111111111111111111111111")
 SWIG_PROGRAM_ID = Pubkey.from_string("swigypWHEksbC64pWKwah1WTeh9JXwx8H1rJHLdbQMB")
 SIGN_V2_DISCRIMINATOR = 11
+ADD_AUTHORIZATION_LOCK_V1_DISCRIMINATOR = 25
+REMOVE_AUTHORIZATION_LOCK_V1_DISCRIMINATOR = 26
+# Fixed-size args that precede the authority payload in each lock instruction.
+ADD_AUTHORIZATION_LOCK_V1_ARGS_SIZE = 88
+REMOVE_AUTHORIZATION_LOCK_V1_ARGS_SIZE = 16
 SECP256R1_AUTHORITY_PAYLOAD_SIZE = 17
 SECP256R1_PUBLIC_KEY_SIZE = 33
 SECP256R1_SIGNATURE_SIZE = 64
@@ -171,11 +176,11 @@ async def _apply_secp256r1(
         ),
     )
     if result.prefix is not None:
-        sign_v2_index = _find_following_sign_v2(transaction, instruction_index)
+        swig_index = _find_following_swig_instruction(transaction, instruction_index)
         transaction.set_instruction_data(
-            sign_v2_index,
+            swig_index,
             _patch_authority_prefix(
-                transaction.instruction_data(sign_v2_index),
+                transaction.instruction_data(swig_index),
                 result.prefix,
                 SECP256R1_AUTHORITY_PAYLOAD_SIZE,
                 "secp256r1",
@@ -195,7 +200,7 @@ async def _apply_secp256k1(
     result = await _resolve(signing_fn(message))
     if len(result.signature) != SECP256K1_SIGNATURE_SIZE:
         raise ValueError("Secp256k1 signature must be 65 bytes")
-    index = _find_secp256k1_sign_v2(transaction, request)
+    index = _find_secp256k1_swig_instruction(transaction, request)
     transaction.set_instruction_data(
         index,
         _patch_secp256k1_payload(transaction.instruction_data(index), request, result),
@@ -311,21 +316,24 @@ def _find_secp256r1_instruction(
     raise ValueError("Matching secp256r1 signature instruction not found")
 
 
-def _find_following_sign_v2(
+def _find_following_swig_instruction(
     transaction: _MutableTransaction,
     secp_instruction_index: int,
 ) -> int:
     for index in range(secp_instruction_index + 1, len(transaction.instructions)):
         if (
             transaction.program_id(index) == SWIG_PROGRAM_ID
-            and _read_u16(transaction.instruction_data(index), 0)
-            == SIGN_V2_DISCRIMINATOR
+            and _authority_payload_offset(transaction.instruction_data(index))
+            is not None
         ):
             return index
-    raise ValueError("Swig SignV2 instruction following secp256r1 precompile not found")
+    raise ValueError(
+        "Swig SignV2 or authorization-lock instruction following secp256r1 "
+        "precompile not found"
+    )
 
 
-def _find_secp256k1_sign_v2(
+def _find_secp256k1_swig_instruction(
     transaction: _MutableTransaction,
     request: ClientSignatureRequest,
 ) -> int:
@@ -334,10 +342,8 @@ def _find_secp256k1_sign_v2(
         if transaction.program_id(index) != SWIG_PROGRAM_ID:
             continue
         data = transaction.instruction_data(index)
-        if _read_u16(data, 0) != SIGN_V2_DISCRIMINATOR:
-            continue
         offset = _authority_payload_offset(data)
-        if len(data) < offset + SECP256K1_AUTHORITY_PAYLOAD_SIZE:
+        if offset is None or len(data) < offset + SECP256K1_AUTHORITY_PAYLOAD_SIZE:
             continue
         fallback.append(index)
         if (
@@ -347,7 +353,9 @@ def _find_secp256k1_sign_v2(
             return index
     if len(fallback) == 1:
         return fallback[0]
-    raise ValueError("Matching secp256k1 Swig SignV2 instruction not found")
+    raise ValueError(
+        "Matching secp256k1 Swig SignV2 or authorization-lock instruction not found"
+    )
 
 
 def _encode_secp256r1_instruction(
@@ -402,11 +410,9 @@ def _patch_authority_prefix(
     fixed_payload_size: int,
     scheme: str,
 ) -> bytes:
-    offset = _authority_payload_offset(instruction_data)
+    offset = _require_authority_payload_offset(instruction_data)
     if len(instruction_data) < offset + fixed_payload_size:
-        raise ValueError(
-            f"Swig SignV2 instruction is missing {scheme} authority payload"
-        )
+        raise ValueError(f"Swig instruction is missing {scheme} authority payload")
     return instruction_data[: offset + fixed_payload_size] + prefix
 
 
@@ -415,11 +421,9 @@ def _patch_secp256k1_payload(
     request: ClientSignatureRequest,
     result: Secp256k1SigningResult,
 ) -> bytes:
-    offset = _authority_payload_offset(instruction_data)
+    offset = _require_authority_payload_offset(instruction_data)
     if len(instruction_data) < offset + SECP256K1_AUTHORITY_PAYLOAD_SIZE:
-        raise ValueError(
-            "Swig SignV2 instruction is missing secp256k1 authority payload"
-        )
+        raise ValueError("Swig instruction is missing secp256k1 authority payload")
     if request.slot < 0 or request.slot > 0xFFFFFFFFFFFFFFFF:
         raise ValueError("Secp256k1 signature request slot must fit in u64")
     if request.counter < 0 or request.counter > 0xFFFFFFFF:
@@ -434,8 +438,25 @@ def _patch_secp256k1_payload(
     return bytes(patched)
 
 
-def _authority_payload_offset(data: bytes) -> int:
-    return 8 + _read_u16(data, 2)
+def _authority_payload_offset(data: bytes) -> int | None:
+    """Where the authority payload starts in a Swig instruction that carries a
+    client signature: SignV2 after its inner instructions, and the
+    authorization-lock instructions after their fixed-size args."""
+    discriminator = _read_u16(data, 0)
+    if discriminator == SIGN_V2_DISCRIMINATOR:
+        return 8 + _read_u16(data, 2)
+    if discriminator == ADD_AUTHORIZATION_LOCK_V1_DISCRIMINATOR:
+        return ADD_AUTHORIZATION_LOCK_V1_ARGS_SIZE
+    if discriminator == REMOVE_AUTHORIZATION_LOCK_V1_DISCRIMINATOR:
+        return REMOVE_AUTHORIZATION_LOCK_V1_ARGS_SIZE
+    return None
+
+
+def _require_authority_payload_offset(data: bytes) -> int:
+    offset = _authority_payload_offset(data)
+    if offset is None:
+        raise ValueError("Swig instruction does not carry an authority payload")
+    return offset
 
 
 def _normalize_hex(value: str) -> str:

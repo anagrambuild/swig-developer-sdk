@@ -29,6 +29,8 @@ export type AddRoleRequesterAuthority = Extract<
   { ed25519: unknown } | { secp256r1: unknown }
 >;
 
+export type AuthorizationLockRequesterAuthority = DirectWalletAuthority;
+
 export type RoleAuthority =
   DirectWalletAuthority | { participantSet: { address: string } };
 
@@ -234,13 +236,21 @@ export type AddAuthorizationLockArgs = {
   mint?: string;
   /** Lamports for native SOL, or token base units for an SPL mint. */
   amount: Amount;
-  requesterAuthority?: WalletAuthority;
+  /**
+   * Ed25519 (a direct role key or any session role's session key),
+   * Secp256k1, or Secp256r1. Secp responses carry a signature request.
+   */
+  requesterAuthority?: AuthorizationLockRequesterAuthority;
   network?: Network;
 } & AuthorizationLockExpiry;
 
 export interface RemoveAuthorizationLockArgs {
   feePayer: string;
   lockId: number;
-  requesterAuthority?: WalletAuthority;
+  /**
+   * Ed25519 (a direct role key or any session role's session key),
+   * Secp256k1, or Secp256r1. Secp responses carry a signature request.
+   */
+  requesterAuthority?: AuthorizationLockRequesterAuthority;
   network?: Network;
 }

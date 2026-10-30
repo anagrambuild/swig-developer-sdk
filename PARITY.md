@@ -17,8 +17,8 @@ TypeScript is version `0.11.1`, Python is version `0.10.0`, and both default to
 | Transfers | `wallet.transfer.sol/token/splToken` | `wallet.transfer.sol/token/spl_token` | same endpoints and prepared transaction output |
 | Jupiter swap | `wallet.swap.jupiter` | `wallet.swap.jupiter` | same optional swap controls |
 | Rent-claimer preparation | `wallet.setRentClaimer` | pending | direct Ed25519 set-once preparation through the backend |
-| Authorization lock creation | `wallet.addAuthorizationLock` | `wallet.add_authorization_lock` | same expiry oneof, positive uint64 amount, optional mint, and prepared transaction |
-| Authorization lock removal | `wallet.removeAuthorizationLock` | `wallet.remove_authorization_lock` | same uint32 lock id and prepared transaction |
+| Authorization lock creation | `wallet.addAuthorizationLock` | `wallet.add_authorization_lock` | same expiry oneof, positive uint64 amount, optional mint, ed25519/secp256k1/secp256r1 requesters, and prepared transaction |
+| Authorization lock removal | `wallet.removeAuthorizationLock` | `wallet.remove_authorization_lock` | same uint32 lock id, ed25519/secp256k1/secp256r1 requesters, and prepared transaction |
 | Custom transaction | `wallet.buildTransaction` | `wallet.build_transaction` | same custom preparation request and instruction shape |
 | Policy read | `swig.wallets.getPolicy` | `swig.wallets.get_policy` | same raw policy metadata |
 | ParticipantSet creation | `swig.participantSets.create` | `swig.participant_sets.create` | same standard authority members and prepared transaction |
@@ -80,8 +80,8 @@ application-owned callbacks and make no hosted API requests.
 | Surface | TypeScript | Python | Parity target |
 | --- | --- | --- | --- |
 | Generic signing | `signPreparedTransaction`, signer object | `sign_prepared_transaction`, signer protocol | same metadata preservation |
-| Swig r1 signing | passkey callback and local transaction patching | WebAuthn callback and `solders` patching | byte-for-byte transaction semantics |
-| Swig k1 signing | EIP-1193 callback and local transaction patching | EIP-1193-compatible callback and `solders` patching | byte-for-byte transaction semantics |
+| Swig r1 signing | passkey callback and local transaction patching | WebAuthn callback and `solders` patching | byte-for-byte transaction semantics for SignV2 and authorization-lock instructions |
+| Swig k1 signing | EIP-1193 callback and local transaction patching | EIP-1193-compatible callback and `solders` patching | byte-for-byte transaction semantics for SignV2 and authorization-lock instructions |
 | Participant Ed25519 approval | `createParticipantEd25519Signer`, `signParticipantSetApproval` | `create_participant_ed25519_signer`, `sign_participant_set_approval` | decoded 32-byte challenge and exact 64-byte signature |
 | Participant passkey approval | `createParticipantPasskeySigner`, `signParticipantSetApproval` | `create_participant_passkey_signer`, `sign_participant_set_approval` | exact challenge and assertion bytes, DER-to-raw low-S P-256 signature |
 | Participant personal-sign approval | `createParticipantPersonalSignSigner`, `signParticipantSetApproval` | `create_participant_personal_sign_signer`, `sign_participant_set_approval` | lowercase ASCII challenge, low-S k1 signature, and adjusted recovery byte |
