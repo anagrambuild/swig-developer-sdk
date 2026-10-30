@@ -17,8 +17,8 @@ TypeScript is version `0.11.1`, Python is version `0.10.0`, and both default to
 | Transfers | `wallet.transfer.sol/token/splToken` | `wallet.transfer.sol/token/spl_token` | same endpoints and prepared transaction output |
 | Jupiter swap | `wallet.swap.jupiter` | `wallet.swap.jupiter` | same optional swap controls |
 | Rent-claimer preparation | `wallet.setRentClaimer` | pending | direct Ed25519 set-once preparation through the backend |
-| Authorization lock creation | `wallet.addAuthorizationLock` | `wallet.add_authorization_lock` | same expiry oneof, positive uint64 amount, optional mint, ed25519/secp256k1/secp256r1 requesters, and prepared transaction |
-| Authorization lock removal | `wallet.removeAuthorizationLock` | `wallet.remove_authorization_lock` | same uint32 lock id, ed25519/secp256k1/secp256r1 requesters, and prepared transaction |
+| Authorization lock creation | `wallet.addAuthorizationLock` | `wallet.add_authorization_lock` | same expiry oneof, positive uint64 amount, optional mint, ed25519/secp256k1/secp256r1/ParticipantSet requesters, and prepared transaction |
+| Authorization lock removal | `wallet.removeAuthorizationLock` | `wallet.remove_authorization_lock` | same uint32 lock id, ed25519/secp256k1/secp256r1/ParticipantSet requesters, and prepared transaction |
 | Custom transaction | `wallet.buildTransaction` | `wallet.build_transaction` | same custom preparation request and instruction shape |
 | Policy read | `swig.wallets.getPolicy` | `swig.wallets.get_policy` | same raw policy metadata |
 | ParticipantSet creation | `swig.participantSets.create` | `swig.participant_sets.create` | same standard authority members and prepared transaction |

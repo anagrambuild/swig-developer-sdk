@@ -14,10 +14,14 @@
   locks, the current slot, and the next lock id through the backend API.
 - Recognize the `add-authorization-lock` and `remove-authorization-lock`
   prepared transaction kinds.
-- Accept Ed25519 (direct or session key), Secp256k1, and Secp256r1 lock
-  requesters. `signPreparedSwigTransaction` now writes secp256k1 signatures
-  and secp256r1 passkey prefixes into the authorization-lock instructions'
-  authority payloads, as it already did for SignV2.
+- Accept Ed25519 (direct or session key), Secp256k1, Secp256r1, and
+  ParticipantSet lock requesters; reject `programExecProof`.
+  `signPreparedSwigTransaction` now writes secp256k1 signatures and prefixes,
+  and secp256r1 passkey prefixes, into the authorization-lock instructions'
+  authority payloads, as it already did for SignV2. ParticipantSet lock
+  requests compile through `compileParticipantSetApprovals`.
+- `compileParticipantSetApprovals` now sends the authorization-lock prepared
+  kinds instead of dropping them, so the compiled transaction keeps its kind.
 
 ## 0.11.1
 

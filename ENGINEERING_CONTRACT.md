@@ -96,15 +96,28 @@ program enforces every lock rule, and the SDKs perform input validation and
 HTTP transport only.
 
 Lock requesters are Ed25519 (a direct role key or any session role's session
-key, which signs the transaction), Secp256k1, or Secp256r1; the SDKs reject
-ProgramExec and ParticipantSet requesters before sending. Secp requesters get a
-signature request that the Swig signing helpers fulfill as they do for SignV2:
-the authority payload starts after the fixed-size args (88 bytes for
-AddAuthorizationLockV1, discriminator 25; 16 bytes for
-RemoveAuthorizationLockV1, discriminator 26). A secp256k1 signature goes at
-payload offset 12 and any signing prefix after the 77-byte payload. A
-secp256r1 signature goes into the precompile instruction just before the lock
-instruction, and any passkey prefix after the 17-byte payload.
+key, which signs the transaction), Secp256k1, Secp256r1, or a ParticipantSet
+bound to a ProgramExec role; the SDKs reject `programExecProof` before sending.
+Secp requesters get a signature request that the Swig signing helpers fulfill
+as they do for SignV2: the authority payload starts after the fixed-size args
+(88 bytes for AddAuthorizationLockV1, discriminator 25; 16 bytes for
+RemoveAuthorizationLockV1, discriminator 26).
+
+- Secp256k1: `messageHash` is sha256(args || account metas || slot || counter)
+  with transaction-level account flags. The signer receives its 64-character
+  lowercase hex; the signature goes at payload offset 12 (instruction bytes
+  100..165 for add, 28..93 for remove). The backend already places the EIP-191
+  `personal_sign` prefix after the 77-byte payload; the helpers replace
+  everything after it with the signer's returned prefix, which is the same
+  bytes for `personal_sign` signers. The program verifies
+  keccak256(prefix || hex(messageHash)).
+- Secp256r1: the signature goes into the precompile instruction just before
+  the lock instruction, and any passkey prefix after the 17-byte payload.
+- ParticipantSet: the response carries `participantSetApprovalPlan` and no
+  signature requests. Member approvals compile through
+  `/transaction/wallet/participant-set/compile`, which inserts the verifiers
+  and the authorize instruction before the lock instruction and echoes the
+  lock kind.
 
 ParticipantSet setup and stateless approval compilation use:
 

@@ -625,13 +625,9 @@ function resolveAuthorizationLockRequester(
   args: AddAuthorizationLockArgs | RemoveAuthorizationLockArgs,
 ) {
   const requesterAuthority = resolveRequesterAuthority(wallet, args);
-  if (
-    !('ed25519' in requesterAuthority) &&
-    !('secp256k1' in requesterAuthority) &&
-    !('secp256r1' in requesterAuthority)
-  ) {
+  if ('programExecProof' in requesterAuthority) {
     throw new Error(
-      'Authorization lock requesterAuthority must use ed25519, secp256k1, or secp256r1',
+      'Authorization lock requesterAuthority does not support programExecProof',
     );
   }
   return requesterAuthority;
