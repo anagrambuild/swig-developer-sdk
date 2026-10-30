@@ -680,6 +680,11 @@ describe('DexClient', () => {
         withTransaction({ blockTime: 1758649976 }),
         /^DEX response has invalid blockTime$/,
       ],
+      // 2^53: past what a number holds exactly, so a cursor could not send it back.
+      [
+        withTransaction({ slot: '9007199254740992' }),
+        /^DEX response has invalid slot$/,
+      ],
       [
         { transactions: [], nextCursor: { slot: '449761733' } },
         /^DEX response is missing transactionSignature$/,
