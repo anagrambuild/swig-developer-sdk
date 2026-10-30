@@ -422,10 +422,38 @@ requester's role needs `ManageAuthorizationLocks`, whose `max_duration_slots`
 caps the lock's duration. The program enforces every lock rule; the SDK only
 prepares transactions and reads state.
 
+`requesterAuthority` may be:
+
+- `ed25519`: a direct Ed25519 role key, or the session key of any session
+  role (Ed25519, Secp256k1, Secp256r1, or ProgramExec session). It signs the
+  transaction like any Ed25519 signer, and `signatureRequests` is empty.
+- `secp256k1` or `secp256r1`: a direct role key. The response carries a
+  signature request, which `signPreparedSwigTransaction` fulfills the same way
+  it does for other routes: secp256k1 signatures go into the lock
+  instruction's authority payload, and secp256r1 signatures go into the
+  precompile instruction just before it.
+
+ProgramExec and ParticipantSet requesters are rejected before any request is
+sent.
+
+```typescript
+import { signPreparedSwigTransaction } from '@swig-wallet/developer-sdk/signers';
+
+const prepared = await wallet.addAuthorizationLock({
+  feePayer,
+  amount: 1_000_000_000n,
+  expirySlot,
+  requesterAuthority: { secp256k1: { publicKey: evmPublicKey } },
+});
+const signed = await signPreparedSwigTransaction(prepared, {
+  secp256k1: evmSigningFn, // or secp256r1: passkeySigningFn
+});
+```
+
 Both setters return an unsigned prepared transaction with kind
-`add-authorization-lock` or `remove-authorization-lock`. Sign it with the
-requester and fee payer, then submit it. The POSTs are not retried
-automatically.
+`add-authorization-lock` or `remove-authorization-lock`. Fulfill any signature
+requests, sign with the fee payer (and the Ed25519 requester, if that is the
+requester), then submit it. The POSTs are not retried automatically.
 
 ### Roles
 
@@ -713,7 +741,7 @@ const signed = await signPreparedTransaction(prepared, {
 
 Use this for any prepared transaction whose `signatureRequests` contains a
 `secp256r1` request. The same pattern applies to create, transfer, token
-transfer, swap, and ramp transfer.
+transfer, swap, ramp transfer, and authorization locks.
 
 ```typescript
 import {

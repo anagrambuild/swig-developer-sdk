@@ -29,6 +29,7 @@ export type {
   Amount,
   AuthorizationLock,
   AuthorizationLockExpiry,
+  AuthorizationLockRequesterAuthority,
   AuthorizationLocksResult,
   BuildTransactionArgs,
   CancelRecoveryArgs,

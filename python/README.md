@@ -344,10 +344,39 @@ public key. The requester's role needs `ManageAuthorizationLocks`, whose
 `max_duration_slots` caps the lock's duration. The program enforces every lock
 rule; the SDK only prepares transactions and reads state.
 
+`requester_authority` may be:
+
+- `ed25519`: a direct Ed25519 role key, or the session key of any session
+  role (Ed25519, Secp256k1, Secp256r1, or ProgramExec session). It signs the
+  transaction like any Ed25519 signer, and `signature_requests` is empty.
+- `secp256k1` or `secp256r1`: a direct role key. The response carries a
+  signature request, which `sign_prepared_swig_transaction` fulfills the same
+  way it does for other routes: secp256k1 signatures go into the lock
+  instruction's authority payload, and secp256r1 signatures go into the
+  precompile instruction just before it.
+
+ProgramExec and ParticipantSet requesters raise `ValueError` before any request
+is sent.
+
+```python
+from swig_developer_sdk.signers import sign_prepared_swig_transaction
+
+prepared = await wallet.add_authorization_lock(
+    fee_payer=fee_payer,
+    amount=1_000_000_000,
+    expiry_slot=expiry_slot,
+    requester_authority={"secp256k1": {"public_key": evm_public_key}},
+)
+signed = await sign_prepared_swig_transaction(
+    prepared,
+    secp256k1=evm_signer,  # or secp256r1=passkey_signer
+)
+```
+
 Both setters return an unsigned prepared transaction with kind
-`add-authorization-lock` or `remove-authorization-lock`. Sign it with the
-requester and fee payer, then submit it. The POSTs are not retried
-automatically.
+`add-authorization-lock` or `remove-authorization-lock`. Fulfill any signature
+requests, sign with the fee payer (and the Ed25519 requester, if that is the
+requester), then submit it. The POSTs are not retried automatically.
 
 Policy metadata is a separate read:
 
