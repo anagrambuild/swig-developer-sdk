@@ -1,6 +1,6 @@
 # Rust SDK examples
 
-5 standalone flows: 5 runnable Cargo examples.
+6 standalone flows: 6 runnable Cargo examples.
 Keygen is a separate utility binary. The package is unpublished;
 the SDK remains the default workspace member.
 
@@ -17,6 +17,7 @@ Signer loading and transaction construction stay in each signing flow.
 | [secp256r1_transfer.rs](src/secp256r1_transfer.rs) | `--example secp256r1_transfer` | Create or reuse a secp256r1 wallet, sign a SOL transfer, sponsor, confirm |
 | [token_transfer.rs](src/token_transfer.rs) | `--example token_transfer` | Create or reuse a wallet, transfer funded tokens, sponsor, confirm |
 | [batch_transfer.rs](src/batch_transfer.rs) | `--example batch_transfer` | Prepare SOL and token transfers together, sign, sponsor, confirm |
+| [custom_transaction.rs](src/custom_transaction.rs) | `--example custom_transaction` | Build a Memo instruction locally, prepare through Swig, sign, sponsor, confirm |
 
 ## Setup
 
@@ -159,6 +160,16 @@ no Mainnet airdrop is attempted.
 
 ```sh
 cargo +1.87.0 run --locked -p swig-developer-sdk-examples --example batch_transfer
+```
+
+## Run a custom transaction
+
+Set `SWIG_API_KEY`, `SWIG_RPC_URL`, and `SWIG_ED25519_PRIVATE_KEY`.
+This flow creates or reuses a wallet and submits a Memo instruction.
+The hosted API and Devnet are the defaults.
+
+```sh
+cargo +1.87.0 run --locked -p swig-developer-sdk-examples --example custom_transaction
 ```
 
 ## Runner usage
