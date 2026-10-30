@@ -1,6 +1,6 @@
 # Rust SDK examples
 
-8 standalone flows: 7 runnable Cargo examples and 1 compile-only async function.
+9 standalone flows: 7 runnable Cargo examples and 2 compile-only async functions.
 Keygen is a separate utility binary. The package is unpublished;
 the SDK remains the default workspace member.
 
@@ -20,6 +20,7 @@ Signer loading and transaction construction stay in each signing flow.
 | [custom_transaction.rs](src/custom_transaction.rs) | `--example custom_transaction` | Build a Memo instruction locally, prepare through Swig, sign, sponsor, confirm |
 | [participant_transfer.rs](src/participant_transfer.rs) | `--example participant_transfer` | Create an Ed25519/secp256r1 set, grant a role, collect approvals, transfer |
 | [swap.rs](src/swap.rs) | Compile-only | Swap funded tokens through a configured Jupiter backend, sponsor, confirm |
+| [sponsor_bundle.rs](src/sponsor_bundle.rs) | Compile-only | Build two native SOL transfers and a Jito tip, sponsor a Mainnet bundle, confirm |
 
 ## Setup
 
@@ -72,7 +73,7 @@ Set only the selected flow's inputs.
 | Variable | Meaning |
 | --- | --- |
 | `SWIG_API_KEY` | Required for hosted SDK calls |
-| `SWIG_NETWORK` | Defaults to `devnet` |
+| `SWIG_NETWORK` | Defaults to `devnet`; bundle requires explicit `mainnet` |
 | `SWIG_API_URL` | Optional override; leave absent for the SDK's hosted API default |
 | `SWIG_CONFIG_ADDRESS`, `SWIG_WALLET_ADDRESS` | Existing config and optional matching wallet; reads require a config |
 | `SWIG_ED25519_PRIVATE_KEY` | 64-byte Solana keypair encoded as 128 hex characters |
@@ -206,6 +207,22 @@ The backend needs configured Jupiter access and liquidity on the selected
 chain. Ordinary local/Devnet environments may have no suitable routes.
 Invoke `swig_developer_sdk_examples::swap::example().await` explicitly
 after satisfying these prerequisites.
+
+## Adapt bundle sponsorship
+
+This compile-only flow requires `SWIG_NETWORK=mainnet`, `SWIG_API_KEY`,
+`SWIG_RPC_URL`, `SWIG_ED25519_PRIVATE_KEY`, and an explicitly chosen
+`SWIG_DESTINATION`. It spends SOL directly from the funded Ed25519 signer
+and creates no Swig wallet. Keep the signer, recipient, and API paymaster distinct.
+
+Each of the two native transfers uses `SWIG_AMOUNT_LAMPORTS`, defaulting
+to 1,000,000 lamports. Fund the signer for both transfers and rent.
+The API paymaster supplies fees and a 1,000-lamport Jito tip, included before
+signing. Review the source's fixed tip recipient before adapting the flow.
+
+Invoke `swig_developer_sdk_examples::sponsor_bundle::example().await`
+explicitly. Preserve the ordered signed bundle and its reported IDs;
+reconcile an uncertain submission before rebuilding or rerunning.
 
 ## Runner usage
 
