@@ -1,17 +1,19 @@
 # Rust SDK examples
 
-1 standalone flow: 1 runnable Cargo example.
+2 standalone flows: 2 runnable Cargo examples.
 Keygen is a separate utility binary. The package is unpublished;
 the SDK remains the default workspace member.
 
 Each flow lives in `src/` with its own imports, configuration, and SDK calls.
 Runnable flows have thin CLI runners in `examples/`.
+Signer loading and transaction construction stay in each signing flow.
 
 ## Choose a flow
 
 | Source | Entry point | Flow |
 | --- | --- | --- |
 | [wallet_reads.rs](src/wallet_reads.rs) | `--example wallet_reads` | Read roles, balances, history, and optionally a policy |
+| [ed25519_transfer.rs](src/ed25519_transfer.rs) | `--example ed25519_transfer` | Create or reuse a wallet, fund if needed, transfer SOL, sponsor, confirm |
 
 ## Setup
 
@@ -32,6 +34,11 @@ explicit configuration and signers from its caller.
 The hosted API is the default. Set `SWIG_API_KEY` for hosted calls.
 Leave optional values absent when using defaults; an empty value is
 not treated as an absent setting.
+
+Transaction flows also require `SWIG_RPC_URL`. API preparation and RPC
+must use the same chain. For internal local testing, explicitly configure
+matching `SWIG_API_URL` and `SWIG_RPC_URL` endpoints; choosing `devnet`
+alone selects neither a local API nor a local RPC.
 
 ## Keys
 
@@ -64,6 +71,26 @@ Set only the selected flow's inputs.
 | `SWIG_CONFIG_ADDRESS`, `SWIG_WALLET_ADDRESS` | Existing config and optional matching wallet; reads require a config |
 | `SWIG_ED25519_PRIVATE_KEY` | 64-byte Solana keypair encoded as 128 hex characters |
 | `SWIG_SECP256K1_PRIVATE_KEY`, `SWIG_SECP256R1_PRIVATE_KEY` | Each is a 32-byte secret encoded as 64 hex characters |
+| `SWIG_RPC_URL` | Required for transaction flows: a nonempty HTTP(S) RPC URL on the selected chain |
+| `SWIG_DESTINATION`, `SWIG_AMOUNT_LAMPORTS` | Separate transfer recipient and SOL amount; default 1,000,000 lamports |
+
+## Wallet reuse and funding
+
+For flows that create or reuse a wallet, an absent `SWIG_CONFIG_ADDRESS`
+creates one from the loaded authority. A supplied config must already
+exist and be usable by that authority; errors never fall back to creation.
+Save the printed config and wallet addresses to reuse the wallet.
+`SWIG_WALLET_ADDRESS` is optional, must match the config's wallet, and
+cannot be supplied alone. Reads always require an existing config.
+
+Choose a recipient you control through `SWIG_DESTINATION`. On Devnet,
+transfer flows generate a temporary recipient when it is absent; its
+private key is not retained, so transferred funds cannot be recovered
+through that generated key. Recipients must differ from the requester,
+wallet, and config addresses.
+
+The paymaster supplies the fee payer and transaction fees. Fund the
+wallet with the SOL being transferred.
 
 ## Read an existing wallet
 
@@ -79,6 +106,20 @@ cargo +1.87.0 run --locked -p swig-developer-sdk-examples --example wallet_reads
 The runner passes the optional policy ID to
 `wallet_reads::example(policy_id: Option<String>)`; no extra env variable is needed.
 
+## Run an Ed25519 SOL transfer
+
+Set `SWIG_API_KEY`, `SWIG_RPC_URL`, and `SWIG_ED25519_PRIVATE_KEY`.
+This flow is Devnet-only. It creates a wallet when `SWIG_CONFIG_ADDRESS`
+is absent, or reuses that existing wallet when supplied.
+
+```sh
+cargo +1.87.0 run --locked -p swig-developer-sdk-examples --example ed25519_transfer
+```
+
+The default transfer is 1,000,000 lamports. When the wallet needs SOL,
+the flow requests exactly 2 SOL, confirms the airdrop, and rechecks the
+balance including rent. A faucet failure or insufficient balance stops it.
+
 ## Runner usage
 
 Each runner supports `--help` and rejects unknown arguments before
@@ -87,6 +128,17 @@ loading configuration or making requests. For example:
 ```sh
 cargo +1.87.0 run --locked -p swig-developer-sdk-examples --example wallet_reads -- --help
 ```
+
+Signing-flow `example()` functions take no arguments.
+
+## Submission and verification
+
+The examples trust the configured backend's transaction construction.
+They do not independently prove business intent or chain freshness.
+API acceptance is not chain confirmation. Ordinary transfer flows wait
+for a signature and check its success; a timeout can still mean submission
+happened. Keep printed addresses and signatures, and reconcile the original
+attempt before rerunning when its outcome is uncertain.
 
 ## Development checks
 
