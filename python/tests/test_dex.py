@@ -629,6 +629,8 @@ def with_deposit(amount_raw: str) -> dict[str, Any]:
         (with_action({"actingRoleId": -1}), "invalid actingRoleId"),
         # Fullwidth digits, which \d matches too.
         (with_transaction({"slot": "\uff11\uff12"}), "invalid slot"),
+        # 2^53, past the bound both SDKs hold slots to.
+        (with_transaction({"slot": "9007199254740992"}), "invalid slot"),
         # Past int()'s digit limit, which raises a plain ValueError.
         (with_transaction({"slot": "9" * 5000}), "invalid slot"),
         (with_transaction({"blockTime": 1758649976}), "invalid blockTime"),
@@ -698,20 +700,20 @@ async def test_refuses_a_missing_transaction_cursor_or_position_state() -> None:
             lambda swig: swig.dex.transactions.list(
                 swig_config_address=SWIG, start_slot=-1
             ),
-            "start_slot must be an integer from 0 to 9223372036854775807",
+            "start_slot must be an integer from 0 to 9007199254740991",
         ),
         (
             lambda swig: swig.dex.transactions.list(
                 swig_config_address=SWIG, end_slot=1.5
             ),
-            "end_slot must be an integer from 0 to 9223372036854775807",
+            "end_slot must be an integer from 0 to 9007199254740991",
         ),
         (
             lambda swig: swig.dex.transactions.list(
                 swig_config_address=SWIG,
                 cursor=DexTransactionCursor(slot=-1, transaction_signature="signature"),
             ),
-            "cursor.slot must be an integer from 0 to 9223372036854775807",
+            "cursor.slot must be an integer from 0 to 9007199254740991",
         ),
         (
             lambda swig: swig.dex.positions.list(

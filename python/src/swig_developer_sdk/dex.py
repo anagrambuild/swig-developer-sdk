@@ -64,8 +64,9 @@ _SIGNED_INTEGER = re.compile(r"-?[0-9]+")
 _UNSIGNED_INTEGER = re.compile(r"[0-9]+")
 # page_size is a uint32; the backend reads 0 as 25 and caps it at 100.
 _MAX_PAGE_SIZE_WIRE = 2**32 - 1
-# The backend reads slots as i64.
-_MAX_SLOT_WIRE = 2**63 - 1
+# TypeScript's Number.MAX_SAFE_INTEGER. Both SDKs hold integers to it, so a slot
+# one decodes is a slot either can send back.
+_MAX_SAFE_INTEGER = 2**53 - 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -462,9 +463,9 @@ def _slot_param(slot: int, field: str) -> str:
     if (
         isinstance(slot, bool)
         or not isinstance(slot, int)
-        or not 0 <= slot <= _MAX_SLOT_WIRE
+        or not 0 <= slot <= _MAX_SAFE_INTEGER
     ):
-        raise ValueError(f"{field} must be an integer from 0 to {_MAX_SLOT_WIRE}")
+        raise ValueError(f"{field} must be an integer from 0 to {_MAX_SAFE_INTEGER}")
     return str(slot)
 
 
@@ -839,11 +840,15 @@ def _integer(value: object, field: str) -> int:
     if isinstance(value, bool):
         raise SwigResponseError(f"DEX response has invalid {field}")
     if isinstance(value, int):
-        return value
-    if isinstance(value, str) and _SIGNED_INTEGER.fullmatch(value):
+        parsed = value
+    elif isinstance(value, str) and _SIGNED_INTEGER.fullmatch(value):
         try:
-            return int(value)
+            parsed = int(value)
         except ValueError as error:
             # int() refuses a digit string past its length limit.
             raise SwigResponseError(f"DEX response has invalid {field}") from error
-    raise SwigResponseError(f"DEX response has invalid {field}")
+    else:
+        raise SwigResponseError(f"DEX response has invalid {field}")
+    if abs(parsed) > _MAX_SAFE_INTEGER:
+        raise SwigResponseError(f"DEX response has invalid {field}")
+    return parsed

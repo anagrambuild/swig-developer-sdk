@@ -46,8 +46,9 @@ Protocols decode through an explicit table, and an unrecognized or
 `*_UNSPECIFIED` protocol is refused rather than guessed. Actions decode by the
 single key of their payload and positions by whether `open` or `closed` is set.
 Filter arguments encode through explicit tables. Amounts stay decimal strings
-in both languages. Each filter is an optional argument (a keyword argument in
-Python), sent as a one-key wire object.
+in both languages. Slots, sent or decoded, are integers from 0 to 2^53 − 1 in
+both, the range a TypeScript number holds exactly. Each filter is an optional
+argument (a keyword argument in Python), sent as a one-key wire object.
 
 ## Paymaster and submission
 
