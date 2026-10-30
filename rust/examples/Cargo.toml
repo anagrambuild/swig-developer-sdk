@@ -1,0 +1,21 @@
+[package]
+name = "swig-developer-sdk-examples"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+anyhow = "1"
+hex = "0.4"
+k256 = { version = "0.13", features = ["ecdsa"] }
+p256 = { version = "0.13", features = ["ecdsa"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+solana-keypair = "3.1"
+
+[[bin]]
+name = "keygen"
+path = "src/bin/keygen.rs"
+
+[lints.rust]
+unsafe_code = "forbid"
