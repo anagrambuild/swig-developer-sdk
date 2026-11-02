@@ -1,0 +1,10 @@
+[workspace]
+resolver = "3"
+members = ["sdk"]
+default-members = ["sdk"]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.87"
+license-file = "../LICENSE.txt"
+repository = "https://github.com/anagrambuild/swig-developer-sdk"
