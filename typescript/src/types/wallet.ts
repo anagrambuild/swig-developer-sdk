@@ -41,6 +41,7 @@ export interface ListSwigTokenTransactionsArgs extends WalletReadArgs {
 }
 
 export interface GetAuthorizationLocksArgs extends WalletReadArgs {
+  /** Also return inactive locks (expired or fully captured) not yet pruned. */
   includeExpired?: boolean;
 }
 
@@ -251,10 +252,14 @@ export interface AuthorizationLock {
   assetAccount: string;
   /** SPL mint. Absent for native SOL. */
   mint?: string;
-  /** Lamports for native SOL, or token base units, as a decimal string. */
+  /**
+   * Remaining held lamports for native SOL, or token base units, as a decimal
+   * string. The holder's spends capture (lower) it; `"0"` once fully captured.
+   */
   amount: string;
   /** Decimal string slot. */
   expirySlot: string;
+  /** True while unexpired with a non-zero `amount`. */
   active: boolean;
 }
 

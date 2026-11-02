@@ -312,11 +312,24 @@ than assuming a fixed shape.
 
 ### Authorization locks
 
-An authorization lock reserves part of the wallet's SOL or token balance until
-an expiry slot. While it is active, no role can spend below the reserved
-amount, and only the role that created it can release it early. A role with
+An authorization lock works like a card authorization hold on part of the
+wallet's SOL or token balance, until an expiry slot:
+
+- While it is active, every other role (including `All` and the owner) can
+  spend only the balance minus the active locks it does not hold.
+- The holding role can spend its locked funds. Each spend from the locked
+  account captures the hold: the program lowers the holder's lock `amount` by
+  the net outflow, oldest lock first.
+- Creating a lock charges no spend limit; the holder's normal limits are
+  charged when it spends. A limited holder's SignV2 fails if its remaining
+  active locks would exceed what its limits still allow.
+- A lock is active while it is unexpired and its `amount` is above zero. A
+  fully captured lock stays stored with `amount` `"0"` and `active=False`.
+
+The creating role can remove its lock at any time, which voids whatever is
+left of it. Once a lock is inactive (expired or fully captured), a role with
 `All`, `AllButManageAuthority`, `ManageAuthority`, or
-`ManageAuthorizationLocks` can prune another role's expired lock.
+`ManageAuthorizationLocks` can prune it too.
 
 ```python
 result = await wallet.get_authorization_locks(include_expired=True)
@@ -324,8 +337,10 @@ result = await wallet.get_authorization_locks(include_expired=True)
 # result.current_slot, result.next_lock_id
 ```
 
-The backend reads live chain state. `mint` is `None` for native SOL. `amount`,
-`expiry_slot`, and `current_slot` are decimal strings, matching the wire.
+The backend reads live chain state. `mint` is `None` for native SOL. `amount`
+is what remains of the hold after captures. `amount`, `expiry_slot`, and
+`current_slot` are decimal strings, matching the wire. Inactive locks (expired
+or fully captured) are returned only with `include_expired=True`.
 
 ```python
 prepared = await wallet.add_authorization_lock(

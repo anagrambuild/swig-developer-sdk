@@ -96,6 +96,64 @@ describe('wallet.getAuthorizationLocks', () => {
     });
   });
 
+  test('normalizes a fully captured lock with a zero amount', async () => {
+    const client = new SwigClient({
+      apiKey: 'test-key',
+      network: 'mainnet',
+      fetch: (async () =>
+        Response.json({
+          locks: [
+            {
+              lockId: 4,
+              roleId: 2,
+              assetAccount: 'usdc-ata',
+              mint: USDC,
+              amount: '0',
+              expirySlot: '900',
+              active: false,
+            },
+            {
+              lock_id: 5,
+              role_id: 2,
+              asset_account: 'swig-wallet',
+              amount: 0,
+              expiry_slot: 900,
+              active: false,
+            },
+          ],
+          currentSlot: '100',
+          nextLockId: 6,
+        })) as unknown as typeof fetch,
+    });
+    expect(
+      await client.wallets
+        .use('config')
+        .getAuthorizationLocks({ includeExpired: true }),
+    ).toEqual({
+      locks: [
+        {
+          lockId: 4,
+          roleId: 2,
+          assetAccount: 'usdc-ata',
+          mint: USDC,
+          amount: '0',
+          expirySlot: '900',
+          active: false,
+        },
+        {
+          lockId: 5,
+          roleId: 2,
+          assetAccount: 'swig-wallet',
+          amount: '0',
+          expirySlot: '900',
+          active: false,
+        },
+      ],
+      currentSlot: '100',
+      nextLockId: 6,
+    });
+  });
+
   test('normalizes absent locks and snake-case proto responses', async () => {
     for (const [wire, expected] of <Array<[unknown, AuthorizationLocksResult]>>[
       [

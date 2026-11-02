@@ -153,6 +153,58 @@ async def test_get_authorization_locks_normalizes_sol_and_token_locks() -> None:
     )
 
 
+async def test_get_authorization_locks_normalizes_fully_captured_lock() -> None:
+    wire = {
+        "locks": [
+            {
+                "lockId": 4,
+                "roleId": 2,
+                "assetAccount": "usdc-ata",
+                "mint": USDC,
+                "amount": "0",
+                "expirySlot": "900",
+                "active": False,
+            },
+            {
+                "lock_id": 5,
+                "role_id": 2,
+                "asset_account": "swig-wallet",
+                "amount": 0,
+                "expiry_slot": 900,
+                "active": False,
+            },
+        ],
+        "currentSlot": "100",
+        "nextLockId": 6,
+    }
+    swig = _client(lambda _: httpx.Response(200, json=wire))
+    assert await swig.wallets.use("config").get_authorization_locks(
+        include_expired=True
+    ) == AuthorizationLocksResult(
+        locks=(
+            AuthorizationLock(
+                lock_id=4,
+                role_id=2,
+                asset_account="usdc-ata",
+                mint=USDC,
+                amount="0",
+                expiry_slot="900",
+                active=False,
+            ),
+            AuthorizationLock(
+                lock_id=5,
+                role_id=2,
+                asset_account="swig-wallet",
+                amount="0",
+                expiry_slot="900",
+                active=False,
+            ),
+        ),
+        current_slot="100",
+        next_lock_id=6,
+    )
+
+
 @pytest.mark.parametrize(
     ("wire", "expected"),
     [

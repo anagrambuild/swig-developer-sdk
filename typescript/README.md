@@ -388,11 +388,24 @@ for separate, complete server examples.
 
 ### Authorization locks
 
-An authorization lock reserves part of the wallet's SOL or token balance until
-an expiry slot. While it is active, no role can spend below the reserved
-amount, and only the role that created it can release it early. A role with
+An authorization lock works like a card authorization hold on part of the
+wallet's SOL or token balance, until an expiry slot:
+
+- While it is active, every other role (including `All` and the owner) can
+  spend only the balance minus the active locks it does not hold.
+- The holding role can spend its locked funds. Each spend from the locked
+  account captures the hold: the program lowers the holder's lock `amount` by
+  the net outflow, oldest lock first.
+- Creating a lock charges no spend limit; the holder's normal limits are
+  charged when it spends. A limited holder's SignV2 fails if its remaining
+  active locks would exceed what its limits still allow.
+- A lock is active while it is unexpired and its `amount` is above zero. A
+  fully captured lock stays stored with `amount` `"0"` and `active: false`.
+
+The creating role can remove its lock at any time, which voids whatever is
+left of it. Once a lock is inactive (expired or fully captured), a role with
 `All`, `AllButManageAuthority`, `ManageAuthority`, or
-`ManageAuthorizationLocks` can prune another role's expired lock.
+`ManageAuthorizationLocks` can prune it too.
 
 ```typescript
 const locks = await wallet.getAuthorizationLocks({ includeExpired: true });
@@ -400,9 +413,10 @@ const locks = await wallet.getAuthorizationLocks({ includeExpired: true });
 // locks.currentSlot, locks.nextLockId
 ```
 
-The backend reads live chain state. `mint` is absent for native SOL. `amount`,
-`expirySlot`, and `currentSlot` are decimal strings, so values above 2^53
-survive.
+The backend reads live chain state. `mint` is absent for native SOL. `amount`
+is what remains of the hold after captures. `amount`, `expirySlot`, and
+`currentSlot` are decimal strings, so values above 2^53 survive. Inactive
+locks (expired or fully captured) are returned only with `includeExpired`.
 
 ```typescript
 const prepared = await wallet.addAuthorizationLock({

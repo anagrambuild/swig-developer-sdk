@@ -105,13 +105,13 @@ export class WalletHandle {
   getRentClaimer = (args?: WalletReadArgs): Promise<string | null> =>
     this.wallets.getRentClaimer(this, args);
 
-  /** Prepare an authorization lock through the backend. Caller signs and submits. */
+  /** Prepare a card-authorization-style hold through the backend. Caller signs and submits. */
   addAuthorizationLock = (
     args: AddAuthorizationLockArgs,
   ): Promise<PreparedTransaction> =>
     this.wallets.addAuthorizationLock(this, args);
 
-  /** Prepare an own-lock release or expired-lock prune. Caller signs and submits. */
+  /** Prepare an own-lock release or inactive-lock prune. Caller signs and submits. */
   removeAuthorizationLock = (
     args: RemoveAuthorizationLockArgs,
   ): Promise<PreparedTransaction> =>

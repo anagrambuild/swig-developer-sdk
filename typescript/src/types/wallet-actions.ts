@@ -237,7 +237,10 @@ export type AddAuthorizationLockArgs = {
   feePayer: string;
   /** SPL mint to reserve. Omit for native SOL. */
   mint?: string;
-  /** Lamports for native SOL, or token base units for an SPL mint. */
+  /**
+   * Lamports for native SOL, or token base units for an SPL mint. Other roles
+   * can't spend it while the lock is active; the holder's spends capture it.
+   */
   amount: Amount;
   /**
    * Ed25519 (a direct role key or any session role's session key), Secp256k1,

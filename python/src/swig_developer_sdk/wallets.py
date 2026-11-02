@@ -335,9 +335,11 @@ class AuthorizationLock:
     role_id: int
     asset_account: str
     amount: str
-    """Lamports for native SOL, or token base units, as a decimal string."""
+    """Remaining held lamports for native SOL, or token base units, as a decimal
+    string. The holder's spends capture (lower) it; "0" once fully captured."""
     expiry_slot: str
     active: bool
+    """True while unexpired with a non-zero amount."""
     mint: str | None = None
     """SPL mint; None for native SOL."""
 
@@ -998,7 +1000,10 @@ class WalletsClient:
         requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
     ) -> PreparedTransaction:
-        """Prepare an authorization lock reserving part of the wallet balance.
+        """Prepare a card-authorization-style hold on part of the wallet balance.
+
+        Other roles can't spend held funds; the holder can, and each spend
+        captures its lock.
 
         amount is lamports for native SOL (mint omitted) or token base units.
         Pass exactly one of expiry_slot or duration_slots.
@@ -1052,7 +1057,7 @@ class WalletsClient:
         requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
     ) -> PreparedTransaction:
-        """Prepare a release of the caller's own lock, or a prune of an expired one.
+        """Prepare a release of the caller's own lock, or a prune of an inactive one.
 
         Network resolves from the call, handle, then client.
         Sign and submit separately; preparation does not retry automatically.
@@ -1088,6 +1093,8 @@ class WalletsClient:
         include_expired: bool | None = None,
     ) -> AuthorizationLocksResult:
         """Read the wallet's live on-chain authorization locks.
+
+        include_expired also returns inactive (expired or fully captured) locks.
 
         Network resolves from the call, handle, then client.
         This GET uses the client retry policy. API failures raise SDK errors."""
@@ -1218,7 +1225,10 @@ class WalletHandle:
         requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
     ) -> PreparedTransaction:
-        """Prepare an authorization lock reserving part of the wallet balance.
+        """Prepare a card-authorization-style hold on part of the wallet balance.
+
+        Other roles can't spend held funds; the holder can, and each spend
+        captures its lock.
 
         amount is lamports for native SOL (mint omitted) or token base units.
         Pass exactly one of expiry_slot or duration_slots.
@@ -1244,7 +1254,7 @@ class WalletHandle:
         requester_authority: WalletAuthority | None = None,
         network: Network | None = None,
     ) -> PreparedTransaction:
-        """Prepare a release of the caller's own lock, or a prune of an expired one.
+        """Prepare a release of the caller's own lock, or a prune of an inactive one.
 
         Network resolves from the call, handle, then client.
         Sign and submit separately; preparation does not retry automatically.
@@ -1264,6 +1274,8 @@ class WalletHandle:
         include_expired: bool | None = None,
     ) -> AuthorizationLocksResult:
         """Read the wallet's live on-chain authorization locks.
+
+        include_expired also returns inactive (expired or fully captured) locks.
 
         Network resolves from the call, handle, then client.
         This GET uses the client retry policy. API failures raise SDK errors."""
