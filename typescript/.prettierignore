@@ -1,0 +1,3 @@
+examples/x402/.env.local
+examples/x402/.local/
+dist/
