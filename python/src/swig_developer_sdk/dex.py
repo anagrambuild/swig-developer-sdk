@@ -564,9 +564,15 @@ def _normalize_action(value: object) -> DexAction:
     if swap is not None:
         body = _mapping(swap, "swap")
         return DexSwapAction(
-            protocol_instruction=_instruction(body),
-            protocol_actor_address=_actor(body),
-            dex_pool_address=_pool(body),
+            protocol_instruction=_required_string(
+                body.get("protocolInstruction"), "protocolInstruction"
+            ),
+            protocol_actor_address=_required_string(
+                body.get("protocolActorAddress"), "protocolActorAddress"
+            ),
+            dex_pool_address=_required_string(
+                body.get("dexPoolAddress"), "dexPoolAddress"
+            ),
             input=_normalize_amount(body.get("input"), "input"),
             output=_normalize_amount(body.get("output"), "output"),
         )
@@ -574,40 +580,72 @@ def _normalize_action(value: object) -> DexAction:
     if position_open is not None:
         body = _mapping(position_open, "positionOpen")
         return DexPositionOpenAction(
-            protocol_instruction=_instruction(body),
-            protocol_actor_address=_actor(body),
-            dex_pool_address=_pool(body),
-            dex_position_address=_position(body),
+            protocol_instruction=_required_string(
+                body.get("protocolInstruction"), "protocolInstruction"
+            ),
+            protocol_actor_address=_required_string(
+                body.get("protocolActorAddress"), "protocolActorAddress"
+            ),
+            dex_pool_address=_required_string(
+                body.get("dexPoolAddress"), "dexPoolAddress"
+            ),
+            dex_position_address=_required_string(
+                body.get("dexPositionAddress"), "dexPositionAddress"
+            ),
             deposits=_amounts(body.get("deposits"), "deposits"),
         )
     liquidity_add = payload.get("liquidityAdd")
     if liquidity_add is not None:
         body = _mapping(liquidity_add, "liquidityAdd")
         return DexLiquidityAddAction(
-            protocol_instruction=_instruction(body),
-            protocol_actor_address=_actor(body),
-            dex_pool_address=_pool(body),
-            dex_position_address=_position(body),
+            protocol_instruction=_required_string(
+                body.get("protocolInstruction"), "protocolInstruction"
+            ),
+            protocol_actor_address=_required_string(
+                body.get("protocolActorAddress"), "protocolActorAddress"
+            ),
+            dex_pool_address=_required_string(
+                body.get("dexPoolAddress"), "dexPoolAddress"
+            ),
+            dex_position_address=_required_string(
+                body.get("dexPositionAddress"), "dexPositionAddress"
+            ),
             deposits=_amounts(body.get("deposits"), "deposits"),
         )
     liquidity_remove = payload.get("liquidityRemove")
     if liquidity_remove is not None:
         body = _mapping(liquidity_remove, "liquidityRemove")
         return DexLiquidityRemoveAction(
-            protocol_instruction=_instruction(body),
-            protocol_actor_address=_actor(body),
-            dex_pool_address=_pool(body),
-            dex_position_address=_position(body),
+            protocol_instruction=_required_string(
+                body.get("protocolInstruction"), "protocolInstruction"
+            ),
+            protocol_actor_address=_required_string(
+                body.get("protocolActorAddress"), "protocolActorAddress"
+            ),
+            dex_pool_address=_required_string(
+                body.get("dexPoolAddress"), "dexPoolAddress"
+            ),
+            dex_position_address=_required_string(
+                body.get("dexPositionAddress"), "dexPositionAddress"
+            ),
             withdrawals=_amounts(body.get("withdrawals"), "withdrawals"),
         )
     rebalance = payload.get("positionRebalance")
     if rebalance is not None:
         body = _mapping(rebalance, "positionRebalance")
         return DexPositionRebalanceAction(
-            protocol_instruction=_instruction(body),
-            protocol_actor_address=_actor(body),
-            dex_pool_address=_pool(body),
-            dex_position_address=_position(body),
+            protocol_instruction=_required_string(
+                body.get("protocolInstruction"), "protocolInstruction"
+            ),
+            protocol_actor_address=_required_string(
+                body.get("protocolActorAddress"), "protocolActorAddress"
+            ),
+            dex_pool_address=_required_string(
+                body.get("dexPoolAddress"), "dexPoolAddress"
+            ),
+            dex_position_address=_required_string(
+                body.get("dexPositionAddress"), "dexPositionAddress"
+            ),
             deposits=_amounts(body.get("deposits"), "deposits"),
             withdrawals=_amounts(body.get("withdrawals"), "withdrawals"),
         )
@@ -615,20 +653,36 @@ def _normalize_action(value: object) -> DexAction:
     if fee_claim is not None:
         body = _mapping(fee_claim, "feeClaim")
         return DexFeeClaimAction(
-            protocol_instruction=_instruction(body),
-            protocol_actor_address=_actor(body),
-            dex_pool_address=_pool(body),
-            dex_position_address=_position(body),
+            protocol_instruction=_required_string(
+                body.get("protocolInstruction"), "protocolInstruction"
+            ),
+            protocol_actor_address=_required_string(
+                body.get("protocolActorAddress"), "protocolActorAddress"
+            ),
+            dex_pool_address=_required_string(
+                body.get("dexPoolAddress"), "dexPoolAddress"
+            ),
+            dex_position_address=_required_string(
+                body.get("dexPositionAddress"), "dexPositionAddress"
+            ),
             claimed=_amounts(body.get("claimed"), "claimed"),
         )
     reward_claim = payload.get("rewardClaim")
     if reward_claim is not None:
         body = _mapping(reward_claim, "rewardClaim")
         return DexRewardClaimAction(
-            protocol_instruction=_instruction(body),
-            protocol_actor_address=_actor(body),
-            dex_pool_address=_pool(body),
-            dex_position_address=_position(body),
+            protocol_instruction=_required_string(
+                body.get("protocolInstruction"), "protocolInstruction"
+            ),
+            protocol_actor_address=_required_string(
+                body.get("protocolActorAddress"), "protocolActorAddress"
+            ),
+            dex_pool_address=_required_string(
+                body.get("dexPoolAddress"), "dexPoolAddress"
+            ),
+            dex_position_address=_required_string(
+                body.get("dexPositionAddress"), "dexPositionAddress"
+            ),
             claimed=_amounts(body.get("claimed"), "claimed"),
         )
     position_close = payload.get("positionClose")
@@ -636,37 +690,20 @@ def _normalize_action(value: object) -> DexAction:
         body = _mapping(position_close, "positionClose")
         pool = body.get("dexPoolAddress")
         return DexPositionCloseAction(
-            protocol_instruction=_instruction(body),
-            protocol_actor_address=_actor(body),
-            dex_position_address=_position(body),
-            dex_pool_address=None if pool is None else _pool(body),
+            protocol_instruction=_required_string(
+                body.get("protocolInstruction"), "protocolInstruction"
+            ),
+            protocol_actor_address=_required_string(
+                body.get("protocolActorAddress"), "protocolActorAddress"
+            ),
+            dex_position_address=_required_string(
+                body.get("dexPositionAddress"), "dexPositionAddress"
+            ),
+            dex_pool_address=None
+            if pool is None
+            else _required_string(pool, "dexPoolAddress"),
         )
     raise SwigResponseError("DEX response has an unknown action")
-
-
-def _instruction(body: Mapping[str, object]) -> str:
-    return _required_string(
-        body.get("protocolInstruction"),
-        "protocolInstruction",
-    )
-
-
-def _actor(body: Mapping[str, object]) -> str:
-    return _required_string(
-        body.get("protocolActorAddress"),
-        "protocolActorAddress",
-    )
-
-
-def _pool(body: Mapping[str, object]) -> str:
-    return _required_string(body.get("dexPoolAddress"), "dexPoolAddress")
-
-
-def _position(body: Mapping[str, object]) -> str:
-    return _required_string(
-        body.get("dexPositionAddress"),
-        "dexPositionAddress",
-    )
 
 
 def _amounts(value: object, field: str) -> tuple[DexAssetAmount, ...]:
