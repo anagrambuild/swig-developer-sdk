@@ -65,8 +65,10 @@ async fn prepare_hold(
 
 - Use `Some(mint)` for tokens and `None` for SOL. Amounts are `u64` base units.
 - Choose `DurationSlots` or `ExpirySlot`; the enum prevents ambiguous expiry.
-- Grant `WalletPermission::ManageAuthorizationLocks { max_duration_slots }`
-  in addition to spending permissions, even for a role with `All`.
+- Grant `Permission::ManageAuthorizationLocks { max_duration_slots }` through
+  the Protocol SDK in addition to spending permissions, even for `All`. The
+  hosted add-role API does not yet accept this permission. Role reads decode it
+  as `SwigRolePermission::ManageAuthorizationLocks`.
 - `get_authorization_locks(&swig_config_address, include_expired)` returns
   typed lock IDs, amounts, expiry slots, and the service's current slot.
   Set `include_expired` to include both expired and fully captured records.

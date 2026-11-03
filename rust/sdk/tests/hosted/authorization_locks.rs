@@ -235,29 +235,8 @@ async fn rejects_malformed_overflowing_and_inconsistent_lock_responses(
 }
 
 #[test]
-fn manage_lock_permission_uses_protocol_discriminator_and_u64_strings() -> Result<(), Box<dyn Error>>
-{
-    use crate::api::types::{
-        permission::{AddRoleAction, PolicyPermission},
-        role_permission::RolePermission,
-    };
-    let permission = WalletPermission::ManageAuthorizationLocks {
-        max_duration_slots: u64::MAX,
-    };
-    let action: AddRoleAction = permission.into();
-    assert_eq!(
-        serde_json::to_value(action)?,
-        json!({"manageAuthorizationLocks":{"maxDurationSlots":u64::MAX.to_string()}})
-    );
-    let policy: PolicyPermission = serde_json::from_value(
-        json!({"type":"ManageAuthorizationLocks","maxDurationSlots":"150"}),
-    )?;
-    assert!(matches!(
-        WalletPermission::from(policy),
-        WalletPermission::ManageAuthorizationLocks {
-            max_duration_slots: 150
-        }
-    ));
+fn reads_manage_lock_permission_with_canonical_code_and_u64_bound() -> Result<(), Box<dyn Error>> {
+    use crate::api::types::role_permission::RolePermission;
     let wire = json!({"actionCode":27,"actionData":{"max_duration_slots":u64::MAX.to_string()}});
     let role: RolePermission = serde_json::from_value(wire.clone())?;
     assert_eq!(serde_json::to_value(role.clone())?, wire);

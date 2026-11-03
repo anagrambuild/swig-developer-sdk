@@ -194,7 +194,10 @@ pub(super) fn lock_preparation(
     args.extend_from_slice(&slot.to_le_bytes());
     args.extend_from_slice(&counter.to_le_bytes());
     match authority {
-        WalletAuthority::Secp256k1 { .. } => args.extend_from_slice(&[0; 65]),
+        WalletAuthority::Secp256k1 { .. } => {
+            args.extend_from_slice(&[0; 65]);
+            args.extend_from_slice(b"\x19Ethereum Signed Message:\n64");
+        }
         WalletAuthority::Secp256r1 { public_key } => {
             instructions.push(
                 solana_secp256r1_program::new_secp256r1_instruction_with_signature(
@@ -203,7 +206,7 @@ pub(super) fn lock_preparation(
                     &public_key,
                 ),
             );
-            args.extend_from_slice(&[3, 0, 0, 0, 0]);
+            args.extend_from_slice(&[if add { 5 } else { 4 }, 0, 0, 0, 0]);
         }
         _ => return Err("fixture requires secp256 authority".into()),
     }

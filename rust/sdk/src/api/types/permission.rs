@@ -10,10 +10,6 @@ pub(crate) enum PolicyPermission {
     All {},
     AllButManageAuthority {},
     ManageAuthority {},
-    ManageAuthorizationLocks {
-        #[serde_as(as = "DisplayFromStr")]
-        max_duration_slots: u64,
-    },
     SolLimit {
         #[serde_as(as = "DisplayFromStr")]
         amount: u64,
@@ -101,10 +97,6 @@ pub(crate) enum AddRoleAction {
     All {},
     AllButManageAuthority {},
     ManageAuthority {},
-    ManageAuthorizationLocks {
-        #[serde_as(as = "DisplayFromStr")]
-        max_duration_slots: u64,
-    },
     SolLimit {
         #[serde_as(as = "DisplayFromStr")]
         amount: u64,

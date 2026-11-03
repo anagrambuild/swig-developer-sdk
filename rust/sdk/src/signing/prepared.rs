@@ -18,6 +18,7 @@ pub(super) struct SigningTarget {
     instruction: usize,
     signature: Range<usize>,
     pub(super) message_hash: [u8; 32],
+    pub(super) personal_sign: bool,
 }
 
 /// Resolve every mutable signature range before any private-key operation.
@@ -148,7 +149,9 @@ fn secp256k1_target(
         {
             continue;
         }
-        if data.len() != end {
+        let personal_sign = matches!(data.get(..2), Some([25, 0] | [26, 0]))
+            && data.get(end..) == Some(b"\x19Ethereum Signed Message:\n64".as_slice());
+        if data.len() != end && !personal_sign {
             return Err(TransactionSignError::InvalidPreparation(
                 "raw secp256k1 signing requires an unprefixed authority payload",
             ));
@@ -163,6 +166,7 @@ fn secp256k1_target(
             instruction: index,
             signature: signature_start..end,
             message_hash: request.message_hash,
+            personal_sign,
         };
         if matching.replace(target).is_some() {
             return Err(TransactionSignError::AmbiguousSigningTarget);
@@ -204,6 +208,7 @@ fn secp256r1_target(
             instruction: index,
             signature: SECP256R1_SIGNATURE,
             message_hash: request.message_hash,
+            personal_sign: false,
         };
         if matching.replace(target).is_some() {
             return Err(TransactionSignError::AmbiguousSigningTarget);

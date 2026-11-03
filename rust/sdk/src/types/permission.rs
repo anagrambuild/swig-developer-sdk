@@ -8,9 +8,6 @@ pub enum WalletPermission {
     All,
     AllButManageAuthority,
     ManageAuthority,
-    ManageAuthorizationLocks {
-        max_duration_slots: u64,
-    },
     SolLimit {
         amount: u64,
     },
@@ -69,9 +66,6 @@ impl From<PolicyPermission> for WalletPermission {
             PolicyPermission::All {} => Self::All,
             PolicyPermission::AllButManageAuthority {} => Self::AllButManageAuthority,
             PolicyPermission::ManageAuthority {} => Self::ManageAuthority,
-            PolicyPermission::ManageAuthorizationLocks { max_duration_slots } => {
-                Self::ManageAuthorizationLocks { max_duration_slots }
-            }
             PolicyPermission::SolLimit { amount } => Self::SolLimit { amount },
             PolicyPermission::SolRecurringLimit {
                 recurring_amount,
@@ -149,9 +143,6 @@ impl From<WalletPermission> for AddRoleAction {
             WalletPermission::All => Self::All {},
             WalletPermission::AllButManageAuthority => Self::AllButManageAuthority {},
             WalletPermission::ManageAuthority => Self::ManageAuthority {},
-            WalletPermission::ManageAuthorizationLocks { max_duration_slots } => {
-                Self::ManageAuthorizationLocks { max_duration_slots }
-            }
             WalletPermission::SolLimit { amount } => Self::SolLimit { amount },
             WalletPermission::SolRecurringLimit {
                 recurring_amount,
