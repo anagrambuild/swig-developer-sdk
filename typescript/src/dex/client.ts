@@ -12,6 +12,7 @@ import type {
   Network,
 } from '../types/index.js';
 import {
+  assertObject,
   normalizeDexPositionsPage,
   normalizeDexTransaction,
   normalizeDexTransactionsPage,
@@ -57,6 +58,7 @@ export class DexTransactionsClient {
     const response = await this.http.get<GetDexTransactionWire>(
       transactionPath(args, this.defaultNetwork),
     );
+    assertObject(response, 'DEX transaction response');
     return normalizeDexTransaction(
       requiredField(response.transaction, 'transaction'),
     );

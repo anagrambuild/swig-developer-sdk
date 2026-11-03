@@ -34,17 +34,22 @@ const PROTOCOLS: Record<string, DexProtocol> = {
 export function normalizeDexTransactionsPage(
   response: ListDexTransactionsWire,
 ): ListDexTransactionsResult {
+  assertObject(response, 'DEX transactions response');
+  const { nextCursor } = response;
   return {
-    transactions: (response.transactions ?? []).map(normalizeDexTransaction),
-    ...(response.nextCursor
-      ? { nextCursor: normalizeDexTransactionCursor(response.nextCursor) }
-      : {}),
+    transactions: repeatedField(response.transactions, 'transactions').map(
+      normalizeDexTransaction,
+    ),
+    ...(nextCursor === undefined || nextCursor === null
+      ? {}
+      : { nextCursor: normalizeDexTransactionCursor(nextCursor) }),
   };
 }
 
 function normalizeDexTransactionCursor(
   cursor: DexTransactionCursorWire,
 ): DexTransactionCursor {
+  assertObject(cursor, 'DEX cursor');
   return {
     slot: unsignedIntegerField(cursor.slot, 'slot'),
     transactionSignature: requiredString(
@@ -57,8 +62,11 @@ function normalizeDexTransactionCursor(
 export function normalizeDexTransaction(
   transaction: DexTransactionWire,
 ): DexTransaction {
-  const { blockTime } = transaction;
-  if (blockTime !== undefined && typeof blockTime !== 'string') {
+  const blockTime = transaction.blockTime ?? undefined;
+  if (
+    blockTime !== undefined &&
+    (typeof blockTime !== 'string' || blockTime === '')
+  ) {
     throw new Error('DEX response has invalid blockTime');
   }
   return {
@@ -71,8 +79,10 @@ export function normalizeDexTransaction(
       'transactionSignature',
     ),
     slot: unsignedIntegerField(transaction.slot, 'slot'),
-    ...(blockTime ? { blockTime } : {}),
-    actions: (transaction.actions ?? []).map(normalizeDexTransactionAction),
+    ...(blockTime === undefined ? {} : { blockTime }),
+    actions: repeatedField(transaction.actions, 'actions').map(
+      normalizeDexTransactionAction,
+    ),
   };
 }
 
@@ -114,43 +124,43 @@ function normalizeDexAction(payload?: DexActionPayloadWire): DexAction {
     return {
       type: 'position-open',
       ...positionActionBase(wire.positionOpen),
-      deposits: amounts(wire.positionOpen.deposits),
+      deposits: amounts(wire.positionOpen.deposits, 'deposits'),
     };
   }
   if (wire.liquidityAdd) {
     return {
       type: 'liquidity-add',
       ...positionActionBase(wire.liquidityAdd),
-      deposits: amounts(wire.liquidityAdd.deposits),
+      deposits: amounts(wire.liquidityAdd.deposits, 'deposits'),
     };
   }
   if (wire.liquidityRemove) {
     return {
       type: 'liquidity-remove',
       ...positionActionBase(wire.liquidityRemove),
-      withdrawals: amounts(wire.liquidityRemove.withdrawals),
+      withdrawals: amounts(wire.liquidityRemove.withdrawals, 'withdrawals'),
     };
   }
   if (wire.positionRebalance) {
     return {
       type: 'position-rebalance',
       ...positionActionBase(wire.positionRebalance),
-      deposits: amounts(wire.positionRebalance.deposits),
-      withdrawals: amounts(wire.positionRebalance.withdrawals),
+      deposits: amounts(wire.positionRebalance.deposits, 'deposits'),
+      withdrawals: amounts(wire.positionRebalance.withdrawals, 'withdrawals'),
     };
   }
   if (wire.feeClaim) {
     return {
       type: 'fee-claim',
       ...positionActionBase(wire.feeClaim),
-      claimed: amounts(wire.feeClaim.claimed),
+      claimed: amounts(wire.feeClaim.claimed, 'claimed'),
     };
   }
   if (wire.rewardClaim) {
     return {
       type: 'reward-claim',
       ...positionActionBase(wire.rewardClaim),
-      claimed: amounts(wire.rewardClaim.claimed),
+      claimed: amounts(wire.rewardClaim.claimed, 'claimed'),
     };
   }
   if (wire.positionClose) {
@@ -194,8 +204,11 @@ function positionActionBase(action: DexActionWire) {
   };
 }
 
-function amounts(list?: DexAssetAmountWire[]): DexAssetAmount[] {
-  return (list ?? []).map((amount) =>
+function amounts(
+  list: DexAssetAmountWire[] | undefined,
+  field: string,
+): DexAssetAmount[] {
+  return repeatedField(list, field).map((amount) =>
     normalizeDexAssetAmount(amount, 'amount'),
   );
 }
@@ -217,17 +230,22 @@ function normalizeDexAssetAmount(
 export function normalizeDexPositionsPage(
   response: ListDexPositionsWire,
 ): ListDexPositionsResult {
+  assertObject(response, 'DEX positions response');
+  const { nextCursor } = response;
   return {
-    positions: (response.positions ?? []).map(normalizeDexPosition),
-    ...(response.nextCursor
-      ? { nextCursor: normalizeDexPositionCursor(response.nextCursor) }
-      : {}),
+    positions: repeatedField(response.positions, 'positions').map(
+      normalizeDexPosition,
+    ),
+    ...(nextCursor === undefined || nextCursor === null
+      ? {}
+      : { nextCursor: normalizeDexPositionCursor(nextCursor) }),
   };
 }
 
 function normalizeDexPositionCursor(
   cursor: DexPositionCursorWire,
 ): DexPositionCursor {
+  assertObject(cursor, 'DEX cursor');
   return {
     protocol: normalizeDexProtocol(cursor.protocol),
     dexPositionAddress: requiredString(
@@ -285,9 +303,10 @@ function normalizeDexPositionAccountState(
     tickUpperIndex: integerField(clmm.tickUpperIndex, 'tickUpperIndex'),
     tokenFeesOwed0: unsignedUnitsField(clmm.tokenFeesOwed0, 'tokenFeesOwed0'),
     tokenFeesOwed1: unsignedUnitsField(clmm.tokenFeesOwed1, 'tokenFeesOwed1'),
-    rewardAmountsOwed: (clmm.rewardAmountsOwed ?? []).map((amount) =>
-      unsignedUnitsField(amount, 'rewardAmountsOwed'),
-    ),
+    rewardAmountsOwed: repeatedField(
+      clmm.rewardAmountsOwed,
+      'rewardAmountsOwed',
+    ).map((amount) => unsignedUnitsField(amount, 'rewardAmountsOwed')),
   };
 }
 
@@ -299,12 +318,34 @@ function normalizeDexProtocol(value?: string): DexProtocol {
   return PROTOCOLS[value];
 }
 
+/** An HTML error page, `false` or `[]` is not a response, even with a 200. */
+export function assertObject(
+  value: unknown,
+  label: string,
+): asserts value is object {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`);
+  }
+}
+
 export function requiredField<TValue>(
   value: TValue | undefined,
   field: string,
 ): TValue {
   if (value === undefined || value === null) {
     throw new Error(`DEX response is missing ${field}`);
+  }
+  return value;
+}
+
+/** A repeated field may be omitted or null; any value that is present must be an array. */
+function repeatedField<TItem>(
+  value: TItem[] | undefined,
+  field: string,
+): TItem[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    throw new Error(`DEX response has invalid ${field}`);
   }
   return value;
 }

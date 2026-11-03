@@ -732,6 +732,128 @@ describe('DexClient', () => {
     }
   });
 
+  test('refuses a malformed body instead of reading it as empty', async () => {
+    const listTransactions = (reply: unknown) =>
+      client(() => reply).dex.transactions.list({ swigConfigAddress: SWIG });
+    const listPositions = (reply: unknown) =>
+      client(() => reply).dex.positions.list({ swigConfigAddress: SWIG });
+    const getTransaction = (reply: unknown) =>
+      client(() => reply).dex.transactions.get({
+        swigConfigAddress: SWIG,
+        transactionSignature: 'signature',
+      });
+
+    // Each a 200: an upstream error page, an empty body, and JSON that is not
+    // an object. A Response body reads once, so each call gets a new one.
+    for (const reply of [
+      () =>
+        new Response('<html>Upstream unavailable</html>', {
+          headers: { 'Content-Type': 'text/html' },
+        }),
+      () => new Response(null),
+      () => false,
+      () => [],
+    ]) {
+      await expect(listTransactions(reply())).rejects.toThrow(
+        /^DEX transactions response must be an object$/,
+      );
+      await expect(listPositions(reply())).rejects.toThrow(
+        /^DEX positions response must be an object$/,
+      );
+      await expect(getTransaction(reply())).rejects.toThrow(
+        /^DEX transaction response must be an object$/,
+      );
+    }
+
+    const [first] = LIQUIDITY_ADDS.transactions ?? [];
+    const [added] = first?.actions ?? [];
+    const [opened] = OPEN_POSITIONS.positions ?? [];
+    for (const value of [false, {}, '']) {
+      await expect(listTransactions({ transactions: value })).rejects.toThrow(
+        /^DEX response has invalid transactions$/,
+      );
+      await expect(listPositions({ positions: value })).rejects.toThrow(
+        /^DEX response has invalid positions$/,
+      );
+      await expect(
+        listTransactions({ transactions: [{ ...first, actions: value }] }),
+      ).rejects.toThrow(/^DEX response has invalid actions$/);
+      await expect(
+        listTransactions({
+          transactions: [
+            {
+              ...first,
+              actions: [
+                {
+                  ...added,
+                  action: {
+                    liquidityAdd: {
+                      ...added?.action?.liquidityAdd,
+                      deposits: value,
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+      ).rejects.toThrow(/^DEX response has invalid deposits$/);
+      await expect(
+        listPositions({
+          positions: [
+            {
+              ...opened,
+              open: {
+                ...opened?.open,
+                state: {
+                  raydiumClmm: {
+                    ...opened?.open?.state?.raydiumClmm,
+                    rewardAmountsOwed: value,
+                  },
+                },
+              },
+            },
+          ],
+        }),
+      ).rejects.toThrow(/^DEX response has invalid rewardAmountsOwed$/);
+    }
+
+    // A falsy cursor is not the last page.
+    await expect(
+      listTransactions({ transactions: [], nextCursor: false }),
+    ).rejects.toThrow(/^DEX cursor must be an object$/);
+    await expect(
+      listPositions({ positions: [], nextCursor: '' }),
+    ).rejects.toThrow(/^DEX cursor must be an object$/);
+    await expect(
+      listTransactions({ transactions: [{ ...first, blockTime: '' }] }),
+    ).rejects.toThrow(/^DEX response has invalid blockTime$/);
+  });
+
+  test('reads an omitted or null field as absent', async () => {
+    for (const reply of [{}, { transactions: null, nextCursor: null }]) {
+      expect(
+        await client(() => reply).dex.transactions.list({
+          swigConfigAddress: SWIG,
+        }),
+      ).toStrictEqual({ transactions: [] });
+    }
+    for (const reply of [{}, { positions: null, nextCursor: null }]) {
+      expect(
+        await client(() => reply).dex.positions.list({
+          swigConfigAddress: SWIG,
+        }),
+      ).toStrictEqual({ positions: [] });
+    }
+
+    const [first] = LIQUIDITY_ADDS.transactions ?? [];
+    const page = await client(() => ({
+      transactions: [{ ...first, blockTime: null, actions: null }],
+    })).dex.transactions.list({ swigConfigAddress: SWIG });
+    expect(page.transactions[0]).not.toHaveProperty('blockTime');
+    expect(page.transactions[0]?.actions).toStrictEqual([]);
+  });
+
   test('rejects invalid arguments before sending a request', async () => {
     const swig = client(unreachable);
 
