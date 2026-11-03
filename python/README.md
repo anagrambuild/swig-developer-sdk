@@ -310,6 +310,96 @@ is the protocol authority type discriminant. `action_data` is the raw
 per-action payload, so read it against the protocol's action definitions rather
 than assuming a fixed shape.
 
+### Authorization locks
+
+An authorization lock works like a card authorization hold on part of the
+wallet's SOL or token balance, until an expiry slot:
+
+- While it is active, every other role (including `All` and the owner) can
+  spend only the balance minus the active locks it does not hold.
+- The holding role can spend its locked funds. Each spend from the locked
+  account captures the hold: the program lowers the holder's lock `amount` by
+  the net outflow, oldest lock first.
+- Creating a lock charges no spend limit; the holder's normal limits are
+  charged when it spends. A limited holder's SignV2 fails if its remaining
+  active locks would exceed what its limits still allow.
+- A lock is active while it is unexpired and its `amount` is above zero. A
+  fully captured lock stays stored with `amount` `"0"` and `active=False`.
+
+The creating role can remove its lock at any time, which voids whatever is
+left of it. Once a lock is inactive (expired or fully captured), a role with
+`All`, `AllButManageAuthority`, `ManageAuthority`, or
+`ManageAuthorizationLocks` can prune it too.
+
+```python
+result = await wallet.get_authorization_locks(include_expired=True)
+# result.locks[].lock_id, role_id, asset_account, mint, amount, expiry_slot, active
+# result.current_slot, result.next_lock_id
+```
+
+The backend reads live chain state. `mint` is `None` for native SOL. `amount`
+is what remains of the hold after captures. `amount`, `expiry_slot`, and
+`current_slot` are decimal strings, matching the wire. Inactive locks (expired
+or fully captured) are returned only with `include_expired=True`.
+
+```python
+prepared = await wallet.add_authorization_lock(
+    fee_payer=fee_payer,
+    mint=usdc_mint,  # omit for native SOL
+    amount=25_000_000,  # token base units, or lamports for SOL
+    duration_slots=9_000,  # or expiry_slot, never both
+)
+
+released = await wallet.remove_authorization_lock(fee_payer=fee_payer, lock_id=0)
+```
+
+`amount` must be a positive integer or decimal string. Pass exactly one of
+`expiry_slot` or `duration_slots`. A `mint`, when given, must be a base58
+public key. The requester's role needs `ManageAuthorizationLocks`, whose
+`max_duration_slots` caps the lock's duration. The program enforces every lock
+rule; the SDK only prepares transactions and reads state.
+
+`requester_authority` may be:
+
+- `ed25519`: a direct Ed25519 role key, or the session key of any session
+  role (Ed25519, Secp256k1, Secp256r1, or ProgramExec session). It signs the
+  transaction like any Ed25519 signer, and `signature_requests` is empty.
+- `secp256k1` or `secp256r1`: a direct role key. The response carries a
+  signature request, which `sign_prepared_swig_transaction` fulfills the same
+  way it does for other routes. For secp256k1, the signer receives the
+  64-character hex of `message_hash` (for example through `personal_sign` with
+  `create_secp256k1_evm_signing_fn`), and its signature goes into the lock
+  instruction's authority payload. The backend already places the EIP-191
+  prefix after the signature, and the SDK writes the signer's prefix there
+  once, so the bytes stay the same. For secp256r1, the signature goes into the
+  precompile instruction just before the lock.
+- `participant_set` (optionally with `role_id`): a ProgramExec role bound to
+  the set. The response carries `participant_set_approval_plan`; collect member
+  approvals and call `swig.transactions.compile_participant_set_approvals`, as
+  in [Configure and use a ParticipantSet](#configure-and-use-a-participantset).
+
+`program_exec_proof` requesters raise `ValueError` before any request is sent.
+
+```python
+from swig_developer_sdk.signers import sign_prepared_swig_transaction
+
+prepared = await wallet.add_authorization_lock(
+    fee_payer=fee_payer,
+    amount=1_000_000_000,
+    expiry_slot=expiry_slot,
+    requester_authority={"secp256k1": {"public_key": evm_public_key}},
+)
+signed = await sign_prepared_swig_transaction(
+    prepared,
+    secp256k1=evm_signer,  # or secp256r1=passkey_signer
+)
+```
+
+Both setters return an unsigned prepared transaction with kind
+`add-authorization-lock` or `remove-authorization-lock`. Fulfill any signature
+requests or compile ParticipantSet approvals, sign with the fee payer (and the
+Ed25519 requester, if that is the requester), then submit it. The POSTs are not retried automatically.
+
 Policy metadata is a separate read:
 
 ```python

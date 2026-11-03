@@ -1,7 +1,10 @@
 import type { HttpClient } from '../core/index.js';
 import type {
+  AddAuthorizationLockArgs,
   AddRecoveryAuthorityArgs,
   AddRoleArgs,
+  AuthorizationLocksResult,
+  AuthorizationLocksWire,
   BuildTransactionArgs,
   CancelRecoveryArgs,
   ConfigureRecoveryArgs,
@@ -10,6 +13,7 @@ import type {
   CreateWalletResult,
   DirectWalletAuthority,
   ExecuteRecoveryArgs,
+  GetAuthorizationLocksArgs,
   IdpWalletSession,
   ListSwigRolesResult,
   ListSwigRolesWire,
@@ -30,6 +34,7 @@ import type {
   PrepareTransactionsResponseWire,
   PrepareX402PaymentOptions,
   RecoverySetupPlan,
+  RemoveAuthorizationLockArgs,
   SetRentClaimerArgs,
   StartRecoveryArgs,
   SwapArgs,
@@ -47,6 +52,7 @@ import {
 } from '../x402/index.js';
 import { WalletHandle } from './handle.js';
 import {
+  normalizeAuthorizationLocks,
   normalizeCreateWalletResponse,
   normalizePreparedTransaction,
   normalizePrepareTransactionsResponse,
@@ -56,6 +62,7 @@ import {
   normalizeSwigUsdBalance,
 } from './normalizers.js';
 import {
+  addAuthorizationLockRequest,
   addRecoveryAuthorityRequest,
   addRoleRequest,
   buildTransactionRequest,
@@ -65,6 +72,7 @@ import {
   executeRecoveryRequest,
   isTokenTransfer,
   prepareRequest,
+  removeAuthorizationLockRequest,
   setRentClaimerRequest,
   startRecoveryRequest,
   swapRequest,
@@ -149,6 +157,56 @@ export class WalletsClient {
       throw new Error('Invalid rent-claimer response');
     }
     return rentClaimer;
+  };
+
+  addAuthorizationLock = async (
+    wallet: WalletHandle,
+    args: AddAuthorizationLockArgs,
+  ): Promise<PreparedTransaction> => {
+    const response = await this.http.post<{
+      transaction?: PreparedTransactionWire;
+    }>(
+      '/transaction/wallet/authorization-lock/add',
+      addAuthorizationLockRequest(wallet, args, this.defaultNetwork),
+    );
+    if (!response.transaction) {
+      throw new Error('Add authorization lock response is missing transaction');
+    }
+    return normalizePreparedTransaction(response.transaction);
+  };
+
+  removeAuthorizationLock = async (
+    wallet: WalletHandle,
+    args: RemoveAuthorizationLockArgs,
+  ): Promise<PreparedTransaction> => {
+    const response = await this.http.post<{
+      transaction?: PreparedTransactionWire;
+    }>(
+      '/transaction/wallet/authorization-lock/remove',
+      removeAuthorizationLockRequest(wallet, args, this.defaultNetwork),
+    );
+    if (!response.transaction) {
+      throw new Error(
+        'Remove authorization lock response is missing transaction',
+      );
+    }
+    return normalizePreparedTransaction(response.transaction);
+  };
+
+  getAuthorizationLocks = async (
+    wallet: WalletHandle,
+    args: GetAuthorizationLocksArgs = {},
+  ): Promise<AuthorizationLocksResult> => {
+    const network = args.network ?? wallet.network ?? this.defaultNetwork;
+    if (!network) throw new Error('network is required');
+    const includeExpired =
+      args.includeExpired === undefined
+        ? ''
+        : `&include_expired=${String(args.includeExpired)}`;
+    const response = await this.http.get<AuthorizationLocksWire>(
+      `/transaction/wallet/${encodeURIComponent(wallet.swigConfigAddress)}/authorization-locks?network=${networkParam(network)}${includeExpired}`,
+    );
+    return normalizeAuthorizationLocks(response);
   };
 
   getUsdBalance = async (

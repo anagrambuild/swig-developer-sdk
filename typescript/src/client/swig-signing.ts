@@ -15,6 +15,11 @@ const SWIG_PROGRAM_ID = new PublicKey(
   'swigypWHEksbC64pWKwah1WTeh9JXwx8H1rJHLdbQMB',
 );
 const SIGN_V2_DISCRIMINATOR = 11;
+const ADD_AUTHORIZATION_LOCK_V1_DISCRIMINATOR = 25;
+const REMOVE_AUTHORIZATION_LOCK_V1_DISCRIMINATOR = 26;
+// Fixed-size args that precede the authority payload in each lock instruction.
+const ADD_AUTHORIZATION_LOCK_V1_ARGS_SIZE = 88;
+const REMOVE_AUTHORIZATION_LOCK_V1_ARGS_SIZE = 16;
 const SECP256R1_AUTHORITY_PAYLOAD_SIZE = 17;
 const SECP256R1_PUBLIC_KEY_SIZE = 33;
 const SECP256R1_SIGNATURE_SIZE = 64;
@@ -131,15 +136,15 @@ async function applySecp256r1SignatureRequest(
   );
 
   if (signingResult.prefix !== undefined) {
-    const signV2InstructionIndex = findFollowingSignV2InstructionIndex(
+    const swigInstructionIndex = findFollowingSwigInstructionIndex(
       transaction,
       secpInstructionIndex,
     );
     setInstructionData(
       transaction,
-      signV2InstructionIndex,
-      patchSignV2AuthorityPayloadPrefix(
-        getInstructionData(transaction, signV2InstructionIndex),
+      swigInstructionIndex,
+      patchAuthorityPayloadPrefix(
+        getInstructionData(transaction, swigInstructionIndex),
         signingResult.prefix,
         SECP256R1_AUTHORITY_PAYLOAD_SIZE,
         'secp256r1',
@@ -165,15 +170,15 @@ async function applySecp256k1SignatureRequest(
     throw new Error('Secp256k1 signature must be 65 bytes');
   }
 
-  const signV2InstructionIndex = findSignV2InstructionIndexForSecp256k1(
+  const swigInstructionIndex = findSwigInstructionIndexForSecp256k1(
     transaction,
     request,
   );
   setInstructionData(
     transaction,
-    signV2InstructionIndex,
-    patchSignV2Secp256k1AuthorityPayload(
-      getInstructionData(transaction, signV2InstructionIndex),
+    swigInstructionIndex,
+    patchSecp256k1AuthorityPayload(
+      getInstructionData(transaction, swigInstructionIndex),
       request,
       signingResult.signature,
       signingResult.prefix,
@@ -274,7 +279,7 @@ function findSecp256r1InstructionIndex(
   throw new Error('Matching secp256r1 signature instruction not found');
 }
 
-function findFollowingSignV2InstructionIndex(
+function findFollowingSwigInstructionIndex(
   transaction: SwigTransaction,
   secpInstructionIndex: number,
 ): number {
@@ -288,19 +293,19 @@ function findFollowingSignV2InstructionIndex(
     }
 
     if (
-      readU16(getInstructionData(transaction, index), 0) ===
-      SIGN_V2_DISCRIMINATOR
+      getAuthorityPayloadOffset(getInstructionData(transaction, index)) !==
+      undefined
     ) {
       return index;
     }
   }
 
   throw new Error(
-    'Swig SignV2 instruction following secp256r1 precompile not found',
+    'Swig SignV2 or authorization-lock instruction following secp256r1 precompile not found',
   );
 }
 
-function findSignV2InstructionIndexForSecp256k1(
+function findSwigInstructionIndexForSecp256k1(
   transaction: SwigTransaction,
   request: ClientSignatureRequest,
 ): number {
@@ -312,15 +317,11 @@ function findSignV2InstructionIndexForSecp256k1(
     }
 
     const instructionData = getInstructionData(transaction, index);
-    if (readU16(instructionData, 0) !== SIGN_V2_DISCRIMINATOR) {
-      continue;
-    }
-
-    const authorityPayloadOffset =
-      getSignV2AuthorityPayloadOffset(instructionData);
+    const authorityPayloadOffset = getAuthorityPayloadOffset(instructionData);
     if (
+      authorityPayloadOffset === undefined ||
       instructionData.length <
-      authorityPayloadOffset + SECP256K1_AUTHORITY_PAYLOAD_SIZE
+        authorityPayloadOffset + SECP256K1_AUTHORITY_PAYLOAD_SIZE
     ) {
       continue;
     }
@@ -340,7 +341,9 @@ function findSignV2InstructionIndexForSecp256k1(
     return fallbackIndexes[0];
   }
 
-  throw new Error('Matching secp256k1 Swig SignV2 instruction not found');
+  throw new Error(
+    'Matching secp256k1 Swig SignV2 or authorization-lock instruction not found',
+  );
 }
 
 function encodeSecp256r1SignatureInstruction(args: {
@@ -401,19 +404,16 @@ function parseSecp256r1SignatureInstruction(data: Uint8Array):
   };
 }
 
-function patchSignV2AuthorityPayloadPrefix(
+function patchAuthorityPayloadPrefix(
   instructionData: Uint8Array,
   prefix: Uint8Array,
   fixedPayloadSize: number,
   scheme: string,
 ): Uint8Array {
-  const authorityPayloadOffset =
-    getSignV2AuthorityPayloadOffset(instructionData);
+  const authorityPayloadOffset = requireAuthorityPayloadOffset(instructionData);
 
   if (instructionData.length < authorityPayloadOffset + fixedPayloadSize) {
-    throw new Error(
-      `Swig SignV2 instruction is missing ${scheme} authority payload`,
-    );
+    throw new Error(`Swig instruction is missing ${scheme} authority payload`);
   }
 
   const fixedPayloadEnd = authorityPayloadOffset + fixedPayloadSize;
@@ -424,22 +424,19 @@ function patchSignV2AuthorityPayloadPrefix(
   return patched;
 }
 
-function patchSignV2Secp256k1AuthorityPayload(
+function patchSecp256k1AuthorityPayload(
   instructionData: Uint8Array,
   request: ClientSignatureRequest,
   signature: Uint8Array,
   prefix?: Uint8Array,
 ): Uint8Array {
-  const authorityPayloadOffset =
-    getSignV2AuthorityPayloadOffset(instructionData);
+  const authorityPayloadOffset = requireAuthorityPayloadOffset(instructionData);
 
   if (
     instructionData.length <
     authorityPayloadOffset + SECP256K1_AUTHORITY_PAYLOAD_SIZE
   ) {
-    throw new Error(
-      'Swig SignV2 instruction is missing secp256k1 authority payload',
-    );
+    throw new Error('Swig instruction is missing secp256k1 authority payload');
   }
 
   if (!Number.isSafeInteger(request.slot) || request.slot < 0) {
@@ -469,8 +466,32 @@ function patchSignV2Secp256k1AuthorityPayload(
   return patched;
 }
 
-function getSignV2AuthorityPayloadOffset(instructionData: Uint8Array): number {
-  return 8 + readU16(instructionData, 2);
+/**
+ * Where the authority payload starts in the Swig instructions that carry a
+ * client signature: SignV2 after its inner instructions, and the
+ * authorization-lock instructions after their fixed-size args.
+ */
+function getAuthorityPayloadOffset(
+  instructionData: Uint8Array,
+): number | undefined {
+  switch (readU16(instructionData, 0)) {
+    case SIGN_V2_DISCRIMINATOR:
+      return 8 + readU16(instructionData, 2);
+    case ADD_AUTHORIZATION_LOCK_V1_DISCRIMINATOR:
+      return ADD_AUTHORIZATION_LOCK_V1_ARGS_SIZE;
+    case REMOVE_AUTHORIZATION_LOCK_V1_DISCRIMINATOR:
+      return REMOVE_AUTHORIZATION_LOCK_V1_ARGS_SIZE;
+    default:
+      return undefined;
+  }
+}
+
+function requireAuthorityPayloadOffset(instructionData: Uint8Array): number {
+  const offset = getAuthorityPayloadOffset(instructionData);
+  if (offset === undefined) {
+    throw new Error('Swig instruction does not carry an authority payload');
+  }
+  return offset;
 }
 
 function instructionCount(transaction: SwigTransaction): number {

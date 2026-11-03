@@ -199,6 +199,10 @@ function preparedTransactionKindToWire(kind: PreparedTransaction['kind']) {
       return 'PREPARED_TRANSACTION_KIND_CONFIGURE_RECOVERY';
     case 'create-participant-set':
       return 'PREPARED_TRANSACTION_KIND_CREATE_PARTICIPANT_SET';
+    case 'add-authorization-lock':
+      return 'PREPARED_TRANSACTION_KIND_ADD_AUTHORIZATION_LOCK';
+    case 'remove-authorization-lock':
+      return 'PREPARED_TRANSACTION_KIND_REMOVE_AUTHORIZATION_LOCK';
     case undefined:
       return undefined;
   }
