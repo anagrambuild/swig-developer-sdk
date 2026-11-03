@@ -83,6 +83,8 @@ pub(crate) enum PreparedTransactionKind {
     CreateParticipantSet,
     X402Payment,
     SetRentClaimer,
+    AddAuthorizationLock,
+    RemoveAuthorizationLock,
 }
 
 impl TryFrom<EnumValue> for PreparedTransactionKind {
@@ -96,7 +98,14 @@ impl TryFrom<EnumValue> for PreparedTransactionKind {
             EnumValue::Code(4) => Ok(Self::CreateParticipantSet),
             EnumValue::Code(5) => Ok(Self::X402Payment),
             EnumValue::Code(6) => Ok(Self::SetRentClaimer),
+            EnumValue::Code(10) => Ok(Self::AddAuthorizationLock),
+            EnumValue::Code(11) => Ok(Self::RemoveAuthorizationLock),
             EnumValue::Name(name) => match name.as_str() {
+                "PREPARED_TRANSACTION_KIND_ADD_AUTHORIZATION_LOCK" | "add-authorization-lock" => {
+                    Ok(Self::AddAuthorizationLock)
+                }
+                "PREPARED_TRANSACTION_KIND_REMOVE_AUTHORIZATION_LOCK"
+                | "remove-authorization-lock" => Ok(Self::RemoveAuthorizationLock),
                 "PREPARED_TRANSACTION_KIND_UNSPECIFIED" => Ok(Self::Unspecified),
                 "PREPARED_TRANSACTION_KIND_CREATE_SWIG_WALLET" | "create-swig-wallet" => {
                     Ok(Self::CreateSwigWallet)

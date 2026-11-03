@@ -117,20 +117,25 @@ fn secp256k1_target(
 ) -> Result<SigningTarget, TransactionSignError> {
     let mut matching = None;
     for (index, instruction) in transaction.message.instructions().iter().enumerate() {
-        if program_id(transaction, instruction)? != SWIG_PROGRAM
-            || instruction.data.get(..2) != Some(11_u16.to_le_bytes().as_slice())
-        {
+        if program_id(transaction, instruction)? != SWIG_PROGRAM {
             continue;
         }
         let data = &instruction.data;
-        if data.len() < 8 {
-            return Err(TransactionSignError::InvalidPreparation(
-                "truncated Swig SignV2 header",
-            ));
-        }
-        let payload = 8_usize.checked_add(usize::from(read_u16(data, 2)?)).ok_or(
-            TransactionSignError::InvalidPreparation("invalid Swig authority offset"),
-        )?;
+        let payload = match data.get(..2) {
+            Some([11, 0]) => {
+                if data.len() < 8 {
+                    return Err(TransactionSignError::InvalidPreparation(
+                        "truncated Swig SignV2 header",
+                    ));
+                }
+                8_usize.checked_add(usize::from(read_u16(data, 2)?)).ok_or(
+                    TransactionSignError::InvalidPreparation("invalid Swig authority offset"),
+                )?
+            }
+            Some([25, 0]) => 88,
+            Some([26, 0]) => 16,
+            _ => continue,
+        };
         let end = payload.checked_add(SECP256K1_PAYLOAD_SIZE).ok_or(
             TransactionSignError::InvalidPreparation("invalid Swig authority offset"),
         )?;

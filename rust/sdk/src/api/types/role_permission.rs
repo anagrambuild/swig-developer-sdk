@@ -68,6 +68,9 @@ pub(crate) enum RolePermission {
     },
     All,
     ManageAuthority,
+    ManageAuthorizationLocks {
+        max_duration_slots: u64,
+    },
     SubAccount {
         sub_account: Pubkey,
         bump: u8,
@@ -126,6 +129,14 @@ struct RolePermissionValue {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Empty {}
+
+#[serde_as]
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LockDuration {
+    #[serde_as(as = "DisplayFromStr")]
+    max_duration_slots: u64,
+}
 
 #[serde_as]
 #[derive(Deserialize)]
@@ -452,6 +463,11 @@ impl TryFrom<RolePermissionValue> for RolePermission {
                     amount,
                 })
             }
+            27 => {
+                let LockDuration { max_duration_slots } =
+                    serde_json::from_value(wire.action_data).map_err(invalid)?;
+                Ok(Self::ManageAuthorizationLocks { max_duration_slots })
+            }
             19 => {
                 let TokenDestinationRecurring {
                     token_mint,
@@ -526,6 +542,10 @@ impl From<RolePermission> for RolePermissionValue {
             ),
             RolePermission::All => (7, json!({})),
             RolePermission::ManageAuthority => (8, json!({})),
+            RolePermission::ManageAuthorizationLocks { max_duration_slots } => (
+                27,
+                json!({"max_duration_slots": max_duration_slots.to_string()}),
+            ),
             RolePermission::SubAccount {
                 sub_account,
                 bump,

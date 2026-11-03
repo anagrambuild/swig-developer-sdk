@@ -1,4 +1,8 @@
 //! Swig Developer SDK.
+pub use wallet::{
+    AuthorizationLock, AuthorizationLockError, AuthorizationLockExpiry, AuthorizationLocksResult,
+    PrepareAddAuthorizationLockArgs, PrepareRemoveAuthorizationLockArgs,
+};
 
 mod api;
 mod config;
@@ -199,3 +203,7 @@ mod x402_payment_header_tests;
 #[cfg(test)]
 #[path = "../tests/x402/hosted.rs"]
 mod x402_hosted_tests;
+
+#[cfg(test)]
+#[path = "../tests/hosted/authorization_locks.rs"]
+mod authorization_lock_tests;
