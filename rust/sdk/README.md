@@ -80,6 +80,6 @@ async fn prepare_hold(
 - Capture happens through the holder's normal spending; there is no separate
   capture endpoint. A captured amount of zero is valid read state.
 
-CI is unchanged in this draft and does not currently run the Rust suite.
-Run `cargo test --workspace --locked` and
+The existing Rust CI runs formatting, tests, Clippy, and package verification;
+its configuration is unchanged in this draft. Run `cargo test --workspace --locked` and
 `cargo clippy --workspace --all-targets --locked -- -D warnings` from `rust/`.
