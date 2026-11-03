@@ -9,6 +9,9 @@ from typing import cast
 
 import httpx
 import pytest
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec, utils
 from k1_reference import (
     compressed_public_key,
     keccak256,
@@ -288,6 +291,21 @@ _LOCK = LOCKS_RESPONSE["locks"][1]  # type: ignore[index]
         {**LOCKS_RESPONSE, "currentSlot": None},
         {**LOCKS_RESPONSE, "currentSlot": "-1"},
         {**LOCKS_RESPONSE, "nextLockId": None},
+        *[{**LOCKS_RESPONSE, "nextLockId": value} for value in (-1, 1.5, 2**32, True)],
+        *[
+            {**LOCKS_RESPONSE, "locks": [{**_LOCK, field: value}]}
+            for field in ("lockId", "roleId")
+            for value in (-1, 1.5, 2**32, True)
+        ],
+        *[
+            {**LOCKS_RESPONSE, "currentSlot": value}
+            for value in (str(2**64), 2**64, -1, 1.5, True)
+        ],
+        *[
+            {**LOCKS_RESPONSE, "locks": [{**_LOCK, field: value}]}
+            for field in ("amount", "expirySlot")
+            for value in (str(2**64), 2**64, -1, 1.5, True)
+        ],
         {**LOCKS_RESPONSE, "locks": [{**_LOCK, "amount": "1.5"}]},
         {**LOCKS_RESPONSE, "locks": [{**_LOCK, "expirySlot": None}]},
         {**LOCKS_RESPONSE, "locks": [{**_LOCK, "active": "yes"}]},
@@ -570,7 +588,11 @@ LOCK_SLOT = 345_678_901
 LOCK_COUNTER = 8
 K1_PRIVATE_KEY = 0x1F2E3D4C5B6A79880102030405060708090A0B0C0D0E0F101112131415161718
 K1_PUBLIC_KEY = compressed_public_key(K1_PRIVATE_KEY)
-R1_PUBLIC_KEY = bytes([3, *range(41, 73)])
+R1_PRIVATE_KEY = ec.derive_private_key(11, ec.SECP256R1())
+R1_PUBLIC_KEY = R1_PRIVATE_KEY.public_key().public_bytes(
+    serialization.Encoding.X962, serialization.PublicFormat.CompressedPoint
+)
+R1_ORDER = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
 LOCK_ARGS_SIZE = {"add": 88, "remove": 16}
 LOCK_KIND_WIRE = {
     "add": "PREPARED_TRANSACTION_KIND_ADD_AUTHORIZATION_LOCK",
@@ -907,9 +929,40 @@ async def test_authorization_lock_secp256r1_signature_lands_in_preceding_precomp
         "secp256r1": {"publicKey": R1_PUBLIC_KEY.hex()}
     }
     message_hash = bytes.fromhex(prepared.signature_requests[0].message_hash)
-    signature = bytes(range(64))
-    message = bytes((9, 8, 7, 6)) if with_prefix else None
-    prefix = bytes((1, 3, 5, 7)) if with_prefix else None
+    auth_data = hashlib.sha256(b"example.test").digest() + bytes((1, 0, 0, 0, 1))
+
+    def client_data(challenge: bytes) -> bytes:
+        return json.dumps(
+            {
+                "type": "webauthn.get",
+                "challenge": base64.urlsafe_b64encode(challenge).rstrip(b"=").decode(),
+                "origin": "https://example.test",
+            },
+            separators=(",", ":"),
+        ).encode()
+
+    def auth_message(challenge: bytes) -> bytes:
+        if with_prefix:
+            return auth_data + hashlib.sha256(client_data(challenge)).digest()
+        return challenge
+
+    message = auth_message(message_hash)
+    json_bytes = client_data(message_hash)
+    prefix = (
+        (
+            struct.pack("<HH", 2, len(auth_data))
+            + auth_data
+            + struct.pack("<H", len(json_bytes))
+            + json_bytes
+        )
+        if with_prefix
+        else None
+    )
+    r, s = utils.decode_dss_signature(
+        R1_PRIVATE_KEY.sign(message, ec.ECDSA(hashes.SHA256()))
+    )
+    s = min(s, R1_ORDER - s)
+    signature = r.to_bytes(32, "big") + s.to_bytes(32, "big")
 
     def sign(challenge: bytes) -> PasskeySigningResult:
         assert challenge == message_hash
@@ -932,6 +985,36 @@ async def test_authorization_lock_secp256r1_signature_lands_in_preceding_precomp
         "<QIB4x", LOCK_SLOT, LOCK_COUNTER, sysvar_index
     )
     assert data[offset + 17 :] == (prefix or b"")
+    slot, counter = struct.unpack_from("<QI", data, offset)
+    reconstructed = keccak256(_signed_payload(data[:offset], accounts, slot, counter))
+    assert reconstructed == message_hash
+    assert precompile[message_offset:] == auth_message(reconstructed)
+    if with_prefix:
+        payload = data[offset + 17 :]
+        kind, auth_length = struct.unpack_from("<HH", payload)
+        assert kind == 2
+        assert payload[4 : 4 + auth_length] == auth_data
+        json_length = struct.unpack_from("<H", payload, 4 + auth_length)[0]
+        assert len(payload) == 6 + auth_length + json_length
+        assert payload[6 + auth_length :] == client_data(reconstructed)
+    actual_signature = precompile[signature_offset : signature_offset + 64]
+    der = utils.encode_dss_signature(
+        int.from_bytes(actual_signature[:32], "big"),
+        int.from_bytes(actual_signature[32:], "big"),
+    )
+    public_key = ec.EllipticCurvePublicKey.from_encoded_point(
+        ec.SECP256R1(), precompile[public_key_offset : public_key_offset + 33]
+    )
+    public_key.verify(der, auth_message(reconstructed), ec.ECDSA(hashes.SHA256()))
+    changed_args = bytearray(data[:offset])
+    changed_args[8] ^= 1
+    changed_challenge = keccak256(
+        _signed_payload(bytes(changed_args), accounts, slot, counter)
+    )
+    with pytest.raises(InvalidSignature):
+        public_key.verify(
+            der, auth_message(changed_challenge), ec.ECDSA(hashes.SHA256())
+        )
 
 
 @pytest.mark.parametrize("route", ["add", "remove"])

@@ -2248,7 +2248,7 @@ def _normalize_authorization_locks(value: object) -> AuthorizationLocksResult:
         current_slot=_required_uint64(
             _pick(body, "currentSlot", "current_slot"), "currentSlot"
         ),
-        next_lock_id=_required_int(
+        next_lock_id=_required_uint32(
             _pick(body, "nextLockId", "next_lock_id"), "nextLockId"
         ),
     )
@@ -2263,8 +2263,8 @@ def _normalize_authorization_lock(value: object) -> AuthorizationLock:
     if not isinstance(active, bool):
         raise SwigResponseError("Response is missing active")
     return AuthorizationLock(
-        lock_id=_required_int(_pick(body, "lockId", "lock_id"), "lockId"),
-        role_id=_required_int(_pick(body, "roleId", "role_id"), "roleId"),
+        lock_id=_required_uint32(_pick(body, "lockId", "lock_id"), "lockId"),
+        role_id=_required_uint32(_pick(body, "roleId", "role_id"), "roleId"),
         asset_account=_required_string(
             _pick(body, "assetAccount", "asset_account"), "assetAccount"
         ),
@@ -2277,10 +2277,26 @@ def _normalize_authorization_lock(value: object) -> AuthorizationLock:
     )
 
 
+def _required_uint32(value: object, field: str) -> int:
+    parsed = _required_int(value, field)
+    if 0 <= parsed <= 0xFFFFFFFF:
+        return parsed
+    raise SwigResponseError(f"Response is missing {field}")
+
+
 def _required_uint64(value: object, field: str) -> str:
     """uint64 arrives as a ProtoJSON decimal string; keep it a string."""
-    if isinstance(value, str) and value.isascii() and value.isdigit():
+    if (
+        isinstance(value, str)
+        and value.isascii()
+        and value.isdigit()
+        and int(value) <= _MAX_UINT64
+    ):
         return value
-    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+    if (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and 0 <= value <= _MAX_UINT64
+    ):
         return str(value)
     raise SwigResponseError(f"Response is missing {field}")

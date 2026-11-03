@@ -273,7 +273,7 @@ export function normalizeAuthorizationLocks(
       response.currentSlot ?? response.current_slot,
       'currentSlot',
     ),
-    nextLockId: readNumber(
+    nextLockId: readUint32(
       response.nextLockId ?? response.next_lock_id,
       'nextLockId',
     ),
@@ -295,8 +295,8 @@ function normalizeAuthorizationLock(
     throw new Error('Invalid authorization-lock response');
   }
   return {
-    lockId: readNumber(response.lockId ?? response.lock_id, 'lockId'),
-    roleId: readNumber(response.roleId ?? response.role_id, 'roleId'),
+    lockId: readUint32(response.lockId ?? response.lock_id, 'lockId'),
+    roleId: readUint32(response.roleId ?? response.role_id, 'roleId'),
     assetAccount: readString(
       response.assetAccount ?? response.asset_account,
       'assetAccount',
@@ -315,7 +315,7 @@ function normalizeSwigRole(
   response: NonNullable<ListSwigRolesWire['roles']>[number],
 ): SwigRole {
   return {
-    roleId: readNumber(response.roleId ?? response.role_id, 'roleId'),
+    roleId: readUint32(response.roleId ?? response.role_id, 'roleId'),
     authorityType: readNumber(
       response.authorityType ?? response.authority_type,
       'authorityType',
@@ -685,9 +685,21 @@ function readNumber(value: unknown, field: string): number {
   throw new Error(`Response is missing ${field}`);
 }
 
+function readUint32(value: unknown, field: string): number {
+  const parsed = readNumber(value, field);
+  if (Number.isInteger(parsed) && parsed >= 0 && parsed <= 0xffffffff) {
+    return parsed;
+  }
+  throw new Error(`Response is missing ${field}`);
+}
+
 /** uint64 arrives as a ProtoJSON decimal string; keep it a string. */
 function readUint64(value: unknown, field: string): string {
-  if (typeof value === 'string' && /^\d+$/.test(value)) {
+  if (
+    typeof value === 'string' &&
+    /^\d+$/.test(value) &&
+    BigInt(value) <= 0xffffffffffffffffn
+  ) {
     return value;
   }
   if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) {

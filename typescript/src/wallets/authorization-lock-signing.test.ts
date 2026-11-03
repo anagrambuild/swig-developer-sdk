@@ -1,3 +1,4 @@
+import { p256 } from '@noble/curves/p256';
 import { secp256k1 } from '@noble/curves/secp256k1';
 import { sha256 } from '@noble/hashes/sha2';
 import { keccak_256 } from '@noble/hashes/sha3';
@@ -46,9 +47,8 @@ const participantSet = Keypair.generate().publicKey;
 
 const k1PrivateKey = Uint8Array.from({ length: 32 }, (_, index) => index + 7);
 const k1PublicKey = secp256k1.getPublicKey(k1PrivateKey, true);
-const r1PublicKey = Uint8Array.from({ length: 33 }, (_, index) =>
-  index === 0 ? 3 : index + 40,
-);
+const r1PrivateKey = new Uint8Array(32).fill(11);
+const r1PublicKey = new Uint8Array(p256.getPublicKey(r1PrivateKey, true));
 
 type Route = keyof typeof ARGS_SIZE;
 type Requester = 'secp256k1' | 'secp256r1' | 'participantSet';
@@ -482,26 +482,98 @@ describe.each(['add', 'remove'] as const)('authorization lock %s', (route) => {
     expect(data.length).toBe(offset + 17);
   });
 
-  test('appends a secp256r1 passkey prefix to the lock authority payload', async () => {
-    const { prepared } = await prepare('secp256r1', route);
-    const message = Uint8Array.of(9, 8, 7, 6);
-    const prefix = Uint8Array.of(1, 3, 5, 7);
-
-    const signed = await signPreparedSwigTransaction(prepared, {
-      secp256r1: async () => ({
-        signature: new Uint8Array(64).fill(5),
-        message,
-        prefix,
-      }),
-    });
-
-    const { data, precompile } = signedLock(signed);
-    if (!precompile) throw new Error('precompile missing');
-    const view = new DataView(precompile.buffer, precompile.byteOffset);
-    expect(precompile.slice(view.getUint16(10, true))).toEqual(message);
-    expect(data.slice(0, offset)).toEqual(lockArgs(route));
-    expect(data.slice(offset + 17)).toEqual(prefix);
-  });
+  test.each([false, true])(
+    'verifies a real P-256 lock signature (WebAuthn=%s) and rejects changed args',
+    async (webAuthn) => {
+      const { prepared } = await prepare('secp256r1', route);
+      const authData = concat(
+        sha256(new TextEncoder().encode('example.test')),
+        Uint8Array.of(1, 0, 0, 0, 1),
+      );
+      const clientData = (challenge: Uint8Array) =>
+        new TextEncoder().encode(
+          JSON.stringify({
+            type: 'webauthn.get',
+            challenge: Buffer.from(challenge).toString('base64url'),
+            origin: 'https://example.test',
+          }),
+        );
+      const authMessage = (challenge: Uint8Array) =>
+        webAuthn
+          ? concat(authData, sha256(clientData(challenge)))
+          : new Uint8Array(challenge);
+      const signed = await signPreparedSwigTransaction(prepared, {
+        secp256r1: async (challenge) => {
+          const message = authMessage(challenge);
+          const json = clientData(challenge);
+          const prefix = concat(
+            Uint8Array.of(2, 0, authData.length, 0),
+            authData,
+            Uint8Array.of(json.length & 255, json.length >> 8),
+            json,
+          );
+          return {
+            signature: p256
+              .sign(sha256(message), r1PrivateKey, { lowS: true })
+              .toCompactRawBytes(),
+            ...(webAuthn ? { message, prefix } : {}),
+          };
+        },
+      });
+      const { lock, data, precompile } = signedLock(signed);
+      if (!precompile) throw new Error('precompile missing');
+      const view = new DataView(precompile.buffer, precompile.byteOffset);
+      const authority = new DataView(data.buffer, data.byteOffset);
+      const challenge = keccak_256(
+        signedPayload(
+          data.slice(0, offset),
+          lock.keys,
+          authority.getBigUint64(offset, true),
+          authority.getUint32(offset + 8, true),
+        ),
+      );
+      const message = authMessage(challenge);
+      const signature = precompile.slice(
+        view.getUint16(2, true),
+        view.getUint16(2, true) + 64,
+      );
+      expect(precompile.slice(view.getUint16(10, true))).toEqual(message);
+      expect(
+        precompile.slice(view.getUint16(6, true), view.getUint16(6, true) + 33),
+      ).toEqual(r1PublicKey);
+      expect(
+        p256.verify(signature, sha256(message), r1PublicKey, { lowS: true }),
+      ).toBe(true);
+      if (webAuthn) {
+        const prefix = data.slice(offset + 17);
+        const prefixView = new DataView(prefix.buffer, prefix.byteOffset);
+        expect(prefixView.getUint16(0, true)).toBe(2);
+        const authLength = prefixView.getUint16(2, true);
+        expect(prefix.slice(4, 4 + authLength)).toEqual(authData);
+        const jsonLength = prefixView.getUint16(4 + authLength, true);
+        expect(prefix.slice(6 + authLength)).toEqual(clientData(challenge));
+        expect(prefix.length).toBe(6 + authLength + jsonLength);
+      }
+      const changedArgs = data.slice(0, offset);
+      changedArgs[8] ^= 1;
+      const changedChallenge = keccak_256(
+        signedPayload(
+          changedArgs,
+          lock.keys,
+          authority.getBigUint64(offset, true),
+          authority.getUint32(offset + 8, true),
+        ),
+      );
+      expect(
+        p256.verify(
+          signature,
+          sha256(authMessage(changedChallenge)),
+          r1PublicKey,
+          { lowS: true },
+        ),
+      ).toBe(false);
+    },
+  );
 
   test('compiles ParticipantSet approvals for a ProgramExec lock requester', async () => {
     const { client, prepared, calls } = await prepare('participantSet', route);

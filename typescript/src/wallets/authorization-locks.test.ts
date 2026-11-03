@@ -237,6 +237,16 @@ describe('wallet.getAuthorizationLocks', () => {
       { ...response, currentSlot: undefined },
       { ...response, currentSlot: '-1' },
       { ...response, nextLockId: undefined },
+      ...[-1, 1.5, 2 ** 32].flatMap((value) => [
+        { ...response, nextLockId: value },
+        { ...response, locks: [{ ...lock, lockId: value }] },
+        { ...response, locks: [{ ...lock, roleId: value }] },
+      ]),
+      ...['18446744073709551616', -1, 1.5].flatMap((value) => [
+        { ...response, currentSlot: value },
+        { ...response, locks: [{ ...lock, amount: value }] },
+        { ...response, locks: [{ ...lock, expirySlot: value }] },
+      ]),
       { ...response, locks: [{ ...lock, amount: '1.5' }] },
       { ...response, locks: [{ ...lock, expirySlot: undefined }] },
       { ...response, locks: [{ ...lock, active: 'yes' }] },
