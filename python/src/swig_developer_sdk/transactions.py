@@ -545,13 +545,13 @@ def _normalize_kind(value: object) -> PreparedTransactionKind | None:
     if value in (
         "add-authorization-lock",
         "PREPARED_TRANSACTION_KIND_ADD_AUTHORIZATION_LOCK",
-        7,
+        10,
     ):
         return "add-authorization-lock"
     if value in (
         "remove-authorization-lock",
         "PREPARED_TRANSACTION_KIND_REMOVE_AUTHORIZATION_LOCK",
-        8,
+        11,
     ):
         return "remove-authorization-lock"
     return None

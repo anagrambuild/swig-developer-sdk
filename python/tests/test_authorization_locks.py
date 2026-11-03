@@ -38,9 +38,17 @@ from swig_developer_sdk.signers import (
     create_participant_ed25519_signer,
     sign_participant_set_approval,
 )
+from swig_developer_sdk.transactions import normalize_prepared_transaction
 
 USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 ENGINE = {"ed25519": {"publicKey": "engine"}}
+
+
+@pytest.mark.parametrize("kind", [7, 8, 9])
+def test_yield_kind_is_not_an_authorization_lock(kind: int) -> None:
+    prepared = normalize_prepared_transaction({"transaction": "prepared", "kind": kind})
+    assert prepared.kind is None
+
 
 LOCKS_RESPONSE: dict[str, object] = {
     "locks": [
@@ -352,10 +360,10 @@ async def test_add_authorization_lock_prepares_an_unsigned_transaction() -> None
         (
             "add_authorization_lock",
             {"amount": 1, "duration_slots": 1},
-            7,
+            10,
             "add-authorization-lock",
         ),
-        ("remove_authorization_lock", {"lock_id": 1}, 8, "remove-authorization-lock"),
+        ("remove_authorization_lock", {"lock_id": 1}, 11, "remove-authorization-lock"),
     ],
 )
 async def test_authorization_lock_writes_normalize_numeric_kind(

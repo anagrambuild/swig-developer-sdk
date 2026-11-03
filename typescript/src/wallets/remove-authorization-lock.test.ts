@@ -81,7 +81,7 @@ describe('wallet.removeAuthorizationLock', () => {
           transaction: {
             unsigned_transaction: 'prepared',
             transaction_encoding: 1,
-            kind: 8,
+            kind: 11,
           },
         })) as unknown as typeof fetch,
     });

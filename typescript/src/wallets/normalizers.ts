@@ -547,11 +547,11 @@ function normalizePreparedTransactionKind(
       return 'set-rent-claimer';
     case 'add-authorization-lock':
     case 'PREPARED_TRANSACTION_KIND_ADD_AUTHORIZATION_LOCK':
-    case 7:
+    case 10:
       return 'add-authorization-lock';
     case 'remove-authorization-lock':
     case 'PREPARED_TRANSACTION_KIND_REMOVE_AUTHORIZATION_LOCK':
-    case 8:
+    case 11:
       return 'remove-authorization-lock';
     case 'x402-payment':
     case 'PREPARED_TRANSACTION_KIND_X402_PAYMENT':
