@@ -634,6 +634,7 @@ def with_deposit(amount_raw: str) -> dict[str, Any]:
         # Past int()'s digit limit, which raises a plain ValueError.
         (with_transaction({"slot": "9" * 5000}), "invalid slot"),
         (with_transaction({"blockTime": 1758649976}), "invalid blockTime"),
+        (with_transaction({"blockTime": ""}), "invalid blockTime"),
     ],
 )
 async def test_refuses_a_transaction_outside_the_contract(
@@ -679,6 +680,93 @@ async def test_refuses_a_missing_transaction_cursor_or_position_state() -> None:
         await client(lambda _: unspecified_cursor).dex.positions.list(
             swig_config_address=SWIG
         )
+
+
+async def read(resource: str, reply: object) -> Any:
+    swig = client(lambda _: reply)
+    if resource == "transactions":
+        return await swig.dex.transactions.list(swig_config_address=SWIG)
+    if resource == "positions":
+        return await swig.dex.positions.list(swig_config_address=SWIG)
+    return await swig.dex.transactions.get(
+        swig_config_address=SWIG, transaction_signature="signature"
+    )
+
+
+def with_deposits(value: object) -> dict[str, Any]:
+    added = LIQUIDITY_ADDS["transactions"][0]["actions"][0]["action"]["liquidityAdd"]
+    return with_action({"action": {"liquidityAdd": {**added, "deposits": value}}})
+
+
+def with_rewards(value: object) -> dict[str, Any]:
+    opened = OPEN_POSITIONS["positions"][0]
+    clmm = opened["open"]["state"]["raydiumClmm"]
+    state = {"raydiumClmm": {**clmm, "rewardAmountsOwed": value}}
+    return {"positions": [{**opened, "open": {**opened["open"], "state": state}}]}
+
+
+@pytest.mark.parametrize("value", [False, {}, ""])
+@pytest.mark.parametrize(
+    ("resource", "response", "field"),
+    [
+        ("transactions", lambda value: {"transactions": value}, "transactions"),
+        ("positions", lambda value: {"positions": value}, "positions"),
+        ("transactions", lambda value: with_transaction({"actions": value}), "actions"),
+        ("transactions", with_deposits, "deposits"),
+        ("positions", with_rewards, "rewardAmountsOwed"),
+    ],
+)
+async def test_refuses_a_collection_that_is_not_a_list(
+    resource: str,
+    response: Callable[[object], dict[str, Any]],
+    field: str,
+    value: object,
+) -> None:
+    with pytest.raises(SwigResponseError, match=rf"^DEX response has invalid {field}$"):
+        await read(resource, response(value))
+
+
+@pytest.mark.parametrize(
+    ("resource", "label"),
+    [
+        ("transactions", "DEX transactions response"),
+        ("positions", "DEX positions response"),
+        ("get", "DEX transaction response"),
+    ],
+)
+async def test_refuses_a_body_that_is_not_an_object(resource: str, label: str) -> None:
+    # Each a 200: an empty body, and JSON that is not an object.
+    for reply in (httpx.Response(200), False, []):
+        with pytest.raises(SwigResponseError, match=rf"^{label} must be an object$"):
+            await read(resource, reply)
+    html = httpx.Response(
+        200,
+        text="<html>Upstream unavailable</html>",
+        headers={"Content-Type": "text/html"},
+    )
+    with pytest.raises(SwigResponseError, match=r"^API response is not valid JSON$"):
+        await read(resource, html)
+
+
+@pytest.mark.parametrize("resource", ["transactions", "positions"])
+async def test_refuses_a_falsy_cursor_instead_of_ending_the_list(
+    resource: str,
+) -> None:
+    with pytest.raises(SwigResponseError, match=r"^DEX cursor must be an object$"):
+        await read(resource, {resource: [], "nextCursor": False})
+
+
+async def test_reads_an_omitted_or_null_field_as_absent() -> None:
+    for resource in ("transactions", "positions"):
+        for reply in ({}, {resource: None, "nextCursor": None}):
+            page = await read(resource, reply)
+            assert getattr(page, resource) == ()
+            assert page.next_cursor is None
+    page = await read(
+        "transactions", with_transaction({"blockTime": None, "actions": None})
+    )
+    assert page.transactions[0].block_time is None
+    assert page.transactions[0].actions == ()
 
 
 @pytest.mark.parametrize(

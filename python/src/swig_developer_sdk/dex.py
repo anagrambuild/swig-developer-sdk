@@ -498,7 +498,7 @@ def _wire(table: Mapping[str, str], value: str, message: str) -> str:
 
 def _normalize_transactions_page(response: object) -> ListDexTransactionsResult:
     body = _mapping(response, "DEX transactions response")
-    transactions = _sequence(body.get("transactions") or [], "transactions")
+    transactions = _sequence(body.get("transactions"), "transactions")
     next_cursor = body.get("nextCursor")
     return ListDexTransactionsResult(
         transactions=tuple(_normalize_transaction(item) for item in transactions),
@@ -521,9 +521,9 @@ def _normalize_transaction_cursor(value: object) -> DexTransactionCursor:
 
 def _normalize_transaction(value: object) -> DexTransaction:
     body = _mapping(value, "DEX transaction")
-    actions = _sequence(body.get("actions") or [], "actions")
+    actions = _sequence(body.get("actions"), "actions")
     block_time = body.get("blockTime")
-    if block_time is not None and not isinstance(block_time, str):
+    if block_time is not None and (not isinstance(block_time, str) or not block_time):
         raise SwigResponseError("DEX response has invalid blockTime")
     return DexTransaction(
         swig_config_address=_required_string(
@@ -536,7 +536,7 @@ def _normalize_transaction(value: object) -> DexTransaction:
         ),
         slot=_unsigned_integer(body.get("slot"), "slot"),
         actions=tuple(_normalize_transaction_action(item) for item in actions),
-        block_time=block_time or None,
+        block_time=block_time,
     )
 
 
@@ -578,7 +578,7 @@ def _normalize_action(value: object) -> DexAction:
             protocol_actor_address=_actor(body),
             dex_pool_address=_pool(body),
             dex_position_address=_position(body),
-            deposits=_amounts(body.get("deposits")),
+            deposits=_amounts(body.get("deposits"), "deposits"),
         )
     liquidity_add = payload.get("liquidityAdd")
     if liquidity_add is not None:
@@ -588,7 +588,7 @@ def _normalize_action(value: object) -> DexAction:
             protocol_actor_address=_actor(body),
             dex_pool_address=_pool(body),
             dex_position_address=_position(body),
-            deposits=_amounts(body.get("deposits")),
+            deposits=_amounts(body.get("deposits"), "deposits"),
         )
     liquidity_remove = payload.get("liquidityRemove")
     if liquidity_remove is not None:
@@ -598,7 +598,7 @@ def _normalize_action(value: object) -> DexAction:
             protocol_actor_address=_actor(body),
             dex_pool_address=_pool(body),
             dex_position_address=_position(body),
-            withdrawals=_amounts(body.get("withdrawals")),
+            withdrawals=_amounts(body.get("withdrawals"), "withdrawals"),
         )
     rebalance = payload.get("positionRebalance")
     if rebalance is not None:
@@ -608,8 +608,8 @@ def _normalize_action(value: object) -> DexAction:
             protocol_actor_address=_actor(body),
             dex_pool_address=_pool(body),
             dex_position_address=_position(body),
-            deposits=_amounts(body.get("deposits")),
-            withdrawals=_amounts(body.get("withdrawals")),
+            deposits=_amounts(body.get("deposits"), "deposits"),
+            withdrawals=_amounts(body.get("withdrawals"), "withdrawals"),
         )
     fee_claim = payload.get("feeClaim")
     if fee_claim is not None:
@@ -619,7 +619,7 @@ def _normalize_action(value: object) -> DexAction:
             protocol_actor_address=_actor(body),
             dex_pool_address=_pool(body),
             dex_position_address=_position(body),
-            claimed=_amounts(body.get("claimed")),
+            claimed=_amounts(body.get("claimed"), "claimed"),
         )
     reward_claim = payload.get("rewardClaim")
     if reward_claim is not None:
@@ -629,7 +629,7 @@ def _normalize_action(value: object) -> DexAction:
             protocol_actor_address=_actor(body),
             dex_pool_address=_pool(body),
             dex_position_address=_position(body),
-            claimed=_amounts(body.get("claimed")),
+            claimed=_amounts(body.get("claimed"), "claimed"),
         )
     position_close = payload.get("positionClose")
     if position_close is not None:
@@ -669,10 +669,8 @@ def _position(body: Mapping[str, object]) -> str:
     )
 
 
-def _amounts(value: object) -> tuple[DexAssetAmount, ...]:
-    return tuple(
-        _normalize_amount(item, "amount") for item in _sequence(value or [], "amounts")
-    )
+def _amounts(value: object, field: str) -> tuple[DexAssetAmount, ...]:
+    return tuple(_normalize_amount(item, "amount") for item in _sequence(value, field))
 
 
 def _normalize_amount(value: object, field: str) -> DexAssetAmount:
@@ -687,7 +685,7 @@ def _normalize_amount(value: object, field: str) -> DexAssetAmount:
 
 def _normalize_positions_page(response: object) -> ListDexPositionsResult:
     body = _mapping(response, "DEX positions response")
-    positions = _sequence(body.get("positions") or [], "positions")
+    positions = _sequence(body.get("positions"), "positions")
     next_cursor = body.get("nextCursor")
     return ListDexPositionsResult(
         positions=tuple(_normalize_position(item) for item in positions),
@@ -757,15 +755,14 @@ def _normalize_position(value: object) -> DexPosition:
 
 
 def _normalize_account_state(value: object) -> DexPositionAccountState:
-    state = _mapping(value or {}, "position account state")
+    state = _mapping(
+        _required(value, "position account state"), "position account state"
+    )
     clmm = state.get("raydiumClmm")
     if clmm is None:
         raise SwigResponseError("DEX response is missing position account state")
     body = _mapping(clmm, "raydiumClmm")
-    rewards = _sequence(
-        body.get("rewardAmountsOwed") or [],
-        "rewardAmountsOwed",
-    )
+    rewards = _sequence(body.get("rewardAmountsOwed"), "rewardAmountsOwed")
     return DexRaydiumClmmPositionState(
         liquidity_raw=_units(
             body.get("liquidityRaw"),
@@ -804,6 +801,10 @@ def _mapping(value: object, label: str) -> Mapping[str, object]:
 
 
 def _sequence(value: object, field: str) -> Sequence[object]:
+    """A repeated field may be omitted or null; any value that is present must be
+    a list."""
+    if value is None:
+        return ()
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
         return value
     raise SwigResponseError(f"DEX response has invalid {field}")
