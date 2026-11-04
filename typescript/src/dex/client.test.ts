@@ -660,6 +660,19 @@ describe('DexClient', () => {
       [
         withAction({
           action: {
+            ...added?.action,
+            positionClose: added?.action?.liquidityAdd,
+          },
+        }),
+        /^DEX response has more than one action$/,
+      ],
+      [
+        withAction({ action: { liquidityAdd: true } }),
+        /^liquidityAdd must be an object$/,
+      ],
+      [
+        withAction({
+          action: {
             liquidityAdd: {
               ...added?.action?.liquidityAdd,
               deposits: [{ mintAddress: USDV, amountRaw: '1.5' }],
@@ -705,7 +718,19 @@ describe('DexClient', () => {
     ).rejects.toThrow(/^DEX response is missing transaction$/);
 
     const [closed] = CLOSED_POSITIONS.positions ?? [];
+    const [opened] = OPEN_POSITIONS.positions ?? [];
     for (const [response, message] of [
+      ...[true, [], 'closed'].map(
+        (state) =>
+          [
+            { positions: [{ ...closed, closed: state }] },
+            /^closed must be an object$/,
+          ] as const,
+      ),
+      [
+        { positions: [{ ...opened, closed: {} }] },
+        /^DEX response has more than one position state$/,
+      ],
       // JSON drops an undefined value, so the key is absent on the wire.
       [
         { positions: [{ ...closed, closed: undefined }] },

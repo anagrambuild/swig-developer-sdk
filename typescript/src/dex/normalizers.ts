@@ -105,9 +105,28 @@ function normalizeDexTransactionAction(
   };
 }
 
+const ACTION_KINDS = [
+  'swap',
+  'positionOpen',
+  'liquidityAdd',
+  'liquidityRemove',
+  'positionRebalance',
+  'feeClaim',
+  'rewardClaim',
+  'positionClose',
+] as const;
+
 /** The payload's one key names the action, so the type cannot disagree with it. */
 function normalizeDexAction(payload?: DexActionPayloadWire): DexAction {
   const wire = requiredField(payload, 'action');
+  assertObject(wire, 'DEX action payload');
+  const [kind, ...others] = ACTION_KINDS.filter(
+    (key) => wire[key] !== undefined && wire[key] !== null,
+  );
+  if (others.length > 0) {
+    throw new Error('DEX response has more than one action');
+  }
+  if (kind !== undefined) assertObject(wire[kind], kind);
   if (wire.swap) {
     return {
       type: 'swap',
@@ -276,18 +295,25 @@ function normalizeDexPosition(position: DexPositionWire): DexPosition {
       'sourceTransactionSignature',
     ),
   };
-  if (position.open) {
+  const { open, closed } = position;
+  const hasOpen = open !== undefined && open !== null;
+  const hasClosed = closed !== undefined && closed !== null;
+  if (hasOpen && hasClosed) {
+    throw new Error('DEX response has more than one position state');
+  }
+  if (hasOpen) {
+    assertObject(open, 'open');
     return {
       ...base,
       status: 'open',
-      dexPoolAddress: requiredString(
-        position.open.dexPoolAddress,
-        'dexPoolAddress',
-      ),
-      state: normalizeDexPositionAccountState(position.open.state),
+      dexPoolAddress: requiredString(open.dexPoolAddress, 'dexPoolAddress'),
+      state: normalizeDexPositionAccountState(open.state),
     };
   }
-  if (position.closed) return { ...base, status: 'closed' };
+  if (hasClosed) {
+    assertObject(closed, 'closed');
+    return { ...base, status: 'closed' };
+  }
   throw new Error('DEX response is missing position state');
 }
 
