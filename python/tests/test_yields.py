@@ -12,6 +12,7 @@ from swig_developer_sdk import (
     PartialYieldExit,
     PreparedYieldRoleCreation,
     SwigClient,
+    SwigResponseError,
 )
 from swig_developer_sdk.wallets import (
     ProgramAction,
@@ -191,12 +192,19 @@ async def test_queries_use_get_with_query_strings() -> None:
             return {
                 "positions": [
                     {
+                        "swigConfigAddress": CONFIG,
+                        "walletAddress": "Wallet",
                         "positionAddress": POSITION,
                         "state": "YIELD_POSITION_STATE_ACTIVE",
                         "balanceLamports": "12",
                         "positionLamports": "10",
                     },
-                    {"position_address": "Other", "state": 4},
+                    {
+                        "swig_config_address": CONFIG,
+                        "wallet_address": "Wallet",
+                        "position_address": "Other",
+                        "state": 4,
+                    },
                 ],
                 "nextPageToken": "next",
                 "lastUpdatedAt": "2026-10-22T00:00:00Z",
@@ -207,6 +215,7 @@ async def test_queries_use_get_with_query_strings() -> None:
             return {
                 "rewards": [
                     {
+                        "swigConfigAddress": CONFIG,
                         "positionAddress": POSITION,
                         "amountLamports": "7",
                         "earnedAt": "t",
@@ -220,7 +229,11 @@ async def test_queries_use_get_with_query_strings() -> None:
                         "voteAddress": VOTE,
                         "name": "Anagram",
                         "acceptsDeposits": True,
-                        "rate": {"estimatedNetAprBps": 665, "commissionBps": 500},
+                        "rate": {
+                            "validatorVoteAddress": VOTE,
+                            "estimatedNetAprBps": 665,
+                            "commissionBps": 500,
+                        },
                     }
                 ]
             }
@@ -289,3 +302,175 @@ async def test_validates_inputs_before_requests() -> None:
     with pytest.raises(ValueError, match="swig_config_address"):
         await swig.yields.list_options(swig_config_address="", network="devnet")
     assert requests == []
+
+
+@pytest.mark.parametrize(
+    "method,field",
+    [
+        ("list_options", "options"),
+        ("list_positions", "positions"),
+        ("list_rewards", "rewards"),
+    ],
+)
+@pytest.mark.parametrize("value", [{}, "not-a-list", 1, False, [None], [False]])
+async def test_rejects_malformed_yield_collections(
+    method: str, field: str, value: object
+) -> None:
+    swig, _ = client(lambda _: {field: value})
+    async with swig:
+        with pytest.raises(SwigResponseError):
+            await getattr(swig.yields, method)(swig_config_address=CONFIG)
+
+
+@pytest.mark.parametrize(
+    "field", ["swigConfigAddress", "walletAddress", "positionAddress"]
+)
+@pytest.mark.parametrize("bad", [None, "", 123, {}])
+async def test_requires_position_identities(field: str, bad: object) -> None:
+    position = {
+        "swigConfigAddress": CONFIG,
+        "walletAddress": "Wallet",
+        "positionAddress": POSITION,
+        field: bad,
+    }
+    swig, _ = client(lambda _: {"positions": [position]})
+    async with swig:
+        with pytest.raises(SwigResponseError):
+            await swig.yields.list_positions(swig_config_address=CONFIG)
+
+
+@pytest.mark.parametrize(
+    "method,reply",
+    [
+        ("list_options", {"options": [{"acceptsDeposits": True}]}),
+        ("list_rewards", {"rewards": [{"positionAddress": POSITION}]}),
+        ("list_rewards", {"rewards": [{"swigConfigAddress": CONFIG}]}),
+        (
+            "list_options",
+            {"options": [{"voteAddress": VOTE, "acceptsDeposits": "false"}]},
+        ),
+        ("get_summary", []),
+    ],
+)
+async def test_rejects_malformed_yield_objects(method: str, reply: object) -> None:
+    swig, _ = client(lambda _: reply)
+    async with swig:
+        with pytest.raises(SwigResponseError):
+            await getattr(swig.yields, method)(swig_config_address=CONFIG)
+
+
+@pytest.mark.parametrize(
+    "amount", [True, {}, [], "abc", "-1", -1, 1.5, "18446744073709551616"]
+)
+async def test_rejects_malformed_yield_amounts(amount: object) -> None:
+    swig, _ = client(lambda _: {"totalPositionLamports": amount})
+    async with swig:
+        with pytest.raises(SwigResponseError):
+            await swig.yields.get_summary(swig_config_address=CONFIG)
+
+
+async def test_preserves_proto_defaults_and_large_amounts() -> None:
+    swig, _ = client(lambda _: {})
+    async with swig:
+        assert await swig.yields.list_options(swig_config_address=CONFIG) == []
+        assert (
+            await swig.yields.list_positions(swig_config_address=CONFIG)
+        ).positions == []
+        assert (
+            await swig.yields.list_rewards(swig_config_address=CONFIG)
+        ).rewards == []
+        assert (
+            await swig.yields.get_summary(swig_config_address=CONFIG)
+        ).total_position_lamports == "0"
+    swig, _ = client(lambda _: {"totalPositionLamports": "18446744073709551615"})
+    async with swig:
+        assert (
+            await swig.yields.get_summary(swig_config_address=CONFIG)
+        ).total_position_lamports == "18446744073709551615"
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        {"existing": {"roleId": True}},
+        {"existing": {"roleId": 1, "actions": {}}},
+        {"existing": {"roleId": 1, "actions": [{"stakeAll": {}, "all": {}}]}},
+        {
+            "existing": {"roleId": 1},
+            "create": {"transaction": PREPARED, "yieldAuthority": AUTHORITY},
+        },
+        {"create": {"transaction": PREPARED, "yieldAuthority": {"participantSet": {}}}},
+    ],
+)
+async def test_rejects_malformed_yield_roles(reply: object) -> None:
+    swig, _ = client(lambda _: reply)
+    async with swig:
+        with pytest.raises(SwigResponseError):
+            await swig.yields.prepare_role(
+                swig_config_address=CONFIG,
+                fee_payer=PAYER,
+                yield_authority=AUTHORITY,
+                validator_vote_address=VOTE,
+                max_deposit=1,
+            )
+
+
+@pytest.mark.parametrize(
+    "kind,proto,number",
+    [
+        ("yield-deposit", "PREPARED_TRANSACTION_KIND_YIELD_DEPOSIT", 7),
+        ("yield-exit", "PREPARED_TRANSACTION_KIND_YIELD_EXIT", 8),
+        ("yield-withdrawal", "PREPARED_TRANSACTION_KIND_YIELD_WITHDRAWAL", 9),
+    ],
+)
+async def test_preserves_yield_kinds_through_approval_compilation(
+    kind: str, proto: str, number: int
+) -> None:
+    for wire in (kind, proto, number):
+
+        def reply(request: httpx.Request, kind_wire: str | int = wire) -> object:
+            if request.url.path.endswith("/compile"):
+                return {
+                    "transaction": {**PREPARED, "kind": kind_wire},
+                    "authorizationExpirationSlot": "100",
+                }
+            return {
+                "transaction": {**PREPARED, "kind": kind_wire},
+                "positionAddress": POSITION,
+                "validatorVoteAddress": VOTE,
+                "exitingPositionAddress": POSITION,
+                "destinationWalletAddress": "Wallet",
+            }
+
+        swig, requests = client(reply)
+        async with swig:
+            if kind == "yield-deposit":
+                result = await swig.yields.deposit(
+                    swig_config_address=CONFIG,
+                    fee_payer=PAYER,
+                    requester_authority=AUTHORITY,
+                    amount=1,
+                    validator_vote_address=VOTE,
+                    position_seed="deposit",
+                )
+            elif kind == "yield-exit":
+                result = await swig.yields.exit(
+                    swig_config_address=CONFIG,
+                    fee_payer=PAYER,
+                    requester_authority=AUTHORITY,
+                    position_address=POSITION,
+                    amount="all",
+                )
+            else:
+                result = await swig.yields.withdraw(
+                    swig_config_address=CONFIG,
+                    fee_payer=PAYER,
+                    requester_authority=AUTHORITY,
+                    position_address=POSITION,
+                )
+            assert result.transaction.kind == kind
+            compiled = await swig.transactions.compile_participant_set_approvals(
+                prepared_transaction=result.transaction, approvals=()
+            )
+            assert body(requests[1])["preparedTransaction"]["kind"] == proto
+            assert compiled.transaction.kind == kind

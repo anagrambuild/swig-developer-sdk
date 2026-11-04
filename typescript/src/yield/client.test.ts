@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { SwigDeveloperSdkError } from '../core/errors.js';
 import { SwigClient } from '../server/typescript/index.js';
 
 type CapturedRequest = { url: string; method: string; body?: any };
@@ -217,7 +218,12 @@ describe('YieldClient', () => {
               withdrawableLamports: '0',
               earningLamports: '10',
             },
-            { positionAddress: 'Other', state: 4 },
+            {
+              swigConfigAddress: CONFIG,
+              walletAddress: 'Wallet',
+              positionAddress: 'Other',
+              state: 4,
+            },
           ],
           nextPageToken: 'next',
           lastUpdatedAt: '2026-10-22T00:00:00Z',
@@ -233,6 +239,7 @@ describe('YieldClient', () => {
         return {
           rewards: [
             {
+              swigConfigAddress: CONFIG,
               positionAddress: POSITION,
               amountLamports: '7',
               earnedAt: '2026-10-21T00:00:00Z',
@@ -361,4 +368,239 @@ describe('YieldClient', () => {
       }),
     ).rejects.toThrow('missing transaction');
   });
+});
+
+describe('Yield response contracts', () => {
+  const wallet = { swigConfigAddress: CONFIG };
+  const roleArgs = {
+    ...wallet,
+    feePayer: PAYER,
+    yieldAuthority: AUTHORITY,
+    validatorVoteAddress: VOTE,
+    maxDeposit: 1,
+  };
+
+  test.each(['camel', 'snake'])(
+    'round-trips a %s ParticipantSet role authority into a deposit',
+    async (casing) => {
+      const returnedAuthority =
+        casing === 'camel'
+          ? {
+              participantSet: {
+                participantSetAddress: 'set-address',
+                roleId: 0,
+              },
+            }
+          : {
+              participant_set: {
+                participant_set_address: 'set-address',
+                role_id: 0,
+              },
+            };
+      const { swig, calls } = client(
+        ({ url }) =>
+          url.endsWith('/role/prepare')
+            ? {
+                create: {
+                  transaction: PREPARED,
+                  yieldAuthority: returnedAuthority,
+                },
+              }
+            : {
+                transaction: PREPARED,
+                positionAddress: POSITION,
+                validatorVoteAddress: VOTE,
+              },
+        'devnet',
+      );
+      const role = await swig.yield.prepareRole(roleArgs);
+      expect(role.type).toBe('create');
+      if (role.type !== 'create') throw new Error('Expected role creation');
+      expect(role.yieldAuthority).toEqual({
+        participantSet: { address: 'set-address', roleId: 0 },
+      });
+      await swig.yield.deposit({
+        ...wallet,
+        feePayer: PAYER,
+        requesterAuthority: role.yieldAuthority,
+        validatorVoteAddress: VOTE,
+        amount: 1,
+        positionSeed: 'deposit',
+      });
+      expect(calls[1]?.body.wallet.requesterAuthority).toEqual({
+        participantSet: { participantSetAddress: 'set-address', roleId: 0 },
+      });
+    },
+  );
+
+  test('rejects malformed collections and elements with SDK response errors', async () => {
+    for (const [method, field] of [
+      ['listOptions', 'options'],
+      ['listPositions', 'positions'],
+      ['listRewards', 'rewards'],
+    ] as const) {
+      for (const value of [{}, 'not-a-list', 1, false, [null], [false]]) {
+        const { swig } = client(() => ({ [field]: value }), 'devnet');
+        await expect(swig.yield[method](wallet)).rejects.toMatchObject({
+          code: 'INVALID_RESPONSE',
+          statusCode: 502,
+        });
+      }
+    }
+    const { swig } = client(() => [], 'devnet');
+    await expect(swig.yield.getSummary(wallet)).rejects.toBeInstanceOf(
+      SwigDeveloperSdkError,
+    );
+  });
+
+  test('requires every position, reward and validator identity', async () => {
+    const validPosition = {
+      swigConfigAddress: CONFIG,
+      walletAddress: 'Wallet',
+      positionAddress: POSITION,
+    };
+    for (const field of Object.keys(validPosition)) {
+      for (const bad of [undefined, null, '', 123, {}]) {
+        const { swig } = client(
+          () => ({ positions: [{ ...validPosition, [field]: bad }] }),
+          'devnet',
+        );
+        await expect(swig.yield.listPositions(wallet)).rejects.toMatchObject({
+          code: 'INVALID_RESPONSE',
+        });
+      }
+    }
+    for (const reward of [
+      { positionAddress: POSITION },
+      { swigConfigAddress: CONFIG },
+    ]) {
+      const { swig } = client(() => ({ rewards: [reward] }), 'devnet');
+      await expect(swig.yield.listRewards(wallet)).rejects.toMatchObject({
+        code: 'INVALID_RESPONSE',
+      });
+    }
+    const { swig } = client(
+      () => ({ options: [{ acceptsDeposits: true }] }),
+      'devnet',
+    );
+    await expect(swig.yield.listOptions(wallet)).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    });
+  });
+
+  test('rejects malformed numbers and ambiguous role variants', async () => {
+    for (const amount of [
+      true,
+      {},
+      [],
+      'abc',
+      '-1',
+      -1,
+      1.5,
+      Number.MAX_SAFE_INTEGER + 1,
+      '18446744073709551616',
+    ]) {
+      const { swig } = client(
+        () => ({ totalPositionLamports: amount }),
+        'devnet',
+      );
+      await expect(swig.yield.getSummary(wallet)).rejects.toMatchObject({
+        code: 'INVALID_RESPONSE',
+      });
+    }
+    for (const reply of [
+      { existing: { roleId: true } },
+      { existing: { roleId: 1, actions: {} } },
+      { existing: { roleId: 1, actions: [{ stakeAll: {}, all: {} }] } },
+      {
+        existing: { roleId: 1 },
+        create: { transaction: PREPARED, yieldAuthority: AUTHORITY },
+      },
+      {
+        create: {
+          transaction: PREPARED,
+          yieldAuthority: { participantSet: {} },
+        },
+      },
+    ]) {
+      const { swig } = client(() => reply, 'devnet');
+      await expect(swig.yield.prepareRole(roleArgs)).rejects.toMatchObject({
+        code: 'INVALID_RESPONSE',
+      });
+    }
+  });
+
+  test('preserves empty protobuf defaults and exact uint64 strings', async () => {
+    const { swig } = client(() => ({}), 'devnet');
+    expect(await swig.yield.listOptions(wallet)).toEqual([]);
+    expect((await swig.yield.listPositions(wallet)).positions).toEqual([]);
+    expect((await swig.yield.listRewards(wallet)).rewards).toEqual([]);
+    expect((await swig.yield.getSummary(wallet)).totalPositionLamports).toBe(
+      '0',
+    );
+    const { swig: large } = client(
+      () => ({ totalPositionLamports: '18446744073709551615' }),
+      'devnet',
+    );
+    expect((await large.yield.getSummary(wallet)).totalPositionLamports).toBe(
+      '18446744073709551615',
+    );
+  });
+
+  test.each([
+    ['yield-deposit', 'PREPARED_TRANSACTION_KIND_YIELD_DEPOSIT', 7],
+    ['yield-exit', 'PREPARED_TRANSACTION_KIND_YIELD_EXIT', 8],
+    ['yield-withdrawal', 'PREPARED_TRANSACTION_KIND_YIELD_WITHDRAWAL', 9],
+  ] as const)(
+    'preserves %s through preparation and approval compilation',
+    async (kind, proto, number) => {
+      for (const wire of [kind, proto, number]) {
+        const { swig, calls } = client(
+          ({ url }) =>
+            url.endsWith('/compile')
+              ? {
+                  transaction: { ...PREPARED, kind: wire },
+                  authorizationExpirationSlot: '100',
+                }
+              : {
+                  transaction: { ...PREPARED, kind: wire },
+                  positionAddress: POSITION,
+                  validatorVoteAddress: VOTE,
+                  exitingPositionAddress: POSITION,
+                  destinationWalletAddress: 'Wallet',
+                },
+          'devnet',
+        );
+        const base = {
+          ...wallet,
+          feePayer: PAYER,
+          requesterAuthority: AUTHORITY,
+        };
+        const result =
+          kind === 'yield-deposit'
+            ? await swig.yield.deposit({
+                ...base,
+                amount: 1,
+                validatorVoteAddress: VOTE,
+                positionSeed: 'deposit',
+              })
+            : kind === 'yield-exit'
+              ? await swig.yield.exit({
+                  ...base,
+                  positionAddress: POSITION,
+                  amount: 'all',
+                })
+              : await swig.yield.withdraw({
+                  ...base,
+                  positionAddress: POSITION,
+                });
+        expect(result.transaction.kind).toBe(kind);
+        const compiled = await swig.transactions.compileParticipantSetApprovals(
+          { preparedTransaction: result.transaction, approvals: [] },
+        );
+        expect(calls[1]?.body.preparedTransaction.kind).toBe(proto);
+        expect(compiled.transaction.kind).toBe(kind);
+      }
+    },
+  );
 });

@@ -189,6 +189,13 @@ export interface YieldProjection {
 
 type U64Wire = string | number;
 
+type YieldAuthorityWire =
+  | { ed25519: { publicKey?: string; public_key?: string } }
+  | { secp256k1: { publicKey?: string; public_key?: string } }
+  | { secp256r1: { publicKey?: string; public_key?: string } }
+  | { participantSet: { participantSetAddress?: string; roleId?: number } }
+  | { participant_set: { participant_set_address?: string; role_id?: number } };
+
 export type AddRoleActionWire = Record<
   string,
   Record<string, unknown> | undefined
@@ -202,8 +209,8 @@ export interface PrepareYieldRoleResponseWire {
   };
   create?: {
     transaction?: PreparedTransactionWire;
-    yieldAuthority?: WalletAuthority;
-    yield_authority?: WalletAuthority;
+    yieldAuthority?: YieldAuthorityWire;
+    yield_authority?: YieldAuthorityWire;
     actions?: AddRoleActionWire[];
   };
 }

@@ -1,20 +1,11 @@
 import type { HttpClient } from '../core/index.js';
 import type {
   EstimateYieldArgs,
-  EstimateYieldResponseWire,
-  GetYieldSummaryResponseWire,
-  ListYieldOptionsResponseWire,
-  ListYieldPositionsResponseWire,
-  ListYieldRewardsResponseWire,
   Network,
   PrepareYieldDepositArgs,
-  PrepareYieldDepositResponseWire,
   PrepareYieldExitArgs,
-  PrepareYieldExitResponseWire,
   PrepareYieldRoleArgs,
-  PrepareYieldRoleResponseWire,
   PrepareYieldWithdrawalArgs,
-  PrepareYieldWithdrawalResponseWire,
   PreparedYieldDeposit,
   PreparedYieldExit,
   PreparedYieldWithdrawal,
@@ -100,25 +91,22 @@ export class YieldClient {
    */
   prepareRole = async (args: PrepareYieldRoleArgs): Promise<YieldRoleResult> =>
     normalizeYieldRole(
-      await this.http.post<PrepareYieldRoleResponseWire>(
-        `${basePath(args)}/role/prepare`,
-        {
-          network: this.network(args),
-          swigConfigAddress: args.swigConfigAddress,
-          feePayer: args.feePayer,
-          ...(args.roleId === undefined ? {} : { roleId: args.roleId }),
-          yieldAuthority: walletAuthorityRequest(args.yieldAuthority),
-          validatorVoteAddress: args.validatorVoteAddress,
-          maxDepositLamports: normalizeAmount(args.maxDeposit),
-          ...(args.roleManagerAuthority
-            ? {
-                roleManagerAuthority: walletAuthorityRequest(
-                  args.roleManagerAuthority,
-                ),
-              }
-            : {}),
-        },
-      ),
+      await this.http.post<unknown>(`${basePath(args)}/role/prepare`, {
+        network: this.network(args),
+        swigConfigAddress: args.swigConfigAddress,
+        feePayer: args.feePayer,
+        ...(args.roleId === undefined ? {} : { roleId: args.roleId }),
+        yieldAuthority: walletAuthorityRequest(args.yieldAuthority),
+        validatorVoteAddress: args.validatorVoteAddress,
+        maxDepositLamports: normalizeAmount(args.maxDeposit),
+        ...(args.roleManagerAuthority
+          ? {
+              roleManagerAuthority: walletAuthorityRequest(
+                args.roleManagerAuthority,
+              ),
+            }
+          : {}),
+      }),
     );
 
   /** Fund a new native position from the wallet and delegate it. */
@@ -126,35 +114,29 @@ export class YieldClient {
     args: PrepareYieldDepositArgs,
   ): Promise<PreparedYieldDeposit> =>
     normalizeYieldDeposit(
-      await this.http.post<PrepareYieldDepositResponseWire>(
-        `${basePath(args)}/deposit/prepare`,
-        {
-          wallet: this.wallet(args),
-          lamports: normalizeAmount(args.amount),
-          validatorVoteAddress: args.validatorVoteAddress,
-          positionSeed: args.positionSeed,
-        },
-      ),
+      await this.http.post<unknown>(`${basePath(args)}/deposit/prepare`, {
+        wallet: this.wallet(args),
+        lamports: normalizeAmount(args.amount),
+        validatorVoteAddress: args.validatorVoteAddress,
+        positionSeed: args.positionSeed,
+      }),
     );
 
   /** Deactivate a whole position, or split part of an active one and deactivate that. */
   exit = async (args: PrepareYieldExitArgs): Promise<PreparedYieldExit> =>
     normalizeYieldExit(
-      await this.http.post<PrepareYieldExitResponseWire>(
-        `${basePath(args)}/exit/prepare`,
-        {
-          wallet: this.wallet(args),
-          positionAddress: args.positionAddress,
-          ...(args.amount === 'all'
-            ? { all: {} }
-            : {
-                partial: {
-                  lamports: normalizeAmount(args.amount.lamports),
-                  positionSeed: args.amount.positionSeed,
-                },
-              }),
-        },
-      ),
+      await this.http.post<unknown>(`${basePath(args)}/exit/prepare`, {
+        wallet: this.wallet(args),
+        positionAddress: args.positionAddress,
+        ...(args.amount === 'all'
+          ? { all: {} }
+          : {
+              partial: {
+                lamports: normalizeAmount(args.amount.lamports),
+                positionSeed: args.amount.positionSeed,
+              },
+            }),
+      }),
     );
 
   /** Withdraw an inactive position's balance back to the Swig wallet. */
@@ -162,36 +144,36 @@ export class YieldClient {
     args: PrepareYieldWithdrawalArgs,
   ): Promise<PreparedYieldWithdrawal> =>
     normalizeYieldWithdrawal(
-      await this.http.post<PrepareYieldWithdrawalResponseWire>(
-        `${basePath(args)}/withdraw/prepare`,
-        { wallet: this.wallet(args), positionAddress: args.positionAddress },
-      ),
+      await this.http.post<unknown>(`${basePath(args)}/withdraw/prepare`, {
+        wallet: this.wallet(args),
+        positionAddress: args.positionAddress,
+      }),
     );
 
   listOptions = async (args: YieldWalletArgs): Promise<YieldOption[]> =>
     normalizeYieldOptions(
-      await this.http.get<ListYieldOptionsResponseWire>(
+      await this.http.get<unknown>(
         `${basePath(args)}/options?${this.query(args)}`,
       ),
     );
 
   listPositions = async (args: YieldPageArgs): Promise<YieldPositionsPage> =>
     normalizeYieldPositions(
-      await this.http.get<ListYieldPositionsResponseWire>(
+      await this.http.get<unknown>(
         `${basePath(args)}/positions?${this.query(args, page(args))}`,
       ),
     );
 
   getSummary = async (args: YieldWalletArgs): Promise<YieldSummary> =>
     normalizeYieldSummary(
-      await this.http.get<GetYieldSummaryResponseWire>(
+      await this.http.get<unknown>(
         `${basePath(args)}/summary?${this.query(args)}`,
       ),
     );
 
   listRewards = async (args: YieldPageArgs): Promise<YieldRewardsPage> =>
     normalizeYieldRewards(
-      await this.http.get<ListYieldRewardsResponseWire>(
+      await this.http.get<unknown>(
         `${basePath(args)}/rewards?${this.query(args, page(args))}`,
       ),
     );
@@ -205,7 +187,7 @@ export class YieldClient {
       throw new Error('horizonDays must be an integer between 1 and 365');
     }
     return normalizeYieldProjection(
-      await this.http.get<EstimateYieldResponseWire>(
+      await this.http.get<unknown>(
         `${basePath(args)}/estimate?${this.query(args, {
           validatorVoteAddress: args.validatorVoteAddress,
           principalLamports: normalizeAmount(args.principal),

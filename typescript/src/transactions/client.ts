@@ -199,6 +199,12 @@ function preparedTransactionKindToWire(kind: PreparedTransaction['kind']) {
       return 'PREPARED_TRANSACTION_KIND_CONFIGURE_RECOVERY';
     case 'create-participant-set':
       return 'PREPARED_TRANSACTION_KIND_CREATE_PARTICIPANT_SET';
+    case 'yield-deposit':
+      return 'PREPARED_TRANSACTION_KIND_YIELD_DEPOSIT';
+    case 'yield-exit':
+      return 'PREPARED_TRANSACTION_KIND_YIELD_EXIT';
+    case 'yield-withdrawal':
+      return 'PREPARED_TRANSACTION_KIND_YIELD_WITHDRAWAL';
     case undefined:
       return undefined;
   }

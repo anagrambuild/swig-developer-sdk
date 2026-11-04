@@ -412,14 +412,12 @@ class YieldClient:
             reward = _mapping(item, "Yield reward")
             rewards.append(
                 YieldReward(
-                    swig_config_address=_optional(
+                    swig_config_address=_required(
                         reward, "swigConfigAddress", "swig_config_address"
-                    )
-                    or "",
-                    position_address=_optional(
+                    ),
+                    position_address=_required(
                         reward, "positionAddress", "position_address"
-                    )
-                    or "",
+                    ),
                     amount_lamports=_lamports(
                         reward, "amountLamports", "amount_lamports"
                     ),
@@ -523,7 +521,11 @@ def _mapping(value: object, label: str) -> Mapping[str, object]:
 
 
 def _list(value: object) -> list[object]:
-    return list(value) if isinstance(value, list) else []
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise SwigResponseError("Yield collection must be an array")
+    return list(value)
 
 
 def _pick(value: Mapping[str, object], *keys: str) -> object:
@@ -535,7 +537,11 @@ def _pick(value: Mapping[str, object], *keys: str) -> object:
 
 def _optional(value: Mapping[str, object], *keys: str) -> str | None:
     picked = _pick(value, *keys)
-    return picked if isinstance(picked, str) and picked else None
+    if picked is None or picked == "":
+        return None
+    if not isinstance(picked, str):
+        raise SwigResponseError(f"Yield {keys[0]} must be a string")
+    return picked
 
 
 def _required(value: Mapping[str, object], *keys: str) -> str:
@@ -547,17 +553,32 @@ def _required(value: Mapping[str, object], *keys: str) -> str:
 
 def _lamports(value: Mapping[str, object], *keys: str) -> str:
     picked = _pick(value, *keys)
-    return "0" if picked is None else str(picked)
+    if picked is None:
+        return "0"
+    if isinstance(picked, bool):
+        raise SwigResponseError("Yield lamports must be an unsigned 64-bit integer")
+    if isinstance(picked, int) and 0 <= picked <= 0xFFFFFFFFFFFFFFFF:
+        return str(picked)
+    if (
+        isinstance(picked, str)
+        and picked.isascii()
+        and picked.isdigit()
+        and int(picked) <= 0xFFFFFFFFFFFFFFFF
+    ):
+        return picked
+    raise SwigResponseError("Yield lamports must be an unsigned 64-bit integer")
 
 
 def _int(value: object) -> int:
-    if isinstance(value, bool):
+    if value is None:
         return 0
-    if isinstance(value, int):
+    if isinstance(value, bool):
+        raise SwigResponseError("Yield integer must fit in uint32")
+    if isinstance(value, str) and value.isascii() and value.isdigit():
+        value = int(value)
+    if isinstance(value, int) and 0 <= value <= 0xFFFFFFFF:
         return value
-    if isinstance(value, str) and value.isdigit():
-        return int(value)
-    return 0
+    raise SwigResponseError("Yield integer must fit in uint32")
 
 
 def _transaction(value: Mapping[str, object]) -> PreparedTransaction:
@@ -568,13 +589,13 @@ def _transaction(value: Mapping[str, object]) -> PreparedTransaction:
 
 
 def _rate(value: object) -> YieldRate | None:
-    if not isinstance(value, Mapping):
+    if value is None:
         return None
+    value = _mapping(value, "Yield rate")
     return YieldRate(
-        validator_vote_address=_optional(
+        validator_vote_address=_required(
             value, "validatorVoteAddress", "validator_vote_address"
-        )
-        or "",
+        ),
         estimated_net_apr_bps=_int(
             _pick(value, "estimatedNetAprBps", "estimated_net_apr_bps")
         ),
@@ -585,8 +606,10 @@ def _rate(value: object) -> YieldRate | None:
 
 def _option(value: Mapping[str, object]) -> YieldOption:
     accepts = _pick(value, "acceptsDeposits", "accepts_deposits")
+    if accepts is not None and not isinstance(accepts, bool):
+        raise SwigResponseError("Yield acceptsDeposits must be a boolean")
     return YieldOption(
-        vote_address=_optional(value, "voteAddress", "vote_address") or "",
+        vote_address=_required(value, "voteAddress", "vote_address"),
         name=_optional(value, "name") or "",
         accepts_deposits=accepts is True,
         rate=_rate(value.get("rate")),
@@ -607,10 +630,11 @@ _POSITION_STATES: dict[str, YieldPositionState] = {
 
 def _position(value: Mapping[str, object]) -> YieldPosition:
     return YieldPosition(
-        swig_config_address=_optional(value, "swigConfigAddress", "swig_config_address")
-        or "",
-        wallet_address=_optional(value, "walletAddress", "wallet_address") or "",
-        position_address=_optional(value, "positionAddress", "position_address") or "",
+        swig_config_address=_required(
+            value, "swigConfigAddress", "swig_config_address"
+        ),
+        wallet_address=_required(value, "walletAddress", "wallet_address"),
+        position_address=_required(value, "positionAddress", "position_address"),
         validator_vote_address=_optional(
             value, "validatorVoteAddress", "validator_vote_address"
         ),
@@ -628,14 +652,17 @@ def _position(value: Mapping[str, object]) -> YieldPosition:
 def normalize_role_action(value: object) -> AddRoleAction:
     """Decode a transcoded ``api_transaction.v1.AddRoleAction`` oneof."""
     action = _mapping(value, "Role action")
-    name, body = next(((k, v) for k, v in action.items() if v is not None), ("", {}))
+    variants = [(k, v) for k, v in action.items() if v is not None]
+    if len(variants) != 1:
+        raise SwigResponseError("Yield role action must contain one variant")
+    name, body = variants[0]
     fields = _mapping(body, "Role action body")
 
     def amount(camel: str, snake: str) -> str:
         return _lamports(fields, camel, snake)
 
     def text(camel: str, snake: str) -> str:
-        return _optional(fields, camel, snake) or ""
+        return _required(fields, camel, snake)
 
     match name:
         case "all":
@@ -683,20 +710,46 @@ def normalize_role_action(value: object) -> AddRoleAction:
 def normalize_yield_role(response: object) -> YieldRoleResult:
     body = _mapping(response, "Yield role response")
     existing = body.get("existing")
-    if isinstance(existing, Mapping):
+    create = body.get("create")
+    if existing is not None and create is not None:
+        raise SwigResponseError("Yield role response has both existing and create")
+    if existing is not None:
+        existing = _mapping(existing, "Existing yield role")
         role_id = _pick(existing, "roleId", "role_id")
-        if not isinstance(role_id, int):
+        if role_id is None:
             raise SwigResponseError("Yield role response is missing roleId")
         return ExistingYieldRole(
-            role_id=role_id,
+            role_id=_int(role_id),
             actions=[normalize_role_action(a) for a in _list(existing.get("actions"))],
         )
-    create = body.get("create")
-    if isinstance(create, Mapping):
+    if create is not None:
+        create = _mapping(create, "Yield role creation")
         authority = _pick(create, "yieldAuthority", "yield_authority")
         return PreparedYieldRoleCreation(
             transaction=_transaction(create),
-            yield_authority=_mapping(authority, "Yield role authority"),
+            yield_authority=_yield_authority(authority),
             actions=[normalize_role_action(a) for a in _list(create.get("actions"))],
         )
     raise SwigResponseError("Yield role response has neither existing nor create")
+
+
+def _yield_authority(value: object) -> Mapping[str, object]:
+    wire = _mapping(value, "Yield role authority")
+    variants = [(k, v) for k, v in wire.items() if v is not None]
+    if len(variants) != 1:
+        raise SwigResponseError("Yield authority must contain one variant")
+    name, value_body = variants[0]
+    body = _mapping(value_body, "Yield authority body")
+    if name in ("ed25519", "secp256k1", "secp256r1"):
+        return {name: {"publicKey": _required(body, "publicKey", "public_key")}}
+    if name in ("participantSet", "participant_set"):
+        participant: dict[str, object] = {
+            "participantSetAddress": _required(
+                body, "participantSetAddress", "participant_set_address"
+            )
+        }
+        role_id = _pick(body, "roleId", "role_id")
+        if role_id is not None:
+            participant["roleId"] = _int(role_id)
+        return {"participantSet": participant}
+    raise SwigResponseError("Unsupported yield authority")
