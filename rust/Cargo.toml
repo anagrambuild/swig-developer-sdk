@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["sdk"]
+members = ["sdk", "examples"]
 default-members = ["sdk"]
 
 [workspace.package]

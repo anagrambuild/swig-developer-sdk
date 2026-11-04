@@ -22,7 +22,10 @@ export type PreparedTransactionKind =
   | 'configure-recovery'
   | 'create-participant-set'
   | 'x402-payment'
-  | 'set-rent-claimer';
+  | 'set-rent-claimer'
+  | 'yield-deposit'
+  | 'yield-exit'
+  | 'yield-withdrawal';
 export type ProtoPreparedTransactionKind =
   | 'PREPARED_TRANSACTION_KIND_UNSPECIFIED'
   | 'PREPARED_TRANSACTION_KIND_CREATE_SWIG_WALLET'
@@ -30,7 +33,10 @@ export type ProtoPreparedTransactionKind =
   | 'PREPARED_TRANSACTION_KIND_CONFIGURE_RECOVERY'
   | 'PREPARED_TRANSACTION_KIND_CREATE_PARTICIPANT_SET'
   | 'PREPARED_TRANSACTION_KIND_X402_PAYMENT'
-  | 'PREPARED_TRANSACTION_KIND_SET_RENT_CLAIMER';
+  | 'PREPARED_TRANSACTION_KIND_SET_RENT_CLAIMER'
+  | 'PREPARED_TRANSACTION_KIND_YIELD_DEPOSIT'
+  | 'PREPARED_TRANSACTION_KIND_YIELD_EXIT'
+  | 'PREPARED_TRANSACTION_KIND_YIELD_WITHDRAWAL';
 export type PreparedTransactionKindWire =
   PreparedTransactionKind | ProtoPreparedTransactionKind | number;
 

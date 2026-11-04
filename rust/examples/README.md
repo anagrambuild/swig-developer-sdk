@@ -1,0 +1,268 @@
+# Rust SDK examples
+
+9 standalone flows: 7 runnable Cargo examples and 2 compile-only async functions.
+Keygen is a separate utility binary. The package is unpublished;
+the SDK remains the default workspace member.
+
+Each flow lives in `src/` with its own imports, configuration, and SDK calls.
+Runnable flows have thin CLI runners in `examples/`.
+Signer loading and transaction construction stay in each signing flow.
+
+## Choose a flow
+
+| Source | Entry point | Flow |
+| --- | --- | --- |
+| [wallet_reads.rs](src/wallet_reads.rs) | `--example wallet_reads` | Read roles, balances, history, and optionally a policy |
+| [ed25519_transfer.rs](src/ed25519_transfer.rs) | `--example ed25519_transfer` | Create or reuse a wallet, fund if needed, transfer SOL, sponsor, confirm |
+| [secp256r1_transfer.rs](src/secp256r1_transfer.rs) | `--example secp256r1_transfer` | Create or reuse a secp256r1 wallet, sign a SOL transfer, sponsor, confirm |
+| [token_transfer.rs](src/token_transfer.rs) | `--example token_transfer` | Create or reuse a wallet, transfer funded tokens, sponsor, confirm |
+| [batch_transfer.rs](src/batch_transfer.rs) | `--example batch_transfer` | Prepare SOL and token transfers together, sign, sponsor, confirm |
+| [custom_transaction.rs](src/custom_transaction.rs) | `--example custom_transaction` | Build a Memo instruction locally, prepare through Swig, sign, sponsor, confirm |
+| [participant_transfer.rs](src/participant_transfer.rs) | `--example participant_transfer` | Create an Ed25519/secp256r1 set, grant a role, collect approvals, transfer |
+| [swap.rs](src/swap.rs) | Compile-only | Swap funded tokens through a configured Jupiter backend, sponsor, confirm |
+| [sponsor_bundle.rs](src/sponsor_bundle.rs) | Compile-only | Build two native SOL transfers and a Jito tip, sponsor a Mainnet bundle, confirm |
+
+## Setup
+
+Use Rust 1.87 or later. From the repository root:
+
+```sh
+cd rust/examples
+cp .env.example .env
+```
+
+Keep real credentials in the untracked `.env`. The commands below run from
+`rust/examples` unless they explicitly name another working directory.
+
+Each flow loads `.env` and reads only the inputs it needs. Shell variables
+take precedence. This loading belongs to the examples; the SDK receives
+explicit configuration and signers from its caller.
+
+The hosted API is the default. Set `SWIG_API_KEY` for hosted calls.
+Leave optional values absent when using defaults; an empty value is
+not treated as an absent setting.
+
+Transaction flows also require `SWIG_RPC_URL`. API preparation and RPC
+must use the same chain. For internal local testing, explicitly configure
+matching `SWIG_API_URL` and `SWIG_RPC_URL` endpoints; choosing `devnet`
+alone selects neither a local API nor a local RPC.
+
+## Keys
+
+For signing flows, generate throwaway keys with the
+[keygen utility](src/bin/keygen.rs):
+
+```sh
+cargo +1.87.0 run --locked -p swig-developer-sdk-examples --bin keygen
+```
+
+Keygen prints three private-key assignments: `SWIG_ED25519_PRIVATE_KEY`,
+`SWIG_SECP256K1_PRIVATE_KEY`, and `SWIG_SECP256R1_PRIVATE_KEY`.
+It writes no files. Keep its terminal output private and copy the keys you
+need into your own untracked `.env`. Preserve saved keys when reusing their
+wallets. Never commit private keys or the real `.env`, and never use these
+throwaway keys with production funds.
+
+Wallet reads need no signing key; skip key generation for that flow.
+
+## Configuration
+
+The [.env.example](.env.example) lists the available settings.
+Set only the selected flow's inputs.
+
+| Variable | Meaning |
+| --- | --- |
+| `SWIG_API_KEY` | Required for hosted SDK calls |
+| `SWIG_NETWORK` | Defaults to `devnet`; bundle requires explicit `mainnet` |
+| `SWIG_API_URL` | Optional override; leave absent for the SDK's hosted API default |
+| `SWIG_CONFIG_ADDRESS`, `SWIG_WALLET_ADDRESS` | Existing config and optional matching wallet; reads require a config |
+| `SWIG_ED25519_PRIVATE_KEY` | 64-byte Solana keypair encoded as 128 hex characters |
+| `SWIG_SECP256K1_PRIVATE_KEY`, `SWIG_SECP256R1_PRIVATE_KEY` | Each is a 32-byte secret encoded as 64 hex characters |
+| `SWIG_RPC_URL` | Required for transaction flows: a nonempty HTTP(S) RPC URL on the selected chain |
+| `SWIG_DESTINATION`, `SWIG_AMOUNT_LAMPORTS` | Separate transfer recipient and SOL amount; default 1,000,000 lamports |
+| `SWIG_TOKEN_MINT`, `SWIG_TOKEN_AMOUNT_RAW` | Token mint and amount in base units; amount defaults to one raw unit |
+| `SWIG_SWAP_INPUT_MINT`, `SWIG_SWAP_OUTPUT_MINT`, `SWIG_SWAP_AMOUNT_RAW` | Swap pair and input amount in base units; amount defaults to one raw unit |
+
+## Wallet reuse and funding
+
+For flows that create or reuse a wallet, an absent `SWIG_CONFIG_ADDRESS`
+creates one from the loaded authority. A supplied config must already
+exist and be usable by that authority; errors never fall back to creation.
+Save the printed config and wallet addresses to reuse the wallet.
+`SWIG_WALLET_ADDRESS` is optional, must match the config's wallet, and
+cannot be supplied alone. Reads always require an existing config.
+
+Choose a recipient you control through `SWIG_DESTINATION`. On Devnet,
+transfer flows generate a temporary recipient when it is absent; its
+private key is not retained, so transferred funds cannot be recovered
+through that generated key. Recipients must differ from the requester,
+wallet, and config addresses.
+
+The paymaster supplies the fee payer and transaction fees. Fund the
+wallet with the SOL or tokens being transferred. No Mainnet airdrop is
+attempted; Mainnet transfers require an explicit recipient.
+
+## Read an existing wallet
+
+Set `SWIG_API_KEY` and `SWIG_CONFIG_ADDRESS`. Reads need no RPC URL or
+signing key and never create a wallet. An optional `SWIG_WALLET_ADDRESS`
+must match the configured wallet. Wallet reads rely on the backend's indexer.
+
+```sh
+cargo +1.87.0 run --locked -p swig-developer-sdk-examples --example wallet_reads
+cargo +1.87.0 run --locked -p swig-developer-sdk-examples --example wallet_reads -- --policy-id YOUR_POLICY_ID
+```
+
+The runner passes the optional policy ID to
+`wallet_reads::example(policy_id: Option<String>)`; no extra env variable is needed.
+
+## Run an Ed25519 SOL transfer
+
+Set `SWIG_API_KEY`, `SWIG_RPC_URL`, and `SWIG_ED25519_PRIVATE_KEY`.
+This flow is Devnet-only. It creates a wallet when `SWIG_CONFIG_ADDRESS`
+is absent, or reuses that existing wallet when supplied.
+
+```sh
+cargo +1.87.0 run --locked -p swig-developer-sdk-examples --example ed25519_transfer
+```
+
+The default transfer is 1,000,000 lamports. When the wallet needs SOL,
+the flow requests exactly 2 SOL, confirms the airdrop, and rechecks the
+balance including rent. A faucet failure or insufficient balance stops it.
+
+## Run a secp256r1 SOL transfer
+
+Set `SWIG_API_KEY`, `SWIG_RPC_URL`, and `SWIG_SECP256R1_PRIVATE_KEY`.
+This Devnet-only flow uses a raw secp256r1 key, not a browser passkey
+or WebAuthn ceremony. It follows the same wallet reuse, recipient,
+1,000,000-lamport default, and fixed 2 SOL funding rules as Ed25519.
+
+```sh
+cargo +1.87.0 run --locked -p swig-developer-sdk-examples --example secp256r1_transfer
+```
+
+## Run a token transfer
+
+Set `SWIG_API_KEY`, `SWIG_RPC_URL`, `SWIG_ED25519_PRIVATE_KEY`, and
+`SWIG_TOKEN_MINT`. Fund the wallet with at least `SWIG_TOKEN_AMOUNT_RAW`
+units of that mint; the default is one raw unit. If a wallet is created,
+fund its printed wallet address, save its `SWIG_CONFIG_ADDRESS`, and rerun.
+Devnet is the default; Mainnet requires an explicit recipient.
+
+```sh
+cargo +1.87.0 run --locked -p swig-developer-sdk-examples --example token_transfer
+```
+
+## Run a batch transfer
+
+Set the same inputs as the token transfer and fund the selected token.
+This flow also transfers `SWIG_AMOUNT_LAMPORTS` SOL, defaulting to
+1,000,000 lamports. On Devnet it requests exactly 2 SOL when needed,
+confirms the airdrop, and checks the balance including rent.
+For Mainnet, fund the wallet with SOL and supply an explicit recipient;
+no Mainnet airdrop is attempted.
+
+```sh
+cargo +1.87.0 run --locked -p swig-developer-sdk-examples --example batch_transfer
+```
+
+## Run a custom transaction
+
+Set `SWIG_API_KEY`, `SWIG_RPC_URL`, and `SWIG_ED25519_PRIVATE_KEY`.
+This flow creates or reuses a wallet and submits a Memo instruction.
+The hosted API and Devnet are the defaults.
+
+```sh
+cargo +1.87.0 run --locked -p swig-developer-sdk-examples --example custom_transaction
+```
+
+## Run a participant-set transfer
+
+Set `SWIG_API_KEY`, `SWIG_RPC_URL`, `SWIG_ED25519_PRIVATE_KEY`, and
+`SWIG_SECP256R1_PRIVATE_KEY`. This Devnet-only flow requires deployed
+ParticipantSet support in both the backend and Swig program.
+
+Every run creates a fresh 2-of-2 set and grants it a new `All` role,
+including when reusing a wallet. The Ed25519 manager also supplies the
+first participant's approval. The second participant uses the SDK's
+software WebAuthn envelope; the deployed backend and program must support
+that format. It is not a browser ceremony or a standalone raw P-256 signature.
+
+Wallet reuse, recipient selection, the 1,000,000-lamport default, and fixed
+2 SOL funding when needed follow the Ed25519 transfer rules.
+
+```sh
+cargo +1.87.0 run --locked -p swig-developer-sdk-examples --example participant_transfer
+```
+
+## Adapt a Jupiter swap
+
+This compile-only flow needs `SWIG_API_KEY`, `SWIG_RPC_URL`,
+`SWIG_ED25519_PRIVATE_KEY`, `SWIG_SWAP_INPUT_MINT`, and
+`SWIG_SWAP_OUTPUT_MINT`. `SWIG_SWAP_AMOUNT_RAW` defaults to one raw unit.
+It creates or reuses a wallet; fund that wallet's input token account before
+swapping. SOL input must already be wrapped.
+
+The backend needs configured Jupiter access and liquidity on the selected
+chain. Ordinary local/Devnet environments may have no suitable routes.
+Invoke `swig_developer_sdk_examples::swap::example().await` explicitly
+after satisfying these prerequisites.
+
+## Adapt bundle sponsorship
+
+This compile-only flow requires `SWIG_NETWORK=mainnet`, `SWIG_API_KEY`,
+`SWIG_RPC_URL`, `SWIG_ED25519_PRIVATE_KEY`, and an explicitly chosen
+`SWIG_DESTINATION`. It spends SOL directly from the funded Ed25519 signer
+and creates no Swig wallet. Keep the signer, recipient, and API paymaster distinct.
+
+Each of the two native transfers uses `SWIG_AMOUNT_LAMPORTS`, defaulting
+to 1,000,000 lamports. Fund the signer for both transfers and rent.
+The API paymaster supplies fees and a 1,000-lamport Jito tip, included before
+signing. Review the source's fixed tip recipient before adapting the flow.
+
+Invoke `swig_developer_sdk_examples::sponsor_bundle::example().await`
+explicitly. Preserve the ordered signed bundle and its reported IDs;
+reconcile an uncertain submission before rebuilding or rerunning.
+
+## Runner usage
+
+Each runner supports `--help` and rejects unknown arguments before
+loading configuration or making requests. For example:
+
+```sh
+cargo +1.87.0 run --locked -p swig-developer-sdk-examples --example wallet_reads -- --help
+```
+
+Signing-flow `example()` functions take no arguments.
+
+Compile-only functions are built without executing their live operations.
+Calling them with valid settings can create wallets or spend funds.
+Copy a whole flow file into your application or invoke it explicitly:
+
+```rust
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> anyhow::Result<()> {
+    swig_developer_sdk_examples::swap::example().await
+}
+```
+
+## Submission and verification
+
+The examples trust the configured backend's transaction construction.
+They do not independently prove business intent or chain freshness.
+API acceptance is not chain confirmation. Ordinary transfer flows wait
+for a signature and check its success; a timeout can still mean submission
+happened. Keep printed addresses and signatures, and reconcile the original
+attempt before rerunning when its outcome is uncertain.
+
+## Development checks
+
+Check compilation and lints without executing live flows:
+
+```sh
+cargo +1.87.0 check --locked -p swig-developer-sdk-examples --all-targets
+cargo +1.87.0 clippy --locked -p swig-developer-sdk-examples --all-targets -- -D warnings
+```
+
+These commands make no hosted API or RPC calls and do not establish
+live provider or on-chain success.
