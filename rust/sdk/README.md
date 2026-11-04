@@ -56,8 +56,8 @@ for complete configuration, signing, sponsorship, and confirmation flows.
 Merging a new version in `rust/sdk/Cargo.toml` to `main` runs formatting, tests,
 Clippy, and package verification, then publishes to crates.io and creates a
 `rust-v<version>` GitHub release. Update `rust/Cargo.lock` with the version bump.
-An already published version is skipped. The Rust workflow can also be rerun
-manually on `main` to recover a failed release.
+An already published version is skipped. To recover after publication, rerun
+the original failed workflow run so it retains the published commit.
 
 The first publication uses `cargo login`, then
 `cargo publish --locked -p swig-developer-sdk` from `rust/`.
