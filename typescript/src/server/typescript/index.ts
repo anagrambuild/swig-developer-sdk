@@ -10,6 +10,7 @@ import { RampClient } from '../../ramp/index.js';
 import { TransactionsClient } from '../../transactions/index.js';
 import type { SwigClientConfig } from '../../types/index.js';
 import { WalletsClient } from '../../wallets/index.js';
+import { YieldClient } from '../../yield/index.js';
 
 export class SwigClient {
   readonly #http: HttpClient;
@@ -20,6 +21,8 @@ export class SwigClient {
   readonly ramp: RampClient;
   readonly transactions: TransactionsClient;
   readonly wallets: WalletsClient;
+  /** Yield on Swig wallets; native staking is the first method. */
+  readonly yield: YieldClient;
 
   constructor(config: SwigClientConfig) {
     this.defaultNetwork = config.network;
@@ -38,5 +41,6 @@ export class SwigClient {
     this.ramp = new RampClient(this.#http, this.defaultNetwork);
     this.transactions = new TransactionsClient(this.#http, this.defaultNetwork);
     this.wallets = new WalletsClient(this.#http, this.defaultNetwork);
+    this.yield = new YieldClient(this.#http, this.defaultNetwork);
   }
 }
