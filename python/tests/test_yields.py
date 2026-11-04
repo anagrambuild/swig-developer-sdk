@@ -474,3 +474,75 @@ async def test_preserves_yield_kinds_through_approval_compilation(
             )
             assert body(requests[1])["preparedTransaction"]["kind"] == proto
             assert compiled.transaction.kind == kind
+
+
+@pytest.mark.parametrize(
+    "authority,expected",
+    [
+        ({"ed25519": {"publicKey": "key"}}, {"ed25519": {"publicKey": "key"}}),
+        ({"secp256k1": {"public_key": "key"}}, {"secp256k1": {"publicKey": "key"}}),
+        ({"secp256r1": {"publicKey": "key"}}, {"secp256r1": {"publicKey": "key"}}),
+        (
+            {"participantSet": {"participantSetAddress": "set"}},
+            {"participantSet": {"participantSetAddress": "set"}},
+        ),
+        (
+            {"participant_set": {"participant_set_address": "set", "role_id": 0}},
+            {"participantSet": {"participantSetAddress": "set", "roleId": 0}},
+        ),
+    ],
+)
+async def test_reuses_created_yield_authority(
+    authority: object, expected: object
+) -> None:
+    def reply(request: httpx.Request) -> object:
+        if request.url.path.endswith("/role/prepare"):
+            return {"create": {"transaction": PREPARED, "yieldAuthority": authority}}
+        return {
+            "transaction": PREPARED,
+            "positionAddress": POSITION,
+            "validatorVoteAddress": VOTE,
+        }
+
+    swig, requests = client(reply)
+    async with swig:
+        role = await swig.yields.prepare_role(
+            swig_config_address=CONFIG,
+            fee_payer=PAYER,
+            yield_authority={"ed25519": {"public_key": "key"}},
+            validator_vote_address=VOTE,
+            max_deposit=1,
+        )
+        assert isinstance(role, PreparedYieldRoleCreation)
+        await swig.yields.deposit(
+            swig_config_address=CONFIG,
+            fee_payer=PAYER,
+            requester_authority=role.yield_authority,
+            validator_vote_address=VOTE,
+            amount=1,
+            position_seed="deposit",
+        )
+        assert body(requests[1])["wallet"]["requesterAuthority"] == expected
+
+
+@pytest.mark.parametrize(
+    "authority",
+    [
+        {"unsupported": {}},
+        {"ed25519": {}},
+        {"ed25519": {"publicKey": "key"}, "secp256r1": {"publicKey": "key"}},
+    ],
+)
+async def test_rejects_invalid_yield_authority_variants(authority: object) -> None:
+    swig, _ = client(
+        lambda _: {"create": {"transaction": PREPARED, "yieldAuthority": authority}}
+    )
+    async with swig:
+        with pytest.raises(SwigResponseError):
+            await swig.yields.prepare_role(
+                swig_config_address=CONFIG,
+                fee_payer=PAYER,
+                yield_authority={"ed25519": {"public_key": "key"}},
+                validator_vote_address=VOTE,
+                max_deposit=1,
+            )

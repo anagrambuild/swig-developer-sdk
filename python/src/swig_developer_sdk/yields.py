@@ -59,7 +59,7 @@ class PreparedYieldRoleCreation:
     """Unsigned AddRole transaction for the role manager and fee payer."""
 
     transaction: PreparedTransaction
-    yield_authority: Mapping[str, object]
+    yield_authority: WalletAuthority
     actions: list[AddRoleAction]
     type: Literal["create"] = "create"
 
@@ -733,23 +733,28 @@ def normalize_yield_role(response: object) -> YieldRoleResult:
     raise SwigResponseError("Yield role response has neither existing nor create")
 
 
-def _yield_authority(value: object) -> Mapping[str, object]:
+def _yield_authority(value: object) -> WalletAuthority:
     wire = _mapping(value, "Yield role authority")
     variants = [(k, v) for k, v in wire.items() if v is not None]
     if len(variants) != 1:
         raise SwigResponseError("Yield authority must contain one variant")
     name, value_body = variants[0]
     body = _mapping(value_body, "Yield authority body")
-    if name in ("ed25519", "secp256k1", "secp256r1"):
-        return {name: {"publicKey": _required(body, "publicKey", "public_key")}}
+    if name == "ed25519":
+        return {"ed25519": {"publicKey": _required(body, "publicKey", "public_key")}}
+    if name == "secp256k1":
+        return {"secp256k1": {"publicKey": _required(body, "publicKey", "public_key")}}
+    if name == "secp256r1":
+        return {"secp256r1": {"publicKey": _required(body, "publicKey", "public_key")}}
     if name in ("participantSet", "participant_set"):
-        participant: dict[str, object] = {
-            "participantSetAddress": _required(
-                body, "participantSetAddress", "participant_set_address"
-            )
-        }
+        address = _required(body, "participantSetAddress", "participant_set_address")
         role_id = _pick(body, "roleId", "role_id")
-        if role_id is not None:
-            participant["roleId"] = _int(role_id)
-        return {"participantSet": participant}
+        if role_id is None:
+            return {"participantSet": {"participantSetAddress": address}}
+        return {
+            "participantSet": {
+                "participantSetAddress": address,
+                "roleId": _int(role_id),
+            }
+        }
     raise SwigResponseError("Unsupported yield authority")
