@@ -14,6 +14,7 @@ const SECP256R1_PROGRAM_ID = new PublicKey(
 const SWIG_PROGRAM_ID = new PublicKey(
   'swigypWHEksbC64pWKwah1WTeh9JXwx8H1rJHLdbQMB',
 );
+const ADD_AUTHORITY_V1_DISCRIMINATOR = 1;
 const SIGN_V2_DISCRIMINATOR = 11;
 const SECP256R1_AUTHORITY_PAYLOAD_SIZE = 17;
 const SECP256R1_PUBLIC_KEY_SIZE = 33;
@@ -131,18 +132,16 @@ async function applySecp256r1SignatureRequest(
   );
 
   if (signingResult.prefix !== undefined) {
-    const signV2InstructionIndex = findFollowingSignV2InstructionIndex(
+    const swigInstructionIndex = findFollowingSecp256r1SwigInstructionIndex(
       transaction,
       secpInstructionIndex,
     );
     setInstructionData(
       transaction,
-      signV2InstructionIndex,
-      patchSignV2AuthorityPayloadPrefix(
-        getInstructionData(transaction, signV2InstructionIndex),
+      swigInstructionIndex,
+      patchSecp256r1AuthorityPayloadPrefix(
+        getInstructionData(transaction, swigInstructionIndex),
         signingResult.prefix,
-        SECP256R1_AUTHORITY_PAYLOAD_SIZE,
-        'secp256r1',
       ),
     );
   }
@@ -274,7 +273,7 @@ function findSecp256r1InstructionIndex(
   throw new Error('Matching secp256r1 signature instruction not found');
 }
 
-function findFollowingSignV2InstructionIndex(
+function findFollowingSecp256r1SwigInstructionIndex(
   transaction: SwigTransaction,
   secpInstructionIndex: number,
 ): number {
@@ -283,21 +282,21 @@ function findFollowingSignV2InstructionIndex(
     index < instructionCount(transaction);
     index++
   ) {
-    if (!getInstructionProgramId(transaction, index).equals(SWIG_PROGRAM_ID)) {
-      continue;
-    }
-
+    const programId = getInstructionProgramId(transaction, index);
+    if (programId.equals(SECP256R1_PROGRAM_ID)) break;
+    if (!programId.equals(SWIG_PROGRAM_ID)) continue;
+    const discriminator = readU16(getInstructionData(transaction, index), 0);
     if (
-      readU16(getInstructionData(transaction, index), 0) ===
-      SIGN_V2_DISCRIMINATOR
-    ) {
+      discriminator === SIGN_V2_DISCRIMINATOR ||
+      discriminator === ADD_AUTHORITY_V1_DISCRIMINATOR
+    )
       return index;
-    }
+    throw new Error(
+      'Unsupported Swig instruction following secp256r1 precompile',
+    );
   }
 
-  throw new Error(
-    'Swig SignV2 instruction following secp256r1 precompile not found',
-  );
+  throw new Error('Swig instruction following secp256r1 precompile not found');
 }
 
 function findSignV2InstructionIndexForSecp256k1(
@@ -401,26 +400,35 @@ function parseSecp256r1SignatureInstruction(data: Uint8Array):
   };
 }
 
-function patchSignV2AuthorityPayloadPrefix(
+function patchSecp256r1AuthorityPayloadPrefix(
   instructionData: Uint8Array,
   prefix: Uint8Array,
-  fixedPayloadSize: number,
-  scheme: string,
 ): Uint8Array {
-  const authorityPayloadOffset =
-    getSignV2AuthorityPayloadOffset(instructionData);
-
-  if (instructionData.length < authorityPayloadOffset + fixedPayloadSize) {
-    throw new Error(
-      `Swig SignV2 instruction is missing ${scheme} authority payload`,
-    );
+  let authorityPayloadOffset: number;
+  switch (readU16(instructionData, 0)) {
+    case SIGN_V2_DISCRIMINATOR:
+      if (instructionData.length < 8)
+        throw new Error('Truncated SignV2 header');
+      authorityPayloadOffset = getSignV2AuthorityPayloadOffset(instructionData);
+      break;
+    case ADD_AUTHORITY_V1_DISCRIMINATOR:
+      if (instructionData.length < 16)
+        throw new Error('Truncated AddAuthorityV1 header');
+      // Header, new authority bytes, permissions, then the manager's authority payload.
+      authorityPayloadOffset =
+        16 + readU16(instructionData, 2) + readU16(instructionData, 4);
+      break;
+    default:
+      throw new Error('Unsupported Swig instruction for secp256r1 signing');
   }
-
-  const fixedPayloadEnd = authorityPayloadOffset + fixedPayloadSize;
+  const fixedPayloadEnd =
+    authorityPayloadOffset + SECP256R1_AUTHORITY_PAYLOAD_SIZE;
+  if (instructionData.length < fixedPayloadEnd) {
+    throw new Error('Swig instruction is missing secp256r1 authority payload');
+  }
   const patched = new Uint8Array(fixedPayloadEnd + prefix.length);
   patched.set(instructionData.slice(0, fixedPayloadEnd));
   patched.set(prefix, fixedPayloadEnd);
-
   return patched;
 }
 

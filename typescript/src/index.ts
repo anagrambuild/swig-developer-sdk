@@ -13,6 +13,8 @@ export { SwigClient } from './server/typescript/index.js';
 export { TransactionsClient } from './transactions/index.js';
 export { WalletHandle, WalletsClient } from './wallets/index.js';
 export { createX402Payment } from './x402/index.js';
+export { YieldClient } from './yield/index.js';
+export type { BoundYieldClient } from './yield/index.js';
 
 export type {
   BuildOneBusinessGrantAccessUrlArgs,
@@ -41,6 +43,7 @@ export type {
   CryptoAmountInput,
   CryptoAsset,
   DirectWalletAuthority,
+  EstimateYieldArgs,
   ExecuteRecoveryArgs,
   FiatAmount,
   FiatAmountInput,
@@ -63,11 +66,18 @@ export type {
   PrepareRampTransferArgs,
   PrepareRecoverySetupArgs,
   PrepareX402PaymentOptions,
+  PrepareYieldDepositArgs,
+  PrepareYieldExitArgs,
+  PrepareYieldRoleArgs,
+  PrepareYieldWithdrawalArgs,
   PreparedRampTransfer,
   PreparedRecoverySetupResult,
   PreparedTransaction,
   PreparedTransactionWire,
   PreparedTransactionsResult,
+  PreparedYieldDeposit,
+  PreparedYieldExit,
+  PreparedYieldWithdrawal,
   RampAssetOption,
   RampBuyOrder,
   RampBuyQuote,
@@ -116,4 +126,18 @@ export type {
   WalletX402Client,
   X402PaymentSubmission,
   X402PreparationResult,
+  YieldExitAmount,
+  YieldOption,
+  YieldPageArgs,
+  YieldPosition,
+  YieldPositionState,
+  YieldPositionsPage,
+  YieldProjection,
+  YieldRate,
+  YieldReward,
+  YieldRewardsPage,
+  YieldRoleResult,
+  YieldSignerArgs,
+  YieldSummary,
+  YieldWalletArgs,
 } from './types/index.js';

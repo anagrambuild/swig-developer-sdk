@@ -232,3 +232,155 @@ def _authority_payload(data: bytes) -> bytes:
 
 def _u16(data: bytes, offset: int) -> int:
     return struct.unpack_from("<H", data, offset)[0]
+
+
+def _yield_role_fixture() -> dict:
+    import json
+    from pathlib import Path
+
+    return json.loads(
+        (Path(__file__).parents[2] / "test-fixtures/yield-role.json").read_text()
+    )
+
+
+def _yield_role_prepared(transaction: str) -> PreparedTransaction:
+    fixture = _yield_role_fixture()
+    return PreparedTransaction(
+        transaction=transaction,
+        transaction_encoding="base64",
+        network="devnet",
+        signature_requests=(
+            ClientSignatureRequest(
+                scheme="secp256r1",
+                signer=fixture["publicKey"],
+                message_hash=fixture["challenge"],
+                slot=12,
+                counter=34,
+            ),
+        ),
+    )
+
+
+@pytest.mark.parametrize("version", ["legacy", "v0"])
+async def test_sign_yield_role_matches_protocol_builder(version: str) -> None:
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import ec, utils
+
+    from swig_developer_sdk.yields import (
+        PreparedYieldRoleCreation,
+        normalize_yield_role,
+    )
+
+    fixture = _yield_role_fixture()
+    role = normalize_yield_role(
+        {
+            "create": {
+                "transaction": {
+                    "transaction": fixture[version]["unsigned"],
+                    "kind": "PREPARED_TRANSACTION_KIND_ADD_AUTHORITY",
+                    "signatureRequests": [
+                        {
+                            "scheme": "secp256r1",
+                            "signer": fixture["publicKey"],
+                            "messageHash": fixture["challenge"],
+                            "slot": 12,
+                            "counter": 34,
+                        }
+                    ],
+                },
+                "yieldAuthority": {"ed25519": {"publicKey": "new-authority"}},
+                "actions": [{"stakeAll": {}}],
+            }
+        }
+    )
+    assert isinstance(role, PreparedYieldRoleCreation)
+
+    async def sign(challenge: bytes) -> PasskeySigningResult:
+        assert challenge.hex() == fixture["challenge"]
+        return PasskeySigningResult(
+            signature=bytes.fromhex(fixture["signature"]),
+            message=bytes.fromhex(fixture["message"]),
+            prefix=bytes.fromhex(fixture["prefix"]),
+        )
+
+    signed = await sign_prepared_swig_transaction(role.transaction, secp256r1=sign)
+    assert signed.transaction == fixture[version]["signed"]
+    tx = VersionedTransaction.from_bytes(base64.b64decode(signed.transaction))
+    data = bytes(tx.message.instructions[0].data)
+    offset = _u16(data, 2)
+    raw_signature = data[offset : offset + 64]
+    der = utils.encode_dss_signature(
+        int.from_bytes(raw_signature[:32], "big"),
+        int.from_bytes(raw_signature[32:], "big"),
+    )
+    key = ec.EllipticCurvePublicKey.from_encoded_point(
+        ec.SECP256R1(), bytes.fromhex(fixture["publicKey"])
+    )
+    message_offset = _u16(data, 10)
+    key.verify(
+        der,
+        data[message_offset : message_offset + _u16(data, 12)],
+        ec.ECDSA(hashes.SHA256()),
+    )
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "header",
+        "authority-length",
+        "actions-length",
+        "payload",
+        "unsupported",
+        "wrong-program",
+    ],
+)
+async def test_rejects_malformed_yield_role(fault: str) -> None:
+    from swig_developer_sdk.signing import _MutableTransaction
+
+    fixture = _yield_role_fixture()
+    transaction = _MutableTransaction.from_bytes(
+        base64.b64decode(fixture["v0"]["unsigned"])
+    )
+    data = bytearray(transaction.instruction_data(1))
+    if fault == "header":
+        data = data[:15]
+    elif fault == "authority-length":
+        struct.pack_into("<H", data, 2, 65535)
+    elif fault == "actions-length":
+        struct.pack_into("<H", data, 4, 65535)
+    elif fault == "payload":
+        data = data[:-1]
+    elif fault == "unsupported":
+        struct.pack_into("<H", data, 0, 2)
+    if fault == "wrong-program":
+        instruction = transaction.instructions[1]
+        transaction.instructions[1] = CompiledInstruction(
+            0, bytes(data), bytes(instruction.accounts)
+        )
+    else:
+        transaction.set_instruction_data(1, bytes(data))
+    prepared = _yield_role_prepared(
+        base64.b64encode(transaction.serialize()).decode("ascii")
+    )
+    before = prepared.transaction
+
+    async def sign(_: bytes) -> PasskeySigningResult:
+        return PasskeySigningResult(
+            signature=bytes.fromhex(fixture["signature"]),
+            message=bytes.fromhex(fixture["message"]),
+            prefix=bytes.fromhex(fixture["prefix"]),
+        )
+
+    error = (
+        "Truncated AddAuthorityV1 header"
+        if fault == "header"
+        else "Unsupported Swig instruction"
+        if fault == "unsupported"
+        else "Swig instruction following"
+        if fault == "wrong-program"
+        else "missing secp256r1 authority payload"
+    )
+    with pytest.raises(ValueError, match=error):
+        await sign_prepared_swig_transaction(prepared, secp256r1=sign)
+    assert prepared.transaction == before
