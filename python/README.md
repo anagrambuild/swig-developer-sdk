@@ -335,7 +335,7 @@ projection = await swig.yields.estimate(
 ```
 
 Routes, role permissions, pagination, and errors match the TypeScript SDK; see
-`PARITY.md`.
+the [TypeScript Yield guide](../typescript/README.md#yield).
 
 ## Read wallet state
 
