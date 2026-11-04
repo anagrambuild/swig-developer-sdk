@@ -616,12 +616,19 @@ def with_deposit(amount_raw: str) -> dict[str, Any]:
     return with_action({"action": {"liquidityAdd": {**added, "deposits": deposits}}})
 
 
+def with_two_actions() -> dict[str, Any]:
+    payload = LIQUIDITY_ADDS["transactions"][0]["actions"][0]["action"]
+    second = {"positionClose": payload["liquidityAdd"]}
+    return with_action({"action": {**payload, **second}})
+
+
 @pytest.mark.parametrize(
     ("response", "message"),
     [
         (with_action({"protocol": "DEX_PROTOCOL_UNSPECIFIED"}), "invalid protocol"),
         (with_action({"protocol": "DEX_PROTOCOL_UNISWAP"}), "invalid protocol"),
         (with_action({"action": {}}), "an unknown action"),
+        (with_two_actions(), "more than one action"),
         (with_deposit("1.5"), "invalid amountRaw"),
         # Python's \d would match these Arabic-Indic digits; the wire is ASCII.
         (with_deposit("-\u0663\u0664"), "invalid amountRaw"),
@@ -635,6 +642,14 @@ def with_deposit(amount_raw: str) -> dict[str, Any]:
         (with_transaction({"slot": "9" * 5000}), "invalid slot"),
         (with_transaction({"blockTime": 1758649976}), "invalid blockTime"),
         (with_transaction({"blockTime": ""}), "invalid blockTime"),
+        # The next list call would refuse this cursor, so refuse it on the way in.
+        (
+            {
+                "transactions": [],
+                "nextCursor": {"slot": "-1", "transactionSignature": "signature"},
+            },
+            "invalid slot",
+        ),
     ],
 )
 async def test_refuses_a_transaction_outside_the_contract(
@@ -680,6 +695,37 @@ async def test_refuses_a_missing_transaction_cursor_or_position_state() -> None:
         await client(lambda _: unspecified_cursor).dex.positions.list(
             swig_config_address=SWIG
         )
+
+
+@pytest.mark.parametrize(
+    ("position", "message"),
+    [
+        *(
+            (
+                {**CLOSED_POSITIONS["positions"][0], "closed": state},
+                "closed must be an object",
+            )
+            for state in (True, [], "closed")
+        ),
+        (
+            {**OPEN_POSITIONS["positions"][0], "closed": {}},
+            "DEX response has more than one position state",
+        ),
+    ],
+)
+async def test_refuses_a_malformed_or_conflicting_position_state(
+    position: dict[str, Any], message: str
+) -> None:
+    with pytest.raises(SwigResponseError, match=rf"^{message}$"):
+        await read("positions", {"positions": [position]})
+
+
+async def test_reads_a_zero_cursor_slot() -> None:
+    cursor = {"slot": "0", "transactionSignature": "signature"}
+    page = await read("transactions", {"transactions": [], "nextCursor": cursor})
+    assert page.next_cursor == DexTransactionCursor(
+        slot=0, transaction_signature="signature"
+    )
 
 
 async def read(resource: str, reply: object) -> Any:

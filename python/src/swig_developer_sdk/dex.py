@@ -59,6 +59,17 @@ _POSITION_STATUS_WIRE: dict[str, str] = {
     "closed": "POSITION_STATUS_CLOSED",
 }
 
+_ACTION_KINDS = (
+    "swap",
+    "positionOpen",
+    "liquidityAdd",
+    "liquidityRemove",
+    "positionRebalance",
+    "feeClaim",
+    "rewardClaim",
+    "positionClose",
+)
+
 # ASCII digits only: in a str pattern, \d also matches other scripts' digits.
 _SIGNED_INTEGER = re.compile(r"-?[0-9]+")
 _UNSIGNED_INTEGER = re.compile(r"[0-9]+")
@@ -511,7 +522,7 @@ def _normalize_transactions_page(response: object) -> ListDexTransactionsResult:
 def _normalize_transaction_cursor(value: object) -> DexTransactionCursor:
     body = _mapping(value, "DEX cursor")
     return DexTransactionCursor(
-        slot=_integer(body.get("slot"), "slot"),
+        slot=_unsigned_integer(body.get("slot"), "slot"),
         transaction_signature=_required_string(
             body.get("transactionSignature"),
             "transactionSignature",
@@ -560,6 +571,8 @@ def _normalize_transaction_action(value: object) -> DexTransactionAction:
 def _normalize_action(value: object) -> DexAction:
     """The payload's one key names the action, so the type cannot disagree with it."""
     payload = _mapping(_required(value, "action"), "DEX action payload")
+    if sum(payload.get(kind) is not None for kind in _ACTION_KINDS) > 1:
+        raise SwigResponseError("DEX response has more than one action")
     swap = payload.get("swap")
     if swap is not None:
         body = _mapping(swap, "swap")
@@ -762,6 +775,10 @@ def _normalize_position(value: object) -> DexPosition:
         "sourceTransactionSignature",
     )
     opened = body.get("open")
+    # A closed position arrives as an empty object, which is falsy, so test for None.
+    closed = body.get("closed")
+    if opened is not None and closed is not None:
+        raise SwigResponseError("DEX response has more than one position state")
     if opened is not None:
         state = _mapping(opened, "open")
         return DexOpenPosition(
@@ -776,8 +793,6 @@ def _normalize_position(value: object) -> DexPosition:
             ),
             state=_normalize_account_state(state.get("state")),
         )
-    # A closed position arrives as an empty object, which is falsy, so test for None.
-    closed = body.get("closed")
     if closed is not None:
         _mapping(closed, "closed")
         return DexClosedPosition(
