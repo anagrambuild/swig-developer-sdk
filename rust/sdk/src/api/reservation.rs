@@ -107,6 +107,19 @@ pub(crate) async fn prepare_create_reserved(
     }
     validate_prepared_batch_shape(&value)
         .map_err(|_| HttpError::InvalidResponse("malformed reserved wallet creation"))?;
+    let kind = value
+        .get("transactions")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|transactions| transactions.first())
+        .and_then(|transaction| transaction.get("kind"));
+    if !kind.is_some_and(|kind| {
+        kind.as_u64() == Some(1)
+            || kind.as_str() == Some("PREPARED_TRANSACTION_KIND_CREATE_SWIG_WALLET")
+    }) {
+        return Err(HttpError::InvalidResponse(
+            "expected a reserved wallet creation transaction",
+        ));
+    }
     serde_json::from_value(value)
         .map_err(|_| HttpError::InvalidResponse("malformed reserved wallet creation"))
 }

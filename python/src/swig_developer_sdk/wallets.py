@@ -6,6 +6,8 @@ from dataclasses import dataclass, replace
 from typing import Literal, TypeAlias, cast
 from urllib.parse import quote, urlencode
 
+from solders.pubkey import Pubkey
+
 from .common import (
     Amount,
     Ed25519Authority,
@@ -2086,4 +2088,11 @@ def _normalize_wallet_reservation(
     if normalize_network(body.get("network")) != network:
         raise SwigResponseError("Wallet reservation response has mismatched network")
     wallet = wallet_address_info_from_wire(body.get("wallet"))
+    try:
+        Pubkey.from_string(wallet.swig_config_address)
+        Pubkey.from_string(wallet.wallet_address)
+    except ValueError as exc:
+        raise SwigResponseError(
+            "Wallet reservation response has invalid addresses"
+        ) from exc
     return WalletReservation(wallet=replace(wallet, network=network), network=network)

@@ -17,7 +17,12 @@ async fn reservation_and_creation_share_inputs() -> Result<(), Box<dyn Error>> {
     ] {
         for wrapped in [false, true] {
             let client = WalletClient::new(config())?;
-            let transaction = prepared()?;
+            let mut transaction = prepared()?;
+            transaction["kind"] = if wrapped {
+                json!(1)
+            } else {
+                json!("PREPARED_TRANSACTION_KIND_CREATE_SWIG_WALLET")
+            };
             let payload = json!({"wallet": transaction["wallet"], "network": "NETWORK_DEVNET", "transactions": [transaction]});
             let payload = if wrapped {
                 json!({"data": payload})
@@ -131,7 +136,8 @@ async fn reservation_rejects_unsupported_authority_before_http() -> Result<(), B
 
 #[tokio::test]
 async fn reservation_rejects_invalid_responses() -> Result<(), Box<dyn Error>> {
-    let transaction = prepared()?;
+    let mut transaction = prepared()?;
+    transaction["kind"] = json!(1);
     for payload in [
         json!(null),
         json!({}),
@@ -216,6 +222,44 @@ async fn reservation_preserves_transport_errors_without_retrying_post() -> Resul
                 .len(),
             1
         );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn creation_requires_the_wallet_creation_kind() -> Result<(), Box<dyn Error>> {
+    for kind in [
+        None,
+        Some(json!(0)),
+        Some(json!(2)),
+        Some(json!("PREPARED_TRANSACTION_KIND_TRANSFER_SOL")),
+    ] {
+        let client = WalletClient::new(config())?;
+        let mut transaction = prepared()?;
+        let fields = transaction.as_object_mut().ok_or("missing transaction")?;
+        fields.remove("kind");
+        if let Some(kind) = kind {
+            fields.insert("kind".into(), kind);
+        }
+        queue(
+            &client.http,
+            vec![Ok(response(
+                200,
+                json!({"wallet": transaction["wallet"], "network": "NETWORK_DEVNET", "transactions": [transaction]}),
+            ))],
+        )?;
+        assert!(matches!(
+            client
+                .prepare_create_reserved_wallet(PrepareCreateReservedWalletArgs {
+                    root_authority: authority(),
+                    address_options: None,
+                    fee_payer: key(1)
+                })
+                .await,
+            Err(WalletReservationError::InvalidResponse(
+                "expected a reserved wallet creation transaction"
+            ))
+        ));
     }
     Ok(())
 }
