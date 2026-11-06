@@ -71,12 +71,60 @@ import {
   transferSolRequest,
   transferTokenRequest,
 } from './requests.js';
+import {
+  normalizeWalletReservation,
+  reservationRequest,
+  type CreateReservedWalletArgs,
+  type ReserveWalletAddressArgs,
+  type WalletReservation,
+} from './reservation.js';
 
 export class WalletsClient {
   constructor(
     private readonly http: HttpClient,
     private readonly defaultNetwork?: Network,
   ) {}
+
+  /** Derive a reserved address without creating or submitting a transaction. */
+  reserveAddress = async (
+    args: ReserveWalletAddressArgs,
+  ): Promise<WalletReservation> => {
+    const request = reservationRequest(args, this.defaultNetwork);
+    const response = await this.http.post<unknown>(
+      '/transaction/api/wallet/reserve',
+      request,
+    );
+    return normalizeWalletReservation(response, request.network);
+  };
+
+  /** Prepare activation at the same authority/index or salt. Only the fee payer signs. */
+  createReserved = async (
+    args: CreateReservedWalletArgs,
+  ): Promise<CreateWalletResult> => {
+    const request = reservationRequest(args, this.defaultNetwork);
+    if (typeof args.feePayer !== 'string' || !args.feePayer)
+      throw new Error('feePayer is required');
+    const response = await this.http.post<CreateWalletResponseWire>(
+      '/transaction/api/wallet/create-reserved',
+      { ...request, feePayer: args.feePayer },
+    );
+    const reservation = normalizeWalletReservation(response, request.network);
+    const created = normalizeCreateWalletResponse(response);
+    if (
+      created.transactions.length !== 1 ||
+      created.creationTransaction?.kind !== 'create-swig-wallet' ||
+      created.creationTransaction.network !== reservation.network ||
+      created.creationTransaction.signatureRequests.length !== 0 ||
+      created.creationTransaction.participantSetApprovalPlan !== undefined ||
+      created.creationTransaction.wallet?.swigConfigAddress !==
+        reservation.wallet.swigConfigAddress ||
+      created.creationTransaction.wallet?.walletAddress !==
+        reservation.wallet.walletAddress
+    ) {
+      throw new Error('Invalid reserved wallet creation response');
+    }
+    return { ...created, ...reservation };
+  };
 
   create = async (args: CreateWalletArgs): Promise<CreateWalletResult> => {
     const policy = args.policyId

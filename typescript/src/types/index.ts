@@ -1,3 +1,9 @@
+export type {
+  CreateReservedWalletArgs,
+  ReservationAddressOptions,
+  ReserveWalletAddressArgs,
+  WalletReservation,
+} from '../wallets/reservation.js';
 export type * from './common.js';
 export type * from './config.js';
 export type * from './dex.js';
