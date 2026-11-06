@@ -187,6 +187,7 @@ from .wallets import (
     WalletAuthorityKind,
     WalletHandle,
     WalletReference,
+    WalletReservation,
     WalletRolesClient,
     WalletsClient,
 )
@@ -381,6 +382,7 @@ __all__ = [
     "WalletAuthorityKind",
     "WalletHandle",
     "WalletReference",
+    "WalletReservation",
     "WalletRolesClient",
     "WalletX402Client",
     "WalletsClient",

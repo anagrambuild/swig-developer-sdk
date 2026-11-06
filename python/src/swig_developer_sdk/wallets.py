@@ -8,10 +8,14 @@ from urllib.parse import quote, urlencode
 
 from .common import (
     Amount,
+    Ed25519Authority,
     Network,
+    Secp256k1Authority,
+    Secp256r1Authority,
     WalletAddressInfo,
     WalletAuthority,
     normalize_amount,
+    normalize_network,
     require_network,
     to_proto_network,
     wallet_address_info_from_wire,
@@ -26,6 +30,12 @@ from .transactions import (
     normalize_prepared_transactions_result,
 )
 from .x402 import WalletX402Client
+
+
+@dataclass(frozen=True, slots=True)
+class WalletReservation:
+    wallet: WalletAddressInfo
+    network: Network
 
 
 @dataclass(frozen=True, slots=True)
@@ -396,6 +406,60 @@ class WalletsClient:
             network=resolved_network,
             recovery_setup=recovery_setup,
         )
+
+    async def reserve_address(
+        self,
+        *,
+        root_authority: Ed25519Authority | Secp256k1Authority | Secp256r1Authority,
+        account_index: int | None = None,
+        salt: bytes | None = None,
+        network: Network | None = None,
+    ) -> WalletReservation:
+        """Derive an address without a transaction; defaults to index zero."""
+        resolved_network = require_network(network, self._default_network)
+        body = _reservation_request(
+            root_authority, account_index, salt, resolved_network
+        )
+        response = await self._http.post("/transaction/api/wallet/reserve", body)
+        return _normalize_wallet_reservation(response, resolved_network)
+
+    async def create_reserved(
+        self,
+        *,
+        root_authority: Ed25519Authority | Secp256k1Authority | Secp256r1Authority,
+        fee_payer: str,
+        account_index: int | None = None,
+        salt: bytes | None = None,
+        network: Network | None = None,
+    ) -> CreateWalletResult:
+        """Prepare activation with the same authority/options; only the payer signs."""
+        resolved_network = require_network(network, self._default_network)
+        body = _reservation_request(
+            root_authority, account_index, salt, resolved_network
+        )
+        if not isinstance(fee_payer, str) or not fee_payer:
+            raise ValueError("fee_payer is required")
+        body["feePayer"] = fee_payer
+        response = await self._http.post(
+            "/transaction/api/wallet/create-reserved", body
+        )
+        reservation = _normalize_wallet_reservation(response, resolved_network)
+        created = normalize_create_wallet_response(response)
+        transaction = created.creation_transaction
+        if (
+            len(created.transactions) != 1
+            or transaction is None
+            or transaction.kind != "create-swig-wallet"
+            or transaction.network != resolved_network
+            or transaction.signature_requests
+            or transaction.participant_set_approval_plan is not None
+            or transaction.wallet is None
+            or transaction.wallet.swig_config_address
+            != reservation.wallet.swig_config_address
+            or transaction.wallet.wallet_address != reservation.wallet.wallet_address
+        ):
+            raise SwigResponseError("Invalid reserved wallet creation response")
+        return replace(created, wallet=reservation.wallet, network=resolved_network)
 
     async def get_policy(self, policy_id: str) -> Policy:
         """Fetch a hosted policy by ID; the GET uses the client retry policy."""
@@ -1987,3 +2051,39 @@ def _required_int(value: object, field: str) -> int:
     if not number.is_integer():
         raise SwigResponseError(f"Response is missing {field}")
     return int(number)
+
+
+def _reservation_request(
+    root_authority: Ed25519Authority | Secp256k1Authority | Secp256r1Authority,
+    account_index: int | None,
+    salt: bytes | None,
+    network: Network,
+) -> dict[str, object]:
+    authority = wallet_authority_to_wire(root_authority)
+    if len(authority) != 1 or not set(authority).issubset(
+        {"ed25519", "secp256k1", "secp256r1"}
+    ):
+        raise ValueError("root_authority must be a direct signing-key authority")
+    body: dict[str, object] = {
+        "network": to_proto_network(network),
+        "rootAuthority": authority,
+    }
+    if salt is not None:
+        if account_index is not None or not isinstance(salt, bytes) or len(salt) != 32:
+            raise ValueError("provide either a u32 account_index or a 32-byte salt")
+        body["addressOptions"] = {"salt": base64.b64encode(salt).decode("ascii")}
+    elif account_index is not None:
+        if type(account_index) is not int or not 0 <= account_index <= 0xFFFFFFFF:
+            raise ValueError("account_index must be a u32")
+        body["addressOptions"] = {"accountIndex": account_index}
+    return body
+
+
+def _normalize_wallet_reservation(
+    response: object, network: Network
+) -> WalletReservation:
+    body = _mapping(response, "Wallet reservation response")
+    if normalize_network(body.get("network")) != network:
+        raise SwigResponseError("Wallet reservation response has mismatched network")
+    wallet = wallet_address_info_from_wire(body.get("wallet"))
+    return WalletReservation(wallet=replace(wallet, network=network), network=network)
