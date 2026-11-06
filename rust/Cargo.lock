@@ -3677,11 +3677,15 @@ name = "swig-developer-sdk-examples"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "dotenvy",
  "hex",
  "k256",
  "p256",
  "rand_core 0.6.4",
+ "reqwest",
+ "serde",
+ "serde_json",
  "solana-commitment-config",
  "solana-keypair",
  "solana-message",
