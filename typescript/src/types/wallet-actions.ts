@@ -29,6 +29,11 @@ export type AddRoleRequesterAuthority = Extract<
   { ed25519: unknown } | { secp256r1: unknown }
 >;
 
+export type AuthorizationLockRequesterAuthority = Exclude<
+  WalletAuthority,
+  { programExecProof: unknown }
+>;
+
 export type RoleAuthority =
   DirectWalletAuthority | { participantSet: { address: string } };
 
@@ -217,5 +222,43 @@ export interface SetRentClaimerArgs {
   feePayer: string;
   rentClaimer: string;
   requesterAuthority?: Extract<WalletAuthority, { ed25519: unknown }>;
+  network?: Network;
+}
+
+/**
+ * Exactly one expiry form, matching the backend oneof: an absolute slot or a
+ * duration in slots from the current slot.
+ */
+export type AuthorizationLockExpiry =
+  | { expirySlot: Amount; durationSlots?: never }
+  | { durationSlots: Amount; expirySlot?: never };
+
+export type AddAuthorizationLockArgs = {
+  feePayer: string;
+  /** SPL mint to reserve. Omit for native SOL. */
+  mint?: string;
+  /**
+   * Lamports for native SOL, or token base units for an SPL mint. Other roles
+   * can't spend it while the lock is active; the holder's spends capture it.
+   */
+  amount: Amount;
+  /**
+   * Ed25519 (a direct role key or any session role's session key), Secp256k1,
+   * Secp256r1, or a ParticipantSet bound to a ProgramExec role. Secp responses
+   * carry a signature request; ParticipantSet responses carry an approval plan.
+   */
+  requesterAuthority?: AuthorizationLockRequesterAuthority;
+  network?: Network;
+} & AuthorizationLockExpiry;
+
+export interface RemoveAuthorizationLockArgs {
+  feePayer: string;
+  lockId: number;
+  /**
+   * Ed25519 (a direct role key or any session role's session key), Secp256k1,
+   * Secp256r1, or a ParticipantSet bound to a ProgramExec role. Secp responses
+   * carry a signature request; ParticipantSet responses carry an approval plan.
+   */
+  requesterAuthority?: AuthorizationLockRequesterAuthority;
   network?: Network;
 }

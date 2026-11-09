@@ -40,6 +40,11 @@ export interface ListSwigTokenTransactionsArgs extends WalletReadArgs {
   limit?: number;
 }
 
+export interface GetAuthorizationLocksArgs extends WalletReadArgs {
+  /** Also return inactive locks (expired or fully captured) not yet pruned. */
+  includeExpired?: boolean;
+}
+
 export interface SwigUsdBalance {
   swigConfigAddress: string;
   walletAddress: string;
@@ -239,4 +244,50 @@ export interface ListSwigRolesWire {
   wallet_address?: string;
   walletAddress?: string;
   roles?: SwigRoleWire[];
+}
+
+export interface AuthorizationLock {
+  lockId: number;
+  roleId: number;
+  assetAccount: string;
+  /** SPL mint. Absent for native SOL. */
+  mint?: string;
+  /**
+   * Remaining held lamports for native SOL, or token base units, as a decimal
+   * string. The holder's spends capture (lower) it; `"0"` once fully captured.
+   */
+  amount: string;
+  /** Decimal string slot. */
+  expirySlot: string;
+  /** True while unexpired with a non-zero `amount`. */
+  active: boolean;
+}
+
+export interface AuthorizationLockWire {
+  lock_id?: number;
+  lockId?: number;
+  role_id?: number;
+  roleId?: number;
+  asset_account?: string;
+  assetAccount?: string;
+  mint?: string;
+  amount?: string | number;
+  expiry_slot?: string | number;
+  expirySlot?: string | number;
+  active?: boolean;
+}
+
+export interface AuthorizationLocksResult {
+  locks: AuthorizationLock[];
+  /** Decimal string slot the backend read the locks at. */
+  currentSlot: string;
+  nextLockId: number;
+}
+
+export interface AuthorizationLocksWire {
+  locks?: AuthorizationLockWire[];
+  current_slot?: string | number;
+  currentSlot?: string | number;
+  next_lock_id?: number;
+  nextLockId?: number;
 }

@@ -387,6 +387,96 @@ These methods require the backend rent-claimer routes. Python support is
 pending. See the [rent-claimer guide](https://build.onswig.com/developer-sdk/rent-claimers)
 for separate, complete server examples.
 
+### Authorization locks
+
+An authorization lock works like a card authorization hold on part of the
+wallet's SOL or token balance, until an expiry slot:
+
+- While it is active, every other role (including `All` and the owner) can
+  spend only the balance minus the active locks it does not hold.
+- The holding role can spend its locked funds. Each spend from the locked
+  account captures the hold: the program lowers the holder's lock `amount` by
+  the net outflow, oldest lock first.
+- Creating a lock charges no spend limit; the holder's normal limits are
+  charged when it spends. A limited holder's SignV2 fails if its remaining
+  active locks would exceed what its limits still allow.
+- A lock is active while it is unexpired and its `amount` is above zero. A
+  fully captured lock stays stored with `amount` `"0"` and `active: false`.
+
+The creating role can remove its lock at any time, which voids whatever is
+left of it. Once a lock is inactive (expired or fully captured), a role with
+`All`, `AllButManageAuthority`, `ManageAuthority`, or
+`ManageAuthorizationLocks` can prune it too.
+
+```typescript
+const locks = await wallet.getAuthorizationLocks({ includeExpired: true });
+// locks.locks[].lockId, roleId, assetAccount, mint, amount, expirySlot, active
+// locks.currentSlot, locks.nextLockId
+```
+
+The backend reads live chain state. `mint` is absent for native SOL. `amount`
+is what remains of the hold after captures. `amount`, `expirySlot`, and
+`currentSlot` are decimal strings, so values above 2^53 survive. Inactive
+locks (expired or fully captured) are returned only with `includeExpired`.
+
+```typescript
+const prepared = await wallet.addAuthorizationLock({
+  feePayer,
+  mint: usdcMint, // omit for native SOL
+  amount: 25_000_000n, // token base units, or lamports for SOL
+  durationSlots: 9_000, // or expirySlot, never both
+});
+
+const released = await wallet.removeAuthorizationLock({ feePayer, lockId: 0 });
+```
+
+`amount` must be positive, and number inputs must be safe integers; use a
+`bigint` or decimal string for larger values. Pass exactly one of `expirySlot`
+or `durationSlots`. A `mint`, when given, must be a base58 public key. The
+requester's role needs `ManageAuthorizationLocks`, whose `max_duration_slots`
+caps the lock's duration. The program enforces every lock rule; the SDK only
+prepares transactions and reads state.
+
+`requesterAuthority` may be:
+
+- `ed25519`: a direct Ed25519 role key, or the session key of any session
+  role (Ed25519, Secp256k1, Secp256r1, or ProgramExec session). It signs the
+  transaction like any Ed25519 signer, and `signatureRequests` is empty.
+- `secp256k1` or `secp256r1`: a direct role key. The response carries a
+  signature request, which `signPreparedSwigTransaction` fulfills the same way
+  it does for other routes. For secp256k1, the signer receives the
+  64-character hex of `messageHash` (for example through `personal_sign` with
+  `createSecp256k1EvmSigningFn`), and its signature goes into the lock
+  instruction's authority payload. The backend already places the EIP-191
+  prefix after the signature, and the SDK writes the signer's prefix there
+  once, so the bytes stay the same. For secp256r1, the signature goes into the
+  precompile instruction just before the lock.
+- `participantSet` (optionally with `roleId`): a ProgramExec role bound to the
+  set. The response carries `participantSetApprovalPlan`; collect member
+  approvals and call `swig.transactions.compileParticipantSetApprovals`, as in
+  [Configure and use a ParticipantSet](#configure-and-use-a-participantset).
+
+`programExecProof` requesters are rejected before any request is sent.
+
+```typescript
+import { signPreparedSwigTransaction } from '@swig-wallet/developer-sdk/signers';
+
+const prepared = await wallet.addAuthorizationLock({
+  feePayer,
+  amount: 1_000_000_000n,
+  expirySlot,
+  requesterAuthority: { secp256k1: { publicKey: evmPublicKey } },
+});
+const signed = await signPreparedSwigTransaction(prepared, {
+  secp256k1: evmSigningFn, // or secp256r1: passkeySigningFn
+});
+```
+
+Both setters return an unsigned prepared transaction with kind
+`add-authorization-lock` or `remove-authorization-lock`. Fulfill any signature
+requests or compile ParticipantSet approvals, sign with the fee payer (and the
+Ed25519 requester, if that is the requester), then submit it. The POSTs are not retried automatically.
+
 ### Roles
 
 `wallet.listRoles()` returns the on-chain roles attached to the Swig, which is
@@ -869,7 +959,7 @@ const signed = await signPreparedTransaction(prepared, {
 
 Use this for any prepared transaction whose `signatureRequests` contains a
 `secp256r1` request. The same pattern applies to create, transfer, token
-transfer, swap, and ramp transfer.
+transfer, swap, ramp transfer, and authorization locks.
 
 ```typescript
 import {
