@@ -45,3 +45,5 @@ pub(crate) mod prepare_ramp_transfer;
 pub(crate) mod submit_ramp_transfer;
 
 pub(crate) mod prepare_x402_payment;
+
+pub(crate) mod reservation;

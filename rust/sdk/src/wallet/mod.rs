@@ -40,3 +40,9 @@ pub use prepare::{PrepareOperation, PrepareTransfersArgs, PrepareTransfersError}
 pub use swap::{
     ComputeUnitPricePercentile, PrepareSwapArgs, PrepareSwapError, SwapOptions, SwapQuoteMode,
 };
+
+mod reservation;
+pub use reservation::{
+    PrepareCreateReservedWalletArgs, ReservationAddressOptions, ReserveWalletAddressArgs,
+    WalletReservation, WalletReservationError,
+};

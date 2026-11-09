@@ -5,7 +5,7 @@ Python SDK for preparing Swig wallet operations on a server, with a separate
 module inserts signatures with `solders` and makes no hosted API requests. No
 signing material is sent to the API.
 
-- Version: `0.10.0`
+- Version: `0.11.0`
 - Source: <https://github.com/anagrambuild/swig-developer-sdk>
 - Default API base URL: `https://api.onswig.com`
 
@@ -73,6 +73,7 @@ Use your application cancellation scope for an overall operation deadline.
   matching retry returns the original paymaster response.
 - Ramp order creation retries because its required `request_id` makes replay
   safe. Transfer preparation and submission do not retry automatically.
+- DEX transaction and position lists retry like `GET`s; they only read.
 - `4xx` responses raise `SwigDeveloperSdkError` immediately.
 
 ## Create a wallet
@@ -278,6 +279,65 @@ prepared = await wallet.build_transaction(
 
 The returned transaction is still signed and submitted by your application.
 
+## Yield
+
+`swig.yields` earns on an existing Swig wallet (`yield` is a Python keyword).
+Native Solana staking to an allowlisted validator is the first yield method.
+Prepare calls return unsigned transactions to authorize, sign, and submit.
+
+```python
+from swig_developer_sdk import PartialYieldExit, PreparedYieldRoleCreation
+
+options = await swig.yields.list_options(swig_config_address=config)
+validator = next(option for option in options if option.accepts_deposits)
+
+role = await swig.yields.prepare_role(
+    swig_config_address=config,
+    fee_payer=fee_payer,
+    yield_authority={"ed25519": {"public_key": agent_key}},
+    validator_vote_address=validator.vote_address,
+    max_deposit=10_000_000_000,
+    role_manager_authority={"ed25519": {"public_key": admin_key}},
+)
+if isinstance(role, PreparedYieldRoleCreation):
+    ...  # sign, submit and confirm role.transaction, then call prepare_role again
+
+deposit = await swig.yields.deposit(
+    swig_config_address=config,
+    fee_payer=fee_payer,
+    requester_authority={"ed25519": {"public_key": agent_key}},
+    amount=5_000_000_000,
+    validator_vote_address=validator.vote_address,
+    position_seed="deposit-1",
+)
+exit = await swig.yields.exit(
+    swig_config_address=config,
+    fee_payer=fee_payer,
+    requester_authority={"ed25519": {"public_key": agent_key}},
+    position_address=deposit.position_address,
+    amount="all",  # or PartialYieldExit(lamports=2_000_000_000, position_seed="exit-1")
+)
+withdrawal = await swig.yields.withdraw(
+    swig_config_address=config,
+    fee_payer=fee_payer,
+    requester_authority={"ed25519": {"public_key": agent_key}},
+    position_address=exit.exiting_position_address,
+)
+
+page = await swig.yields.list_positions(swig_config_address=config, page_size=50)
+summary = await swig.yields.get_summary(swig_config_address=config)
+rewards = await swig.yields.list_rewards(swig_config_address=config)
+projection = await swig.yields.estimate(
+    swig_config_address=config,
+    validator_vote_address=validator.vote_address,
+    principal=5_000_000_000,
+    horizon_days=365,
+)
+```
+
+Routes, role permissions, pagination, and errors match the TypeScript SDK; see
+the [TypeScript Yield guide](../typescript/README.md#yield).
+
 ## Read wallet state
 
 ```python
@@ -405,6 +465,72 @@ Policy metadata is a separate read:
 ```python
 policy = await swig.wallets.get_policy(policy_id)
 ```
+
+## DEX history and positions
+
+`swig.dex` reads the DEX activity the backend indexed for a Swig your API key's
+organization owns. The two lists are API-key `POST`s that carry their filters
+in the body, and `get` is an API-key `GET`. All three only read, follow the
+retry policy, and never call Solana themselves.
+
+```python
+cursor = None
+while True:
+    page = await swig.dex.transactions.list(
+        swig_config_address=swig_config_address,
+        network="mainnet",
+        page_size=25,
+        cursor=cursor,
+        start_slot=357_000_000,
+        end_slot=358_000_000,
+        protocol="raydium-clmm",
+        action_type="swap",
+        swig_vault_address=swig_vault_address,
+    )
+    for transaction in page.transactions:
+        for executed in transaction.actions:
+            if executed.action.type == "swap":
+                print(executed.protocol, executed.action.input.amount_raw)
+    if page.next_cursor is None:
+        break
+    cursor = page.next_cursor
+
+transaction = await swig.dex.transactions.get(
+    swig_config_address=swig_config_address,
+    network="mainnet",
+    transaction_signature=transaction_signature,
+)
+
+positions = await swig.dex.positions.list(
+    swig_config_address=swig_config_address,
+    network="mainnet",
+    position_status="open",
+)
+```
+
+Transactions come newest first. Every filter is an optional keyword argument,
+and filters combine with AND. `start_slot` and `end_slot` are inclusive, and
+`protocol`, `action_type` and `swig_vault_address` must all match the same
+action. A matching transaction still carries every DEX action the Swig executed
+in it. `page_size` defaults to 25 and the backend caps it at 100.
+`next_cursor` is the last transaction of the page and is `None` on the
+last page; pass it back as `cursor` with the same filters. Positions page the
+same way.
+
+A position is the latest known on-chain state of a position held by the Swig's
+vault or any of its sub-accounts, enabled or not: a `DexOpenPosition` with its
+pool and decoded account, or a `DexClosedPosition` once the account no longer
+exists.
+`updated_slot` is the slot of the read the state came from. Positions take
+`position_status`, `protocol` and `swig_vault_address`, each applied to the
+position. Latest state is currently recorded for Raydium
+CLMM positions only.
+
+`amount_raw` is a decimal integer string, signed for the action's
+`protocol_actor_address` (negative amounts left its accounts). That actor is the
+Swig vault on a direct call and the router's account on a routed trade, so a
+routed swap is one action per venue hop. A transaction the index could not
+interpret, or has not processed yet, is omitted, and `get` answers 404 for it.
 
 ## Fiat ramps
 

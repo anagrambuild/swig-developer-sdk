@@ -102,6 +102,10 @@ mod wallet_preparation_support;
 mod wallet_creation_tests;
 
 #[cfg(test)]
+#[path = "../tests/hosted/reservation.rs"]
+mod reservation_tests;
+
+#[cfg(test)]
 #[path = "../tests/hosted/wallet_transfers.rs"]
 mod wallet_transfer_tests;
 
@@ -207,3 +211,8 @@ mod x402_hosted_tests;
 #[cfg(test)]
 #[path = "../tests/hosted/authorization_locks.rs"]
 mod authorization_lock_tests;
+
+pub use wallet::{
+    PrepareCreateReservedWalletArgs, ReservationAddressOptions, ReserveWalletAddressArgs,
+    WalletReservation, WalletReservationError,
+};
