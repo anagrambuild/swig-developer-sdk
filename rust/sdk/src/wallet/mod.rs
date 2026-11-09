@@ -1,4 +1,9 @@
 mod add_role;
+mod authorization_locks;
+pub use authorization_locks::{
+    AuthorizationLock, AuthorizationLockError, AuthorizationLockExpiry, AuthorizationLocksResult,
+    PrepareAddAuthorizationLockArgs, PrepareRemoveAuthorizationLockArgs,
+};
 mod build_transaction;
 mod client;
 mod create;

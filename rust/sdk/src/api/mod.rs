@@ -1,3 +1,4 @@
+pub(crate) mod authorization_locks;
 pub(crate) mod error;
 pub(crate) mod get_policy;
 pub(crate) mod list_roles;

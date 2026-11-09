@@ -60,6 +60,9 @@ pub enum SwigRolePermission {
     },
     All,
     ManageAuthority,
+    ManageAuthorizationLocks {
+        max_duration_slots: u64,
+    },
     SubAccount {
         sub_account: Pubkey,
         bump: u8,
@@ -168,6 +171,9 @@ impl From<ApiRolePermission> for SwigRolePermission {
             },
             ApiRolePermission::All => Self::All,
             ApiRolePermission::ManageAuthority => Self::ManageAuthority,
+            ApiRolePermission::ManageAuthorizationLocks { max_duration_slots } => {
+                Self::ManageAuthorizationLocks { max_duration_slots }
+            }
             ApiRolePermission::SubAccount {
                 sub_account,
                 bump,
