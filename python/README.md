@@ -5,7 +5,7 @@ Python SDK for preparing Swig wallet operations on a server, with a separate
 module inserts signatures with `solders` and makes no hosted API requests. No
 signing material is sent to the API.
 
-- Version: `0.10.0`
+- Version: `0.11.0`
 - Source: <https://github.com/anagrambuild/swig-developer-sdk>
 - Default API base URL: `https://api.onswig.com`
 
@@ -73,6 +73,7 @@ Use your application cancellation scope for an overall operation deadline.
   matching retry returns the original paymaster response.
 - Ramp order creation retries because its required `request_id` makes replay
   safe. Transfer preparation and submission do not retry automatically.
+- DEX transaction and position lists retry like `GET`s; they only read.
 - `4xx` responses raise `SwigDeveloperSdkError` immediately.
 
 ## Create a wallet
@@ -278,6 +279,65 @@ prepared = await wallet.build_transaction(
 
 The returned transaction is still signed and submitted by your application.
 
+## Yield
+
+`swig.yields` earns on an existing Swig wallet (`yield` is a Python keyword).
+Native Solana staking to an allowlisted validator is the first yield method.
+Prepare calls return unsigned transactions to authorize, sign, and submit.
+
+```python
+from swig_developer_sdk import PartialYieldExit, PreparedYieldRoleCreation
+
+options = await swig.yields.list_options(swig_config_address=config)
+validator = next(option for option in options if option.accepts_deposits)
+
+role = await swig.yields.prepare_role(
+    swig_config_address=config,
+    fee_payer=fee_payer,
+    yield_authority={"ed25519": {"public_key": agent_key}},
+    validator_vote_address=validator.vote_address,
+    max_deposit=10_000_000_000,
+    role_manager_authority={"ed25519": {"public_key": admin_key}},
+)
+if isinstance(role, PreparedYieldRoleCreation):
+    ...  # sign, submit and confirm role.transaction, then call prepare_role again
+
+deposit = await swig.yields.deposit(
+    swig_config_address=config,
+    fee_payer=fee_payer,
+    requester_authority={"ed25519": {"public_key": agent_key}},
+    amount=5_000_000_000,
+    validator_vote_address=validator.vote_address,
+    position_seed="deposit-1",
+)
+exit = await swig.yields.exit(
+    swig_config_address=config,
+    fee_payer=fee_payer,
+    requester_authority={"ed25519": {"public_key": agent_key}},
+    position_address=deposit.position_address,
+    amount="all",  # or PartialYieldExit(lamports=2_000_000_000, position_seed="exit-1")
+)
+withdrawal = await swig.yields.withdraw(
+    swig_config_address=config,
+    fee_payer=fee_payer,
+    requester_authority={"ed25519": {"public_key": agent_key}},
+    position_address=exit.exiting_position_address,
+)
+
+page = await swig.yields.list_positions(swig_config_address=config, page_size=50)
+summary = await swig.yields.get_summary(swig_config_address=config)
+rewards = await swig.yields.list_rewards(swig_config_address=config)
+projection = await swig.yields.estimate(
+    swig_config_address=config,
+    validator_vote_address=validator.vote_address,
+    principal=5_000_000_000,
+    horizon_days=365,
+)
+```
+
+Routes, role permissions, pagination, and errors match the TypeScript SDK; see
+the [TypeScript Yield guide](../typescript/README.md#yield).
+
 ## Read wallet state
 
 ```python
@@ -310,11 +370,167 @@ is the protocol authority type discriminant. `action_data` is the raw
 per-action payload, so read it against the protocol's action definitions rather
 than assuming a fixed shape.
 
+### Authorization locks
+
+An authorization lock works like a card authorization hold on part of the
+wallet's SOL or token balance, until an expiry slot:
+
+- While it is active, every other role (including `All` and the owner) can
+  spend only the balance minus the active locks it does not hold.
+- The holding role can spend its locked funds. Each spend from the locked
+  account captures the hold: the program lowers the holder's lock `amount` by
+  the net outflow, oldest lock first.
+- Creating a lock charges no spend limit; the holder's normal limits are
+  charged when it spends. A limited holder's SignV2 fails if its remaining
+  active locks would exceed what its limits still allow.
+- A lock is active while it is unexpired and its `amount` is above zero. A
+  fully captured lock stays stored with `amount` `"0"` and `active=False`.
+
+The creating role can remove its lock at any time, which voids whatever is
+left of it. Once a lock is inactive (expired or fully captured), a role with
+`All`, `AllButManageAuthority`, `ManageAuthority`, or
+`ManageAuthorizationLocks` can prune it too.
+
+```python
+result = await wallet.get_authorization_locks(include_expired=True)
+# result.locks[].lock_id, role_id, asset_account, mint, amount, expiry_slot, active
+# result.current_slot, result.next_lock_id
+```
+
+The backend reads live chain state. `mint` is `None` for native SOL. `amount`
+is what remains of the hold after captures. `amount`, `expiry_slot`, and
+`current_slot` are decimal strings, matching the wire. Inactive locks (expired
+or fully captured) are returned only with `include_expired=True`.
+
+```python
+prepared = await wallet.add_authorization_lock(
+    fee_payer=fee_payer,
+    mint=usdc_mint,  # omit for native SOL
+    amount=25_000_000,  # token base units, or lamports for SOL
+    duration_slots=9_000,  # or expiry_slot, never both
+)
+
+released = await wallet.remove_authorization_lock(fee_payer=fee_payer, lock_id=0)
+```
+
+`amount` must be a positive integer or decimal string. Pass exactly one of
+`expiry_slot` or `duration_slots`. A `mint`, when given, must be a base58
+public key. The requester's role needs `ManageAuthorizationLocks`, whose
+`max_duration_slots` caps the lock's duration. The program enforces every lock
+rule; the SDK only prepares transactions and reads state.
+
+`requester_authority` may be:
+
+- `ed25519`: a direct Ed25519 role key, or the session key of any session
+  role (Ed25519, Secp256k1, Secp256r1, or ProgramExec session). It signs the
+  transaction like any Ed25519 signer, and `signature_requests` is empty.
+- `secp256k1` or `secp256r1`: a direct role key. The response carries a
+  signature request, which `sign_prepared_swig_transaction` fulfills the same
+  way it does for other routes. For secp256k1, the signer receives the
+  64-character hex of `message_hash` (for example through `personal_sign` with
+  `create_secp256k1_evm_signing_fn`), and its signature goes into the lock
+  instruction's authority payload. The backend already places the EIP-191
+  prefix after the signature, and the SDK writes the signer's prefix there
+  once, so the bytes stay the same. For secp256r1, the signature goes into the
+  precompile instruction just before the lock.
+- `participant_set` (optionally with `role_id`): a ProgramExec role bound to
+  the set. The response carries `participant_set_approval_plan`; collect member
+  approvals and call `swig.transactions.compile_participant_set_approvals`, as
+  in [Configure and use a ParticipantSet](#configure-and-use-a-participantset).
+
+`program_exec_proof` requesters raise `ValueError` before any request is sent.
+
+```python
+from swig_developer_sdk.signers import sign_prepared_swig_transaction
+
+prepared = await wallet.add_authorization_lock(
+    fee_payer=fee_payer,
+    amount=1_000_000_000,
+    expiry_slot=expiry_slot,
+    requester_authority={"secp256k1": {"public_key": evm_public_key}},
+)
+signed = await sign_prepared_swig_transaction(
+    prepared,
+    secp256k1=evm_signer,  # or secp256r1=passkey_signer
+)
+```
+
+Both setters return an unsigned prepared transaction with kind
+`add-authorization-lock` or `remove-authorization-lock`. Fulfill any signature
+requests or compile ParticipantSet approvals, sign with the fee payer (and the
+Ed25519 requester, if that is the requester), then submit it. The POSTs are not retried automatically.
+
 Policy metadata is a separate read:
 
 ```python
 policy = await swig.wallets.get_policy(policy_id)
 ```
+
+## DEX history and positions
+
+`swig.dex` reads the DEX activity the backend indexed for a Swig your API key's
+organization owns. The two lists are API-key `POST`s that carry their filters
+in the body, and `get` is an API-key `GET`. All three only read, follow the
+retry policy, and never call Solana themselves.
+
+```python
+cursor = None
+while True:
+    page = await swig.dex.transactions.list(
+        swig_config_address=swig_config_address,
+        network="mainnet",
+        page_size=25,
+        cursor=cursor,
+        start_slot=357_000_000,
+        end_slot=358_000_000,
+        protocol="raydium-clmm",
+        action_type="swap",
+        swig_vault_address=swig_vault_address,
+    )
+    for transaction in page.transactions:
+        for executed in transaction.actions:
+            if executed.action.type == "swap":
+                print(executed.protocol, executed.action.input.amount_raw)
+    if page.next_cursor is None:
+        break
+    cursor = page.next_cursor
+
+transaction = await swig.dex.transactions.get(
+    swig_config_address=swig_config_address,
+    network="mainnet",
+    transaction_signature=transaction_signature,
+)
+
+positions = await swig.dex.positions.list(
+    swig_config_address=swig_config_address,
+    network="mainnet",
+    position_status="open",
+)
+```
+
+Transactions come newest first. Every filter is an optional keyword argument,
+and filters combine with AND. `start_slot` and `end_slot` are inclusive, and
+`protocol`, `action_type` and `swig_vault_address` must all match the same
+action. A matching transaction still carries every DEX action the Swig executed
+in it. `page_size` defaults to 25 and the backend caps it at 100.
+`next_cursor` is the last transaction of the page and is `None` on the
+last page; pass it back as `cursor` with the same filters. Positions page the
+same way.
+
+A position is the latest known on-chain state of a position held by the Swig's
+vault or any of its sub-accounts, enabled or not: a `DexOpenPosition` with its
+pool and decoded account, or a `DexClosedPosition` once the account no longer
+exists.
+`updated_slot` is the slot of the read the state came from. Positions take
+`position_status`, `protocol` and `swig_vault_address`, each applied to the
+position. Latest state is currently recorded for Raydium
+CLMM positions only.
+
+`amount_raw` is a decimal integer string, signed for the action's
+`protocol_actor_address` (negative amounts left its accounts). That actor is the
+Swig vault on a direct call and the router's account on a routed trade, so a
+routed swap is one action per venue hop. A transaction the index could not
+interpret, or has not processed yet, is omitted, and `get` answers 404 for it.
 
 ## Fiat ramps
 

@@ -1,4 +1,9 @@
 mod add_role;
+mod authorization_locks;
+pub use authorization_locks::{
+    AuthorizationLock, AuthorizationLockError, AuthorizationLockExpiry, AuthorizationLocksResult,
+    PrepareAddAuthorizationLockArgs, PrepareRemoveAuthorizationLockArgs,
+};
 mod build_transaction;
 mod client;
 mod create;
@@ -34,4 +39,10 @@ pub use prepare::{PrepareOperation, PrepareTransfersArgs, PrepareTransfersError}
 
 pub use swap::{
     ComputeUnitPricePercentile, PrepareSwapArgs, PrepareSwapError, SwapOptions, SwapQuoteMode,
+};
+
+mod reservation;
+pub use reservation::{
+    PrepareCreateReservedWalletArgs, ReservationAddressOptions, ReserveWalletAddressArgs,
+    WalletReservation, WalletReservationError,
 };

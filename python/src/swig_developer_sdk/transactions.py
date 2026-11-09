@@ -25,6 +25,11 @@ PreparedTransactionKind = Literal[
     "configure-recovery",
     "create-participant-set",
     "x402-payment",
+    "add-authorization-lock",
+    "remove-authorization-lock",
+    "yield-deposit",
+    "yield-exit",
+    "yield-withdrawal",
 ]
 SignatureScheme = Literal["secp256r1", "secp256k1"]
 
@@ -540,6 +545,24 @@ def _normalize_kind(value: object) -> PreparedTransactionKind | None:
         5,
     ):
         return "x402-payment"
+    if value in (
+        "add-authorization-lock",
+        "PREPARED_TRANSACTION_KIND_ADD_AUTHORIZATION_LOCK",
+        10,
+    ):
+        return "add-authorization-lock"
+    if value in (
+        "remove-authorization-lock",
+        "PREPARED_TRANSACTION_KIND_REMOVE_AUTHORIZATION_LOCK",
+        11,
+    ):
+        return "remove-authorization-lock"
+    if value in ("yield-deposit", "PREPARED_TRANSACTION_KIND_YIELD_DEPOSIT", 7):
+        return "yield-deposit"
+    if value in ("yield-exit", "PREPARED_TRANSACTION_KIND_YIELD_EXIT", 8):
+        return "yield-exit"
+    if value in ("yield-withdrawal", "PREPARED_TRANSACTION_KIND_YIELD_WITHDRAWAL", 9):
+        return "yield-withdrawal"
     return None
 
 
@@ -724,6 +747,13 @@ def _prepared_transaction_kind_to_wire(
         "configure-recovery": "PREPARED_TRANSACTION_KIND_CONFIGURE_RECOVERY",
         "create-participant-set": "PREPARED_TRANSACTION_KIND_CREATE_PARTICIPANT_SET",
         "x402-payment": "PREPARED_TRANSACTION_KIND_X402_PAYMENT",
+        "add-authorization-lock": "PREPARED_TRANSACTION_KIND_ADD_AUTHORIZATION_LOCK",
+        "remove-authorization-lock": (
+            "PREPARED_TRANSACTION_KIND_REMOVE_AUTHORIZATION_LOCK"
+        ),
+        "yield-deposit": "PREPARED_TRANSACTION_KIND_YIELD_DEPOSIT",
+        "yield-exit": "PREPARED_TRANSACTION_KIND_YIELD_EXIT",
+        "yield-withdrawal": "PREPARED_TRANSACTION_KIND_YIELD_WITHDRAWAL",
     }
     return values.get(kind) if kind is not None else None
 
