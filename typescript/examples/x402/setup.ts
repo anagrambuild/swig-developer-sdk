@@ -21,6 +21,7 @@ import {
   SwigClient,
   type PreparedTransaction,
 } from '@swig-wallet/developer-sdk';
+import { SWIG_PROGRAM_ADDRESS_STRING } from '@swig-wallet/lib';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
 const X402_DEVNET = 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1' as const;
@@ -29,9 +30,12 @@ const DEFAULT_FACILITATOR_PORT = 4022;
 const DEFAULT_RESOURCE_SERVER_PORT = 4021;
 const MINIMUM_FACILITATOR_BALANCE = LAMPORTS_PER_SOL;
 const MAX_U64 = 18_446_744_073_709_551_615n;
+const SWIG_PROGRAM_ID = new PublicKey(SWIG_PROGRAM_ADDRESS_STRING);
 
 const STATE_DIRECTORY = new URL('./.local/', import.meta.url);
 const STATE_FILE = new URL('./.local/state.json', import.meta.url);
+
+export class X402SetupError extends Error {}
 
 interface SetupState {
   facilitatorSecretKey?: number[];
@@ -62,27 +66,54 @@ export interface ReadyX402Fixture {
 }
 
 export async function ensureX402Fixture(): Promise<ReadyX402Fixture> {
-  const rpcUrl = requiredEnvironment('SOLANA_RPC_URL');
-  const backendUrl = process.env.SWIG_BACKEND_URL ?? DEFAULT_BACKEND_URL;
+  if (
+    process.env.SWIG_NETWORK !== undefined &&
+    process.env.SWIG_NETWORK !== 'devnet'
+  ) {
+    throw new X402SetupError(
+      'The x402 fixture supports SWIG_NETWORK=devnet only',
+    );
+  }
+  const configuredRpc = aliasedEnvironment('SWIG_RPC_URL', 'SOLANA_RPC_URL');
+  if (configuredRpc === undefined) {
+    throw new X402SetupError('Set SWIG_RPC_URL (or SOLANA_RPC_URL)');
+  }
+  const rpcUrl = requireHttpUrl('SWIG_RPC_URL', configuredRpc);
+  const backendUrl = requireHttpUrl(
+    'SWIG_API_URL',
+    aliasedEnvironment('SWIG_API_URL', 'SWIG_BACKEND_URL') ??
+      DEFAULT_BACKEND_URL,
+  );
   const apiKey = requiredEnvironment('SWIG_API_KEY');
-  const state = loadState();
-  const facilitator = keypairFromEnvironmentOrState(
-    'X402_FACILITATOR_KEYPAIR',
-    state.facilitatorSecretKey,
-  );
-  const developer = keypairFromEnvironmentOrState(
-    'X402_DEVELOPER_KEYPAIR',
-    state.developerSecretKey,
-  );
-  const resourceProvider = keypairFromEnvironmentOrState(
-    'X402_RESOURCE_PROVIDER_KEYPAIR',
-    state.resourceProviderSecretKey,
-  );
-  state.facilitatorSecretKey = [...facilitator.secretKey];
-  state.developerSecretKey = [...developer.secretKey];
-  state.resourceProviderSecretKey = [...resourceProvider.secretKey];
-  saveState(state);
-
+  const sharedSecret = process.env.SWIG_ED25519_PRIVATE_KEY;
+  const legacySecret = process.env.X402_DEVELOPER_KEYPAIR;
+  let suppliedDeveloper: Keypair | undefined;
+  if (sharedSecret !== undefined) {
+    const encoded = sharedSecret.trim();
+    if (!/^[0-9a-fA-F]{128}$/.test(encoded)) {
+      throw new X402SetupError(
+        'SWIG_ED25519_PRIVATE_KEY must be a hex-encoded 64-byte keypair',
+      );
+    }
+    try {
+      suppliedDeveloper = Keypair.fromSecretKey(Buffer.from(encoded, 'hex'));
+    } catch {
+      throw new X402SetupError(
+        'SWIG_ED25519_PRIVATE_KEY must contain a valid Ed25519 keypair',
+      );
+    }
+    if (legacySecret !== undefined) {
+      const legacy = keypairFromEnvironmentOrState(
+        'X402_DEVELOPER_KEYPAIR',
+        undefined,
+      );
+      if (!Buffer.from(suppliedDeveloper.secretKey).equals(legacy.secretKey)) {
+        throw new X402SetupError(
+          'SWIG_ED25519_PRIVATE_KEY conflicts with X402_DEVELOPER_KEYPAIR',
+        );
+      }
+    }
+  }
   const paymentAmount = atomicAmountFromEnvironment(
     'X402_PAYMENT_AMOUNT',
     '1000',
@@ -95,6 +126,42 @@ export async function ensureX402Fixture(): Promise<ReadyX402Fixture> {
     'X402_RESOURCE_SERVER_PORT',
     DEFAULT_RESOURCE_SERVER_PORT,
   );
+  if (facilitatorPort === resourceServerPort) {
+    throw new X402SetupError(
+      'The facilitator and resource server must use different ports',
+    );
+  }
+  const state = loadState();
+  const facilitator = keypairFromEnvironmentOrState(
+    'X402_FACILITATOR_KEYPAIR',
+    state.facilitatorSecretKey,
+  );
+  const developer =
+    suppliedDeveloper ??
+    keypairFromEnvironmentOrState(
+      'X402_DEVELOPER_KEYPAIR',
+      state.developerSecretKey,
+    );
+  const resourceProvider = keypairFromEnvironmentOrState(
+    'X402_RESOURCE_PROVIDER_KEYPAIR',
+    state.resourceProviderSecretKey,
+  );
+  if (process.env.X402_FACILITATOR_KEYPAIR === undefined) {
+    state.facilitatorSecretKey = [...facilitator.secretKey];
+  } else {
+    delete state.facilitatorSecretKey;
+  }
+  if (sharedSecret === undefined && legacySecret === undefined) {
+    state.developerSecretKey = [...developer.secretKey];
+  } else {
+    delete state.developerSecretKey;
+  }
+  if (process.env.X402_RESOURCE_PROVIDER_KEYPAIR === undefined) {
+    state.resourceProviderSecretKey = [...resourceProvider.secretKey];
+  } else {
+    delete state.resourceProviderSecretKey;
+  }
+  saveState(state);
 
   const connection = new Connection(rpcUrl, 'confirmed');
 
@@ -154,27 +221,43 @@ async function ensureSwig(args: {
   facilitator: Keypair;
   developer: Keypair;
 }): Promise<{ configAddress: string; walletAddress: string }> {
-  const configuredConfig = process.env.SWIG_CONFIG_ADDRESS || undefined;
-  const configuredWallet = process.env.SWIG_WALLET_ADDRESS || undefined;
-
-  if ((configuredConfig === undefined) !== (configuredWallet === undefined)) {
-    throw new Error(
-      'SWIG_CONFIG_ADDRESS and SWIG_WALLET_ADDRESS must be supplied together',
+  const configuredConfig = process.env.SWIG_CONFIG_ADDRESS;
+  const configuredWallet = process.env.SWIG_WALLET_ADDRESS;
+  if (configuredWallet !== undefined && configuredConfig === undefined) {
+    throw new X402SetupError(
+      'SWIG_WALLET_ADDRESS requires SWIG_CONFIG_ADDRESS',
     );
   }
-
-  const explicitSwig =
-    configuredConfig && configuredWallet
-      ? {
-          configAddress: configuredConfig,
-          walletAddress: configuredWallet,
-        }
-      : undefined;
+  let explicitSwig:
+    { configAddress: string; walletAddress: string } | undefined;
+  if (configuredConfig !== undefined) {
+    let config: PublicKey;
+    try {
+      config = new PublicKey(configuredConfig);
+    } catch {
+      throw new X402SetupError('SWIG_CONFIG_ADDRESS must be a public key');
+    }
+    const [wallet] = PublicKey.findProgramAddressSync(
+      [Buffer.from('swig-wallet-address'), config.toBuffer()],
+      SWIG_PROGRAM_ID,
+    );
+    if (
+      configuredWallet !== undefined &&
+      configuredWallet !== wallet.toBase58()
+    ) {
+      throw new X402SetupError(
+        'SWIG_WALLET_ADDRESS does not match SWIG_CONFIG_ADDRESS',
+      );
+    }
+    explicitSwig = {
+      configAddress: config.toBase58(),
+      walletAddress: wallet.toBase58(),
+    };
+  }
   const rememberedSwig =
     args.state.swigConfigAddress &&
     args.state.swigWalletAddress &&
-    (!args.state.developerPublicKey ||
-      args.state.developerPublicKey === args.developer.publicKey.toBase58())
+    args.state.developerPublicKey === args.developer.publicKey.toBase58()
       ? {
           configAddress: args.state.swigConfigAddress,
           walletAddress: args.state.swigWalletAddress,
@@ -194,12 +277,17 @@ async function ensureSwig(args: {
       ),
     ]);
 
+    if (configAccount && !configAccount.owner.equals(SWIG_PROGRAM_ID)) {
+      throw new X402SetupError(
+        'The configured account is not owned by the Swig program',
+      );
+    }
     if (configAccount && walletAccount) {
       return candidate;
     }
 
     if (explicitSwig) {
-      throw new Error(
+      throw new X402SetupError(
         'The Swig supplied through the environment does not exist',
       );
     }
@@ -218,10 +306,14 @@ async function ensureSwig(args: {
   });
 
   if (!created.creationTransaction) {
-    throw new Error('Wallet creation response is missing its transaction');
+    throw new X402SetupError(
+      'Wallet creation response is missing its transaction',
+    );
   }
   if (!created.wallet.walletAddress) {
-    throw new Error('Wallet creation response is missing walletAddress');
+    throw new X402SetupError(
+      'Wallet creation response is missing walletAddress',
+    );
   }
 
   await signAndSendPreparedTransaction(
@@ -258,7 +350,7 @@ async function ensureMint(args: {
     const account = await args.connection.getAccountInfo(address, 'confirmed');
 
     if (!account) {
-      throw new Error('X402_MINT does not exist');
+      throw new X402SetupError('X402_MINT does not exist');
     }
 
     const tokenProgram = requireTokenProgram(account.owner);
@@ -370,7 +462,7 @@ async function ensureTokenAccounts(args: {
     args.tokenProgram,
   );
   if (!mint.mintAuthority?.equals(args.facilitator.publicKey)) {
-    throw new Error(
+    throw new X402SetupError(
       'The Swig source account has insufficient tokens and the facilitator is not the mint authority',
     );
   }
@@ -452,7 +544,7 @@ async function signAndSendTransaction(
   );
 
   if (result.value.err) {
-    throw new Error(`Transaction failed: ${JSON.stringify(result.value.err)}`);
+    throw new X402SetupError('The transaction did not confirm successfully');
   }
 }
 
@@ -462,7 +554,7 @@ async function confirmSignature(
 ): Promise<void> {
   const result = await connection.confirmTransaction(signature, 'confirmed');
   if (result.value.err) {
-    throw new Error(`Transaction failed: ${JSON.stringify(result.value.err)}`);
+    throw new X402SetupError('The transaction did not confirm successfully');
   }
 }
 
@@ -477,7 +569,7 @@ async function waitForAccount(
     await Bun.sleep(250);
   }
 
-  throw new Error(`Timed out waiting for ${address.toBase58()}`);
+  throw new X402SetupError(`Timed out waiting for ${address.toBase58()}`);
 }
 
 function decimalsForPaymentAmount(amount: bigint): number {
@@ -487,12 +579,12 @@ function decimalsForPaymentAmount(amount: bigint): number {
 function atomicAmountFromEnvironment(name: string, fallback: string): bigint {
   const raw = process.env[name] ?? fallback;
   if (!/^[1-9][0-9]*$/.test(raw)) {
-    throw new Error(`${name} must be a canonical positive integer`);
+    throw new X402SetupError(`${name} must be a canonical positive integer`);
   }
 
   const amount = BigInt(raw);
   if (amount > MAX_U64) {
-    throw new Error(`${name} exceeds u64`);
+    throw new X402SetupError(`${name} exceeds u64`);
   }
   return amount;
 }
@@ -504,7 +596,9 @@ function requireTokenProgram(owner: PublicKey): PublicKey {
   if (owner.equals(TOKEN_2022_PROGRAM_ID)) {
     return TOKEN_2022_PROGRAM_ID;
   }
-  throw new Error('X402_MINT is not owned by a supported token program');
+  throw new X402SetupError(
+    'X402_MINT is not owned by a supported token program',
+  );
 }
 
 function loadState(): SetupState {
@@ -534,7 +628,36 @@ function saveState(state: SetupState): void {
 function requiredEnvironment(name: string): string {
   const value = process.env[name];
   if (!value) {
-    throw new Error(`${name} is required`);
+    throw new X402SetupError(`${name} is required`);
+  }
+  return value;
+}
+
+function aliasedEnvironment(name: string, alias: string): string | undefined {
+  const canonical = process.env[name];
+  const legacy = process.env[alias];
+  if (canonical !== undefined && legacy !== undefined && canonical !== legacy) {
+    throw new X402SetupError(`${name} conflicts with ${alias}`);
+  }
+  const value = canonical ?? legacy;
+  if (value === '') {
+    throw new X402SetupError(`${name} (or ${alias}) must not be empty`);
+  }
+  return value;
+}
+
+function requireHttpUrl(name: string, value: string): string {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new X402SetupError(`${name} must be a valid HTTP(S) URL`);
+  }
+  if (
+    (url.protocol !== 'http:' && url.protocol !== 'https:') ||
+    !url.hostname
+  ) {
+    throw new X402SetupError(`${name} must be a valid HTTP(S) URL`);
   }
   return value;
 }
@@ -544,7 +667,7 @@ function keypairFromEnvironmentOrState(
   rememberedSecretKey: number[] | undefined,
 ): Keypair {
   const raw = process.env[name];
-  if (raw === undefined || raw === '') {
+  if (raw === undefined) {
     return rememberedSecretKey === undefined
       ? Keypair.generate()
       : keypairFromSecretKey(name, rememberedSecretKey);
@@ -555,7 +678,7 @@ function keypairFromEnvironmentOrState(
   try {
     parsed = JSON.parse(raw);
   } catch {
-    throw new Error(`${name} must be a JSON secret-key array`);
+    throw new X402SetupError(`${name} must be a JSON secret-key array`);
   }
 
   return keypairFromSecretKey(name, parsed);
@@ -570,10 +693,14 @@ function keypairFromSecretKey(name: string, value: unknown): Keypair {
         Number.isInteger(byte) && Number(byte) >= 0 && Number(byte) <= 255,
     )
   ) {
-    throw new Error(`${name} must contain 64 byte values`);
+    throw new X402SetupError(`${name} must contain 64 byte values`);
   }
 
-  return Keypair.fromSecretKey(Uint8Array.from(value));
+  try {
+    return Keypair.fromSecretKey(Uint8Array.from(value));
+  } catch {
+    throw new X402SetupError(`${name} must contain a valid Ed25519 keypair`);
+  }
 }
 
 function portFromEnvironment(name: string, fallback: number): number {
@@ -584,24 +711,32 @@ function portFromEnvironment(name: string, fallback: number): number {
 
   const port = Number(raw);
   if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
-    throw new Error(`${name} must be a valid TCP port`);
+    throw new X402SetupError(`${name} must be a valid TCP port`);
   }
   return port;
 }
 
 if (import.meta.main) {
-  const fixture = await ensureX402Fixture();
-  console.log('x402 fixture is ready');
-  console.log(`RPC: ${fixture.rpcUrl}`);
-  console.log(`Swig config: ${fixture.swigConfigAddress}`);
-  console.log(`Swig wallet: ${fixture.swigWalletAddress}`);
-  console.log(`Developer: ${fixture.developer.publicKey.toBase58()}`);
-  console.log(
-    `Resource provider: ${fixture.resourceProvider.publicKey.toBase58()}`,
-  );
-  console.log(`Facilitator: ${fixture.facilitator.publicKey.toBase58()}`);
-  console.log(`Mint: ${fixture.mint.toBase58()}`);
-  console.log(
-    `Payment amount: ${fixture.paymentAmount.toString()} atomic units`,
-  );
+  try {
+    const fixture = await ensureX402Fixture();
+    console.log('x402 fixture is ready');
+    console.log(`Swig config: ${fixture.swigConfigAddress}`);
+    console.log(`Swig wallet: ${fixture.swigWalletAddress}`);
+    console.log(`Developer: ${fixture.developer.publicKey.toBase58()}`);
+    console.log(
+      `Resource provider: ${fixture.resourceProvider.publicKey.toBase58()}`,
+    );
+    console.log(`Facilitator: ${fixture.facilitator.publicKey.toBase58()}`);
+    console.log(`Mint: ${fixture.mint.toBase58()}`);
+    console.log(
+      `Payment amount: ${fixture.paymentAmount.toString()} atomic units`,
+    );
+  } catch (error) {
+    console.error(
+      error instanceof X402SetupError
+        ? error.message
+        : 'Could not prepare the x402 fixture. Check the local services and Devnet funding.',
+    );
+    process.exitCode = 1;
+  }
 }
