@@ -6,12 +6,19 @@ from dataclasses import dataclass, replace
 from typing import Literal, TypeAlias, cast
 from urllib.parse import quote, urlencode
 
+import base58
+from solders.pubkey import Pubkey
+
 from .common import (
     Amount,
+    Ed25519Authority,
     Network,
+    Secp256k1Authority,
+    Secp256r1Authority,
     WalletAddressInfo,
     WalletAuthority,
     normalize_amount,
+    normalize_network,
     require_network,
     to_proto_network,
     wallet_address_info_from_wire,
@@ -26,6 +33,12 @@ from .transactions import (
     normalize_prepared_transactions_result,
 )
 from .x402 import WalletX402Client
+
+
+@dataclass(frozen=True, slots=True)
+class WalletReservation:
+    wallet: WalletAddressInfo
+    network: Network
 
 
 @dataclass(frozen=True, slots=True)
@@ -328,6 +341,28 @@ class ListSwigRolesResult:
 
 
 @dataclass(frozen=True, slots=True)
+class AuthorizationLock:
+    lock_id: int
+    role_id: int
+    asset_account: str
+    amount: str
+    """Remaining held lamports for native SOL, or token base units, as a decimal
+    string. The holder's spends capture (lower) it; "0" once fully captured."""
+    expiry_slot: str
+    active: bool
+    """True while unexpired with a non-zero amount."""
+    mint: str | None = None
+    """SPL mint; None for native SOL."""
+
+
+@dataclass(frozen=True, slots=True)
+class AuthorizationLocksResult:
+    locks: tuple[AuthorizationLock, ...]
+    current_slot: str
+    next_lock_id: int
+
+
+@dataclass(frozen=True, slots=True)
 class Policy:
     id: str
     name: str
@@ -396,6 +431,60 @@ class WalletsClient:
             network=resolved_network,
             recovery_setup=recovery_setup,
         )
+
+    async def reserve_address(
+        self,
+        *,
+        root_authority: Ed25519Authority | Secp256k1Authority | Secp256r1Authority,
+        account_index: int | None = None,
+        salt: bytes | None = None,
+        network: Network | None = None,
+    ) -> WalletReservation:
+        """Derive an address without a transaction; defaults to index zero."""
+        resolved_network = require_network(network, self._default_network)
+        body = _reservation_request(
+            root_authority, account_index, salt, resolved_network
+        )
+        response = await self._http.post("/transaction/api/wallet/reserve", body)
+        return _normalize_wallet_reservation(response, resolved_network)
+
+    async def create_reserved(
+        self,
+        *,
+        root_authority: Ed25519Authority | Secp256k1Authority | Secp256r1Authority,
+        fee_payer: str,
+        account_index: int | None = None,
+        salt: bytes | None = None,
+        network: Network | None = None,
+    ) -> CreateWalletResult:
+        """Prepare activation with the same authority/options; only the payer signs."""
+        resolved_network = require_network(network, self._default_network)
+        body = _reservation_request(
+            root_authority, account_index, salt, resolved_network
+        )
+        if not isinstance(fee_payer, str) or not fee_payer:
+            raise ValueError("fee_payer is required")
+        body["feePayer"] = fee_payer
+        response = await self._http.post(
+            "/transaction/api/wallet/create-reserved", body
+        )
+        reservation = _normalize_wallet_reservation(response, resolved_network)
+        created = normalize_create_wallet_response(response)
+        transaction = created.creation_transaction
+        if (
+            len(created.transactions) != 1
+            or transaction is None
+            or transaction.kind != "create-swig-wallet"
+            or transaction.network != resolved_network
+            or transaction.signature_requests
+            or transaction.participant_set_approval_plan is not None
+            or transaction.wallet is None
+            or transaction.wallet.swig_config_address
+            != reservation.wallet.swig_config_address
+            or transaction.wallet.wallet_address != reservation.wallet.wallet_address
+        ):
+            raise SwigResponseError("Invalid reserved wallet creation response")
+        return replace(created, wallet=reservation.wallet, network=resolved_network)
 
     async def get_policy(self, policy_id: str) -> Policy:
         """Fetch a hosted policy by ID; the GET uses the client retry policy."""
@@ -964,6 +1053,127 @@ class WalletsClient:
             raise SwigResponseError("Add role response is missing transaction")
         return normalize_prepared_transaction(response["transaction"])
 
+    async def add_authorization_lock(
+        self,
+        wallet: WalletHandle,
+        *,
+        fee_payer: str,
+        amount: Amount,
+        mint: str | None = None,
+        expiry_slot: Amount | None = None,
+        duration_slots: Amount | None = None,
+        requester_authority: WalletAuthority | None = None,
+        network: Network | None = None,
+    ) -> PreparedTransaction:
+        """Prepare a card-authorization-style hold on part of the wallet balance.
+
+        Other roles can't spend held funds; the holder can, and each spend
+        captures its lock.
+
+        amount is lamports for native SOL (mint omitted) or token base units.
+        Pass exactly one of expiry_slot or duration_slots.
+        Network resolves from the call, handle, then client.
+        Sign and submit separately; preparation does not retry automatically.
+        Invalid inputs raise ValueError; API failures raise SDK errors."""
+        if (expiry_slot is None) == (duration_slots is None):
+            raise ValueError(
+                "provide exactly one authorization lock expiry: expiry_slot "
+                "or duration_slots"
+            )
+        if mint is not None and not _is_public_key(mint):
+            raise ValueError("mint must be a base58-encoded 32-byte public key")
+        amount_wire = _normalize_uint64(amount, "amount")
+        if int(amount_wire) == 0:
+            raise ValueError("amount must be greater than zero")
+        expiry: dict[str, object] = (
+            {"expirySlot": _normalize_uint64(expiry_slot, "expiry_slot")}
+            if expiry_slot is not None
+            else {
+                "durationSlots": _normalize_uint64(
+                    cast(Amount, duration_slots), "duration_slots"
+                )
+            }
+        )
+        authority = _authorization_lock_requester(wallet, requester_authority)
+        response = await self._http.post(
+            "/transaction/wallet/authorization-lock/add",
+            {
+                **_base_write_request(
+                    wallet, fee_payer, network, self._default_network
+                ),
+                "requesterAuthority": wallet_authority_to_wire(authority),
+                **({"mint": mint} if mint is not None else {}),
+                "amount": amount_wire,
+                **expiry,
+            },
+        )
+        if not isinstance(response, Mapping) or response.get("transaction") is None:
+            raise SwigResponseError(
+                "Add authorization lock response is missing transaction"
+            )
+        return normalize_prepared_transaction(response["transaction"])
+
+    async def remove_authorization_lock(
+        self,
+        wallet: WalletHandle,
+        *,
+        fee_payer: str,
+        lock_id: int,
+        requester_authority: WalletAuthority | None = None,
+        network: Network | None = None,
+    ) -> PreparedTransaction:
+        """Prepare a release of the caller's own lock, or a prune of an inactive one.
+
+        Network resolves from the call, handle, then client.
+        Sign and submit separately; preparation does not retry automatically.
+        Invalid inputs raise ValueError; API failures raise SDK errors."""
+        if (
+            not isinstance(lock_id, int)
+            or isinstance(lock_id, bool)
+            or not 0 <= lock_id <= _MAX_UINT32
+        ):
+            raise ValueError("lock_id must be an unsigned 32-bit integer")
+        authority = _authorization_lock_requester(wallet, requester_authority)
+        response = await self._http.post(
+            "/transaction/wallet/authorization-lock/remove",
+            {
+                **_base_write_request(
+                    wallet, fee_payer, network, self._default_network
+                ),
+                "requesterAuthority": wallet_authority_to_wire(authority),
+                "lockId": lock_id,
+            },
+        )
+        if not isinstance(response, Mapping) or response.get("transaction") is None:
+            raise SwigResponseError(
+                "Remove authorization lock response is missing transaction"
+            )
+        return normalize_prepared_transaction(response["transaction"])
+
+    async def get_authorization_locks(
+        self,
+        wallet: WalletHandle,
+        *,
+        network: Network | None = None,
+        include_expired: bool | None = None,
+    ) -> AuthorizationLocksResult:
+        """Read the wallet's live on-chain authorization locks.
+
+        include_expired also returns inactive (expired or fully captured) locks.
+
+        Network resolves from the call, handle, then client.
+        This GET uses the client retry policy. API failures raise SDK errors."""
+        resolved = require_network(network, wallet.network, self._default_network)
+        query = {"network": to_proto_network(resolved)}
+        if include_expired is not None:
+            query["include_expired"] = "true" if include_expired else "false"
+        return _normalize_authorization_locks(
+            await self._http.get(
+                f"/transaction/wallet/{quote(wallet.swig_config_address, safe='')}"
+                f"/authorization-locks?{urlencode(query)}"
+            )
+        )
+
 
 class WalletHandle:
     def __init__(self, wallets: WalletsClient, reference: WalletReference) -> None:
@@ -1068,6 +1278,75 @@ class WalletHandle:
         Network resolves from the call, handle, then client.
         This GET uses the client retry policy. API failures raise SDK errors."""
         return await self._wallets.list_roles(self, network=network)
+
+    async def add_authorization_lock(
+        self,
+        *,
+        fee_payer: str,
+        amount: Amount,
+        mint: str | None = None,
+        expiry_slot: Amount | None = None,
+        duration_slots: Amount | None = None,
+        requester_authority: WalletAuthority | None = None,
+        network: Network | None = None,
+    ) -> PreparedTransaction:
+        """Prepare a card-authorization-style hold on part of the wallet balance.
+
+        Other roles can't spend held funds; the holder can, and each spend
+        captures its lock.
+
+        amount is lamports for native SOL (mint omitted) or token base units.
+        Pass exactly one of expiry_slot or duration_slots.
+        Network resolves from the call, handle, then client.
+        Sign and submit separately; preparation does not retry automatically.
+        Invalid inputs raise ValueError; API failures raise SDK errors."""
+        return await self._wallets.add_authorization_lock(
+            self,
+            fee_payer=fee_payer,
+            amount=amount,
+            mint=mint,
+            expiry_slot=expiry_slot,
+            duration_slots=duration_slots,
+            requester_authority=requester_authority,
+            network=network,
+        )
+
+    async def remove_authorization_lock(
+        self,
+        *,
+        fee_payer: str,
+        lock_id: int,
+        requester_authority: WalletAuthority | None = None,
+        network: Network | None = None,
+    ) -> PreparedTransaction:
+        """Prepare a release of the caller's own lock, or a prune of an inactive one.
+
+        Network resolves from the call, handle, then client.
+        Sign and submit separately; preparation does not retry automatically.
+        Invalid inputs raise ValueError; API failures raise SDK errors."""
+        return await self._wallets.remove_authorization_lock(
+            self,
+            fee_payer=fee_payer,
+            lock_id=lock_id,
+            requester_authority=requester_authority,
+            network=network,
+        )
+
+    async def get_authorization_locks(
+        self,
+        *,
+        network: Network | None = None,
+        include_expired: bool | None = None,
+    ) -> AuthorizationLocksResult:
+        """Read the wallet's live on-chain authorization locks.
+
+        include_expired also returns inactive (expired or fully captured) locks.
+
+        Network resolves from the call, handle, then client.
+        This GET uses the client retry policy. API failures raise SDK errors."""
+        return await self._wallets.get_authorization_locks(
+            self, network=network, include_expired=include_expired
+        )
 
 
 class WalletRolesClient:
@@ -1987,3 +2266,145 @@ def _required_int(value: object, field: str) -> int:
     if not number.is_integer():
         raise SwigResponseError(f"Response is missing {field}")
     return int(number)
+
+
+_MAX_UINT32 = 4_294_967_295
+_MAX_UINT64 = 18_446_744_073_709_551_615
+
+
+def _authorization_lock_requester(
+    wallet: WalletHandle, requester_authority: WalletAuthority | None
+) -> WalletAuthority:
+    authority = _requester_authority(wallet, requester_authority)
+    wire = wallet_authority_to_wire(authority)
+    if "programExecProof" in wire:
+        raise ValueError(
+            "Authorization lock requester_authority does not support programExecProof"
+        )
+    return authority
+
+
+def _normalize_uint64(value: Amount, field: str) -> str:
+    """uint64 crosses the wire as a decimal string."""
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        raise ValueError(f"{field} must be a non-negative decimal integer")
+    normalized = normalize_amount(value)
+    if not normalized.isascii() or not normalized.isdigit():
+        raise ValueError(f"{field} must be a non-negative decimal integer")
+    if int(normalized) > _MAX_UINT64:
+        raise ValueError(f"{field} must fit in an unsigned 64-bit integer")
+    return normalized
+
+
+def _is_public_key(value: str) -> bool:
+    try:
+        return len(base58.b58decode(value)) == 32
+    except ValueError:
+        return False
+
+
+def _normalize_authorization_locks(value: object) -> AuthorizationLocksResult:
+    body = _mapping(value, "Authorization locks response")
+    locks = body.get("locks", [])
+    if not isinstance(locks, Sequence) or isinstance(locks, (str, bytes)):
+        raise SwigResponseError("Authorization locks response has invalid locks")
+    return AuthorizationLocksResult(
+        locks=tuple(_normalize_authorization_lock(lock) for lock in locks),
+        current_slot=_required_uint64(
+            _pick(body, "currentSlot", "current_slot"), "currentSlot"
+        ),
+        next_lock_id=_required_uint32(
+            _pick(body, "nextLockId", "next_lock_id"), "nextLockId"
+        ),
+    )
+
+
+def _normalize_authorization_lock(value: object) -> AuthorizationLock:
+    body = _mapping(value, "Authorization lock")
+    mint = body.get("mint")
+    if mint is not None and (not isinstance(mint, str) or not mint):
+        raise SwigResponseError("Authorization lock response has invalid mint")
+    active = body.get("active")
+    if not isinstance(active, bool):
+        raise SwigResponseError("Response is missing active")
+    return AuthorizationLock(
+        lock_id=_required_uint32(_pick(body, "lockId", "lock_id"), "lockId"),
+        role_id=_required_uint32(_pick(body, "roleId", "role_id"), "roleId"),
+        asset_account=_required_string(
+            _pick(body, "assetAccount", "asset_account"), "assetAccount"
+        ),
+        amount=_required_uint64(body.get("amount"), "amount"),
+        expiry_slot=_required_uint64(
+            _pick(body, "expirySlot", "expiry_slot"), "expirySlot"
+        ),
+        active=active,
+        mint=mint,
+    )
+
+
+def _required_uint32(value: object, field: str) -> int:
+    parsed = _required_int(value, field)
+    if 0 <= parsed <= 0xFFFFFFFF:
+        return parsed
+    raise SwigResponseError(f"Response is missing {field}")
+
+
+def _required_uint64(value: object, field: str) -> str:
+    """uint64 arrives as a ProtoJSON decimal string; keep it a string."""
+    if (
+        isinstance(value, str)
+        and value.isascii()
+        and value.isdigit()
+        and int(value) <= _MAX_UINT64
+    ):
+        return value
+    if (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and 0 <= value <= _MAX_UINT64
+    ):
+        return str(value)
+    raise SwigResponseError(f"Response is missing {field}")
+
+
+def _reservation_request(
+    root_authority: Ed25519Authority | Secp256k1Authority | Secp256r1Authority,
+    account_index: int | None,
+    salt: bytes | None,
+    network: Network,
+) -> dict[str, object]:
+    authority = wallet_authority_to_wire(root_authority)
+    if len(authority) != 1 or not set(authority).issubset(
+        {"ed25519", "secp256k1", "secp256r1"}
+    ):
+        raise ValueError("root_authority must be a direct signing-key authority")
+    body: dict[str, object] = {
+        "network": to_proto_network(network),
+        "rootAuthority": authority,
+    }
+    if salt is not None:
+        if account_index is not None or not isinstance(salt, bytes) or len(salt) != 32:
+            raise ValueError("provide either a u32 account_index or a 32-byte salt")
+        body["addressOptions"] = {"salt": base64.b64encode(salt).decode("ascii")}
+    elif account_index is not None:
+        if type(account_index) is not int or not 0 <= account_index <= 0xFFFFFFFF:
+            raise ValueError("account_index must be a u32")
+        body["addressOptions"] = {"accountIndex": account_index}
+    return body
+
+
+def _normalize_wallet_reservation(
+    response: object, network: Network
+) -> WalletReservation:
+    body = _mapping(response, "Wallet reservation response")
+    if normalize_network(body.get("network")) != network:
+        raise SwigResponseError("Wallet reservation response has mismatched network")
+    wallet = wallet_address_info_from_wire(body.get("wallet"))
+    try:
+        Pubkey.from_string(wallet.swig_config_address)
+        Pubkey.from_string(wallet.wallet_address)
+    except ValueError as exc:
+        raise SwigResponseError(
+            "Wallet reservation response has invalid addresses"
+        ) from exc
+    return WalletReservation(wallet=replace(wallet, network=network), network=network)

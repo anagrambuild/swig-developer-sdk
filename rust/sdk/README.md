@@ -66,3 +66,54 @@ For subsequent releases, configure the crate's
 `anagrambuild/swig-developer-sdk`, workflow `rust.yml`, and environment `crates-io`.
 Restrict that GitHub environment to the `main` branch. CI uses a short-lived
 publishing token through GitHub OIDC.
+
+## Authorization locks (draft)
+
+This branch adds hosted lock preparation and reads. It requires the auth-lock
+backend routes from portal PR #1170 and the corresponding on-chain program;
+it does not depend on the Rust Protocol SDK or its crate publication.
+
+```rust
+use solana_pubkey::Pubkey;
+use swig_developer_sdk::{
+    AuthorizationLockError, AuthorizationLockExpiry, PrepareAddAuthorizationLockArgs,
+    PreparedTransaction, WalletAuthority, WalletClient,
+};
+
+async fn prepare_hold(
+    client: &WalletClient,
+    swig_config_address: Pubkey,
+    fee_payer: Pubkey,
+    requester_authority: WalletAuthority,
+) -> Result<PreparedTransaction, AuthorizationLockError> {
+    client.prepare_add_authorization_lock(PrepareAddAuthorizationLockArgs {
+        swig_config_address,
+        fee_payer,
+        requester_authority,
+        mint: None,
+        amount: 1_000_000,
+        expiry: AuthorizationLockExpiry::DurationSlots(150),
+    }).await
+}
+```
+
+- Use `Some(mint)` for tokens and `None` for SOL. Amounts are `u64` base units.
+- Choose `DurationSlots` or `ExpirySlot`; the enum prevents ambiguous expiry.
+- Grant `Permission::ManageAuthorizationLocks { max_duration_slots }` through
+  the Protocol SDK in addition to spending permissions, even for `All`. The
+  hosted add-role API does not yet accept this permission. Role reads decode it
+  as `SwigRolePermission::ManageAuthorizationLocks`.
+- `get_authorization_locks(&swig_config_address, include_expired)` returns
+  typed lock IDs, amounts, expiry slots, and the service's current slot.
+  Set `include_expired` to include both expired and fully captured records.
+- `prepare_remove_authorization_lock(PrepareRemoveAuthorizationLockArgs { ... })`
+  prepares release by the holder, or pruning by an eligible role once inactive.
+- Preparation returns an unsigned transaction. Complete its authority signing
+  or ParticipantSet approvals, then fee-payer signing and submission. The Rust
+  native secp256k1 and raw secp256r1 signers support both lock instructions.
+- Capture happens through the holder's normal spending; there is no separate
+  capture endpoint. A captured amount of zero is valid read state.
+
+The existing Rust CI runs formatting, tests, Clippy, and package verification;
+its configuration is unchanged in this draft. Run `cargo test --workspace --locked` and
+`cargo clippy --workspace --all-targets --locked -- -D warnings` from `rust/`.

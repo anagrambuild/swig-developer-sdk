@@ -1,0 +1,19 @@
+{
+  "network": "NETWORK_DEVNET",
+  "transactions": [
+    {
+      "kind": "PREPARED_TRANSACTION_KIND_CREATE_SWIG_WALLET",
+      "network": "NETWORK_DEVNET",
+      "transaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAMG11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURoQeDoyFRibqxW5mdtgrbw3djXR3fTTO84h0XEJXVfhFtIqJvpqUuGUP7qd6GzIaQiJg+/FpZeEPanakJ+tztHeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADBkZv5SEXMv/srbpyw5vnvIzlu8X3EmssQ5s6QAAAAA0M6ULh58UG4hjfDX3xxS+v3DUp5I1nTR2yTHW1TMy+BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcCBAAFAsAnCQAFBAIAAQNlGAABDQzpQuHnxQbiGN8NffHFL6/cNSnkjWdNHbJMdbVMzL4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEA11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=",
+      "transactionEncoding": "TRANSACTION_ENCODING_BASE64",
+      "wallet": {
+        "swigConfigAddress": "F9PtypZzCwh4rrgJDGezwXibk1TnpGmfKvq9NLBk84ms",
+        "walletAddress": "27HrTtgqMiugAqSzGjr5sFBD6GSCKXzydtNV1aFoAXt9"
+      }
+    }
+  ],
+  "wallet": {
+    "swigConfigAddress": "F9PtypZzCwh4rrgJDGezwXibk1TnpGmfKvq9NLBk84ms",
+    "walletAddress": "27HrTtgqMiugAqSzGjr5sFBD6GSCKXzydtNV1aFoAXt9"
+  }
+}

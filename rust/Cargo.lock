@@ -3640,7 +3640,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "swig-developer-sdk"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -3677,11 +3677,15 @@ name = "swig-developer-sdk-examples"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "dotenvy",
  "hex",
  "k256",
  "p256",
  "rand_core 0.6.4",
+ "reqwest",
+ "serde",
+ "serde_json",
  "solana-commitment-config",
  "solana-keypair",
  "solana-message",
