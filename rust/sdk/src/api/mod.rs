@@ -1,3 +1,4 @@
+pub(crate) mod authorization_locks;
 pub(crate) mod error;
 pub(crate) mod get_policy;
 pub(crate) mod list_roles;
@@ -44,3 +45,5 @@ pub(crate) mod prepare_ramp_transfer;
 pub(crate) mod submit_ramp_transfer;
 
 pub(crate) mod prepare_x402_payment;
+
+pub(crate) mod reservation;

@@ -8,7 +8,8 @@ use solana_transaction::versioned::VersionedTransaction;
 use super::prepared;
 use crate::{PreparedTransaction, TransactionSignError, TransactionSigner, WalletAuthority};
 
-/// Signs raw secp256k1 authority requests using a shared local private key.
+/// Signs secp256k1 authority requests using a shared local private key.
+/// Supports raw SignV2 requests and the hosted lock API's EIP-191 prefix.
 pub struct Secp256k1TransactionSigner {
     signing_key: Arc<SigningKey>,
 }
@@ -42,7 +43,11 @@ impl TransactionSigner for Secp256k1TransactionSigner {
         let mut transaction = prepared.transaction;
         for target in targets {
             let message = hex::encode(target.message_hash);
-            let digest = Keccak256::new_with_prefix(message.as_bytes());
+            let mut digest = Keccak256::new();
+            if target.personal_sign {
+                digest.update(b"\x19Ethereum Signed Message:\n64");
+            }
+            digest.update(message.as_bytes());
             let (signature, recovery) = self
                 .signing_key
                 .sign_digest_recoverable(digest.clone())

@@ -143,3 +143,108 @@ pub(super) fn secp256k1_authority(key: &Secp256k1Key) -> Result<WalletAuthority,
             .try_into()?,
     })
 }
+
+/// Matches wallet #226's 88-byte add and 16-byte remove arguments and authority messages.
+pub(super) fn lock_preparation(
+    authority: WalletAuthority,
+    versioned: bool,
+    add: bool,
+) -> Result<PreparedTransaction, Box<dyn Error>> {
+    let fee_payer = Keypair::new_from_array([9; 32]);
+    let wallet = Pubkey::new_from_array([2; 32]);
+    let mut accounts = vec![
+        AccountMeta::new(Pubkey::new_from_array([1; 32]), false),
+        AccountMeta::new_readonly(wallet, false),
+        AccountMeta::new(fee_payer.pubkey(), true),
+        AccountMeta::new_readonly(SYSTEM, false),
+    ];
+    let mut args = if add { 25_u16 } else { 26_u16 }.to_le_bytes().to_vec();
+    args.extend_from_slice(&[0; 2]);
+    args.extend_from_slice(&3_u32.to_le_bytes());
+    if add {
+        accounts.push(AccountMeta::new_readonly(wallet, false));
+        args.extend_from_slice(wallet.as_ref());
+        args.extend_from_slice(&[0; 32]);
+        args.extend_from_slice(&100_u64.to_le_bytes());
+        args.extend_from_slice(&900_u64.to_le_bytes());
+    } else {
+        args.extend_from_slice(&4_u32.to_le_bytes());
+        args.extend_from_slice(&[0; 4]);
+    }
+    if matches!(authority, WalletAuthority::Secp256r1 { .. }) {
+        accounts.push(AccountMeta::new_readonly(INSTRUCTIONS, false));
+    }
+    let slot = 800_u64;
+    let counter = 7_u32;
+    let mut digest_payload = args.clone();
+    for account in &accounts {
+        digest_payload.extend_from_slice(account.pubkey.as_ref());
+        digest_payload
+            .extend_from_slice(&[u8::from(account.is_writable), u8::from(account.is_signer)]);
+        digest_payload.extend_from_slice(&[0; 6]);
+    }
+    digest_payload.extend_from_slice(&slot.to_le_bytes());
+    digest_payload.extend_from_slice(&counter.to_le_bytes());
+    let mut instructions = Vec::new();
+    let message_hash: [u8; 32] = match authority {
+        WalletAuthority::Secp256k1 { .. } => Sha256::digest(&digest_payload).into(),
+        WalletAuthority::Secp256r1 { .. } => Keccak256::digest(&digest_payload).into(),
+        _ => return Err("fixture requires secp256 authority".into()),
+    };
+    args.extend_from_slice(&slot.to_le_bytes());
+    args.extend_from_slice(&counter.to_le_bytes());
+    match authority {
+        WalletAuthority::Secp256k1 { .. } => {
+            args.extend_from_slice(&[0; 65]);
+            args.extend_from_slice(b"\x19Ethereum Signed Message:\n64");
+        }
+        WalletAuthority::Secp256r1 { public_key } => {
+            instructions.push(
+                solana_secp256r1_program::new_secp256r1_instruction_with_signature(
+                    &message_hash,
+                    &[0; 64],
+                    &public_key,
+                ),
+            );
+            args.extend_from_slice(&[if add { 5 } else { 4 }, 0, 0, 0, 0]);
+        }
+        _ => return Err("fixture requires secp256 authority".into()),
+    }
+    instructions.push(Instruction {
+        program_id: SWIG,
+        accounts,
+        data: args,
+    });
+    let blockhash = Hash::new_from_array([8; 32]);
+    let message = if versioned {
+        VersionedMessage::V0(v0::Message::try_compile(
+            &fee_payer.pubkey(),
+            &instructions,
+            &[],
+            blockhash,
+        )?)
+    } else {
+        VersionedMessage::Legacy(Message::new_with_blockhash(
+            &instructions,
+            Some(&fee_payer.pubkey()),
+            &blockhash,
+        ))
+    };
+    Ok(PreparedTransaction {
+        transaction: VersionedTransaction {
+            signatures: vec![Signature::default()],
+            message,
+        },
+        wallet: None,
+        expires_at: None,
+        network: Some(Network::Devnet),
+        recent_blockhash: Some(blockhash),
+        signature_requests: vec![ClientSignatureRequest {
+            authority,
+            message_hash,
+            slot,
+            counter,
+        }],
+        participant_set_approval_plan: None,
+    })
+}
