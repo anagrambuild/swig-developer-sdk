@@ -1,0 +1,6 @@
+.env
+.env.*
+!.env.example
+.keys/
+.state/
+*.transaction.base64

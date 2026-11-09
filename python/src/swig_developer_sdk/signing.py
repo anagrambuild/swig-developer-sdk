@@ -21,6 +21,7 @@ from .transactions import (
 
 SECP256R1_PROGRAM_ID = Pubkey.from_string("Secp256r1SigVerify1111111111111111111111111")
 SWIG_PROGRAM_ID = Pubkey.from_string("swigypWHEksbC64pWKwah1WTeh9JXwx8H1rJHLdbQMB")
+ADD_AUTHORITY_V1_DISCRIMINATOR = 1
 SIGN_V2_DISCRIMINATOR = 11
 ADD_AUTHORIZATION_LOCK_V1_DISCRIMINATOR = 25
 REMOVE_AUTHORIZATION_LOCK_V1_DISCRIMINATOR = 26
@@ -176,14 +177,14 @@ async def _apply_secp256r1(
         ),
     )
     if result.prefix is not None:
-        swig_index = _find_following_swig_instruction(transaction, instruction_index)
+        swig_index = _find_following_secp256r1_swig_instruction(
+            transaction, instruction_index
+        )
         transaction.set_instruction_data(
             swig_index,
             _patch_authority_prefix(
                 transaction.instruction_data(swig_index),
                 result.prefix,
-                SECP256R1_AUTHORITY_PAYLOAD_SIZE,
-                "secp256r1",
             ),
         )
 
@@ -316,21 +317,26 @@ def _find_secp256r1_instruction(
     raise ValueError("Matching secp256r1 signature instruction not found")
 
 
-def _find_following_swig_instruction(
+def _find_following_secp256r1_swig_instruction(
     transaction: _MutableTransaction,
     secp_instruction_index: int,
 ) -> int:
     for index in range(secp_instruction_index + 1, len(transaction.instructions)):
-        if (
-            transaction.program_id(index) == SWIG_PROGRAM_ID
-            and _authority_payload_offset(transaction.instruction_data(index))
-            is not None
+        program_id = transaction.program_id(index)
+        if program_id == SECP256R1_PROGRAM_ID:
+            break
+        if program_id != SWIG_PROGRAM_ID:
+            continue
+        discriminator = _read_u16(transaction.instruction_data(index), 0)
+        if discriminator in (
+            SIGN_V2_DISCRIMINATOR,
+            ADD_AUTHORITY_V1_DISCRIMINATOR,
+            ADD_AUTHORIZATION_LOCK_V1_DISCRIMINATOR,
+            REMOVE_AUTHORIZATION_LOCK_V1_DISCRIMINATOR,
         ):
             return index
-    raise ValueError(
-        "Swig SignV2 or authorization-lock instruction following secp256r1 "
-        "precompile not found"
-    )
+        raise ValueError("Unsupported Swig instruction following secp256r1 precompile")
+    raise ValueError("Swig instruction following secp256r1 precompile not found")
 
 
 def _find_secp256k1_swig_instruction(
@@ -404,16 +410,27 @@ def _parse_secp256r1_instruction(data: bytes) -> tuple[bytes, bytes] | None:
     )
 
 
-def _patch_authority_prefix(
-    instruction_data: bytes,
-    prefix: bytes,
-    fixed_payload_size: int,
-    scheme: str,
-) -> bytes:
-    offset = _require_authority_payload_offset(instruction_data)
-    if len(instruction_data) < offset + fixed_payload_size:
-        raise ValueError(f"Swig instruction is missing {scheme} authority payload")
-    return instruction_data[: offset + fixed_payload_size] + prefix
+def _patch_authority_prefix(instruction_data: bytes, prefix: bytes) -> bytes:
+    discriminator = _read_u16(instruction_data, 0)
+    if discriminator == SIGN_V2_DISCRIMINATOR:
+        if len(instruction_data) < 8:
+            raise ValueError("Truncated SignV2 header")
+        offset = _require_authority_payload_offset(instruction_data)
+    elif discriminator == ADD_AUTHORITY_V1_DISCRIMINATOR:
+        if len(instruction_data) < 16:
+            raise ValueError("Truncated AddAuthorityV1 header")
+        # Header, new authority bytes, permissions, then the manager's payload.
+        offset = 16 + _read_u16(instruction_data, 2) + _read_u16(instruction_data, 4)
+    elif discriminator == ADD_AUTHORIZATION_LOCK_V1_DISCRIMINATOR:
+        offset = ADD_AUTHORIZATION_LOCK_V1_ARGS_SIZE
+    elif discriminator == REMOVE_AUTHORIZATION_LOCK_V1_DISCRIMINATOR:
+        offset = REMOVE_AUTHORIZATION_LOCK_V1_ARGS_SIZE
+    else:
+        raise ValueError("Unsupported Swig instruction for secp256r1 signing")
+    end = offset + SECP256R1_AUTHORITY_PAYLOAD_SIZE
+    if len(instruction_data) < end:
+        raise ValueError("Swig instruction is missing secp256r1 authority payload")
+    return instruction_data[:end] + prefix
 
 
 def _patch_secp256k1_payload(

@@ -3,7 +3,7 @@
 API-key SDK for preparing Swig wallet operations on a server, with a separate
 entrypoint for application-owned signing.
 
-- Version: `0.11.1`
+- Version: `0.12.0`
 - Source: <https://github.com/anagrambuild/swig-developer-sdk>
 - Default API base URL: `https://api.onswig.com`
 
@@ -69,6 +69,7 @@ const swig = new SwigClient({
   matching retry returns the original paymaster response.
 - Ramp order creation retries because its required `requestId` makes replay
   safe. Transfer preparation and submission do not retry automatically.
+- DEX transaction and position lists retry like `GET`s; they only read.
 - `4xx` responses throw immediately as `SwigDeveloperSdkError`; `5xx` and
   network failures are what the retry policy covers.
 
@@ -502,6 +503,202 @@ Policy metadata is a separate read:
 ```typescript
 const policy = await swig.wallets.getPolicy(policyId);
 ```
+
+## DEX history and positions
+
+`swig.dex` reads the DEX activity the backend indexed for a Swig your API key's
+organization owns. The two lists are API-key `POST`s that carry their filters
+in the body, and `get` is an API-key `GET`. All three only read, follow the
+retry policy, and never call Solana themselves.
+
+```typescript
+const filters: ListDexTransactionsArgs = {
+  swigConfigAddress,
+  network: 'mainnet',
+  startSlot: 357_000_000,
+  endSlot: 358_000_000,
+  protocol: 'raydium-clmm',
+  actionType: 'swap',
+  swigVaultAddress,
+};
+
+const page = await swig.dex.transactions.list({ ...filters, pageSize: 25 });
+
+for (const transaction of page.transactions) {
+  for (const { action, protocol } of transaction.actions) {
+    if (action.type === 'swap') {
+      console.log(protocol, action.input.amountRaw, action.output.amountRaw);
+    }
+  }
+}
+
+if (page.nextCursor) {
+  const next = await swig.dex.transactions.list({
+    ...filters,
+    cursor: page.nextCursor,
+  });
+}
+
+const transaction = await swig.dex.transactions.get({
+  swigConfigAddress,
+  network: 'mainnet',
+  transactionSignature,
+});
+```
+
+Transactions come newest first. Every filter is optional, and filters combine
+with AND. `startSlot` and `endSlot` are inclusive, and `protocol`,
+`actionType` and `swigVaultAddress` must all match the same action. A matching
+transaction still carries every DEX action the Swig executed in it.
+`pageSize` defaults to 25 and the backend caps it at 100. `nextCursor` is the
+last transaction of the page and is absent on the last page; pass it back as
+`cursor` with the same filters. Positions page the same way.
+
+```typescript
+const positions = await swig.dex.positions.list({
+  swigConfigAddress,
+  network: 'mainnet',
+  positionStatus: 'open',
+});
+
+for (const position of positions.positions) {
+  if (position.status === 'open') {
+    console.log(position.dexPoolAddress, position.state.liquidityRaw);
+  }
+}
+```
+
+A position is the latest known on-chain state of a position held by the Swig's
+vault or any of its sub-accounts, enabled or not; `closed` means the position
+account no longer exists, and `updatedSlot` is the slot of the read the state
+came from. Positions take `positionStatus`, `protocol` and `swigVaultAddress`
+filters, each applied to the position. Latest state is currently recorded for
+Raydium CLMM positions only.
+
+Read the amounts as the venue saw them:
+
+- `amountRaw` is a decimal integer string, signed for the action's
+  `protocolActorAddress`: negative amounts left its accounts.
+- `protocolActorAddress` is the Swig vault on a direct call, and the router's
+  account when an aggregator such as Jupiter routed the trade. A routed swap is
+  one action per venue hop, not the wallet's net trade.
+- Only transactions the index interpreted are listed. One it could not
+  interpret, or has not processed yet, is omitted, and `get` answers 404 for
+  it.
+
+## Yield
+
+`swig.yield` earns on an existing Swig wallet. Native Solana staking to a
+validator on the Swig allowlist is the first yield method. Every call is scoped
+to one wallet config; prepare calls return an unsigned `PreparedTransaction`
+that you authorize, sign, and submit exactly like a transfer.
+
+| Client method              | Route                                                    |
+| -------------------------- | -------------------------------------------------------- |
+| `swig.yield.prepareRole`   | `POST /api/yield/{swig_config_address}/role/prepare`     |
+| `swig.yield.deposit`       | `POST /api/yield/{swig_config_address}/deposit/prepare`  |
+| `swig.yield.exit`          | `POST /api/yield/{swig_config_address}/exit/prepare`     |
+| `swig.yield.withdraw`      | `POST /api/yield/{swig_config_address}/withdraw/prepare` |
+| `swig.yield.listOptions`   | `GET /api/yield/{swig_config_address}/options`           |
+| `swig.yield.estimate`      | `GET /api/yield/{swig_config_address}/estimate`          |
+| `swig.yield.listPositions` | `GET /api/yield/{swig_config_address}/positions`         |
+| `swig.yield.getSummary`    | `GET /api/yield/{swig_config_address}/summary`           |
+| `swig.yield.listRewards`   | `GET /api/yield/{swig_config_address}/rewards`           |
+
+Bind a wallet once with `forWallet` to drop the repeated fields:
+
+```ts
+const yieldClient = swig.yield.forWallet({
+  swigConfigAddress: wallet.swigConfigAddress,
+  network: 'mainnet',
+});
+const options = await yieldClient.listOptions();
+const validator = options.find((option) => option.acceptsDeposits)!;
+// validator.rate?.estimatedNetAprBps: 600 = 6% APR after commission
+```
+
+### Prepare a role that can stake
+
+A role needs the Stake and System programs, a SOL allowance to fund deposits,
+and stake allowance to exit and withdraw. `prepareRole` reuses the lowest
+sufficient role, or prepares an AddRole transaction that creates one with
+exactly `Program(System)`, `Program(Stake)`, `SolLimit(maxDeposit)` and
+`StakeAll` — never `All` or `ManageAuthority`.
+
+```ts
+const role = await yieldClient.prepareRole({
+  feePayer: paymaster.address,
+  yieldAuthority: { ed25519: { publicKey: agentKey } },
+  validatorVoteAddress: validator.voteAddress,
+  maxDeposit: 10_000_000_000n,
+  // Needed only to create a role: an existing role with All or ManageAuthority.
+  roleManagerAuthority: { ed25519: { publicKey: adminKey } },
+});
+if (role.type === 'create') {
+  // Sign with the role manager and fee payer, submit, and wait for confirmation,
+  // then call prepareRole again (without roleId) to resolve the new role ID.
+}
+```
+
+### Deposit, exit, and withdraw
+
+```ts
+const deposit = await yieldClient.deposit({
+  feePayer: paymaster.address,
+  requesterAuthority: { ed25519: { publicKey: agentKey } },
+  amount: 5_000_000_000n, // principal, excluding rent and fees
+  validatorVoteAddress: validator.voteAddress,
+  positionSeed: 'deposit-2026-10-22', // reuse on retry; ALREADY_EXISTS if used
+});
+// deposit.positionAddress, deposit.rentLamports (funded by the fee payer)
+
+const exit = await yieldClient.exit({
+  feePayer: paymaster.address,
+  requesterAuthority: { ed25519: { publicKey: agentKey } },
+  positionAddress: deposit.positionAddress,
+  amount: 'all', // or { lamports: 2_000_000_000n, positionSeed: 'exit-1' }
+});
+
+// After cooldown (about one epoch), the position is inactive:
+const withdrawal = await yieldClient.withdraw({
+  feePayer: paymaster.address,
+  requesterAuthority: { ed25519: { publicKey: agentKey } },
+  positionAddress: exit.exitingPositionAddress,
+});
+```
+
+Each returns `{ transaction, ... }`; sign `transaction` with
+`signPreparedTransaction` (and passkey or participant-set flows as usual), then
+submit or sponsor it. Partial exits split a fully active position into a new
+account and require both parts to meet the network minimum delegation.
+Withdrawals currently return the position balance above its rent reserve; the
+reserve stays in the position until the Swig program supports closing stake
+accounts through SignV2.
+
+### Read positions, rewards, and estimates
+
+```ts
+const { positions, nextPageToken, lastUpdatedAt } =
+  await yieldClient.listPositions({ pageSize: 50 });
+const summary = await yieldClient.getSummary();
+const rewards = await yieldClient.listRewards();
+const projection = await yieldClient.estimate({
+  validatorVoteAddress: validator.voteAddress,
+  principal: 5_000_000_000n,
+  horizonDays: 365,
+});
+```
+
+Positions and rewards come from the Swig index; amounts are lamport strings and
+timestamps are RFC 3339 strings. Pages default to 50 entries (maximum 200) and
+page tokens only work for the wallet and network that issued them. Estimates are
+`principal × net APR × days / 365`, rounded down, with no compounding.
+
+Errors follow the API: `INVALID_ARGUMENT` (bad input or unsupported validator),
+`NOT_FOUND` (wallet not in your organization), `PERMISSION_DENIED` (role cannot
+perform the operation), `FAILED_PRECONDITION` (funds, position state, or
+lockup), `ALREADY_EXISTS` (position seed in use), and `UNAVAILABLE` (RPC, rate
+source, or index outage).
 
 ## Fiat ramps
 

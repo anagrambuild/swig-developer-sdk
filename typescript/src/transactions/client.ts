@@ -203,6 +203,12 @@ function preparedTransactionKindToWire(kind: PreparedTransaction['kind']) {
       return 'PREPARED_TRANSACTION_KIND_ADD_AUTHORIZATION_LOCK';
     case 'remove-authorization-lock':
       return 'PREPARED_TRANSACTION_KIND_REMOVE_AUTHORIZATION_LOCK';
+    case 'yield-deposit':
+      return 'PREPARED_TRANSACTION_KIND_YIELD_DEPOSIT';
+    case 'yield-exit':
+      return 'PREPARED_TRANSACTION_KIND_YIELD_EXIT';
+    case 'yield-withdrawal':
+      return 'PREPARED_TRANSACTION_KIND_YIELD_WITHDRAWAL';
     case undefined:
       return undefined;
   }

@@ -1,5 +1,12 @@
+export type {
+  CreateReservedWalletArgs,
+  ReservationAddressOptions,
+  ReserveWalletAddressArgs,
+  WalletReservation,
+} from '../wallets/reservation.js';
 export type * from './common.js';
 export type * from './config.js';
+export type * from './dex.js';
 export type * from './evm.js';
 export type * from './instruction.js';
 export type * from './participant-set.js';
@@ -11,3 +18,4 @@ export type * from './transaction.js';
 export type * from './wallet-actions.js';
 export type * from './wallet.js';
 export type * from './x402.js';
+export type * from './yield.js';

@@ -557,6 +557,18 @@ function normalizePreparedTransactionKind(
     case 'PREPARED_TRANSACTION_KIND_X402_PAYMENT':
     case 5:
       return 'x402-payment';
+    case 'yield-deposit':
+    case 'PREPARED_TRANSACTION_KIND_YIELD_DEPOSIT':
+    case 7:
+      return 'yield-deposit';
+    case 'yield-exit':
+    case 'PREPARED_TRANSACTION_KIND_YIELD_EXIT':
+    case 8:
+      return 'yield-exit';
+    case 'yield-withdrawal':
+    case 'PREPARED_TRANSACTION_KIND_YIELD_WITHDRAWAL':
+    case 9:
+      return 'yield-withdrawal';
     default:
       return undefined;
   }

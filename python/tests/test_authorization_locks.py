@@ -47,10 +47,13 @@ USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 ENGINE = {"ed25519": {"publicKey": "engine"}}
 
 
-@pytest.mark.parametrize("kind", [7, 8, 9])
-def test_yield_kind_is_not_an_authorization_lock(kind: int) -> None:
+@pytest.mark.parametrize(
+    ("kind", "expected_kind"),
+    [(7, "yield-deposit"), (8, "yield-exit"), (9, "yield-withdrawal")],
+)
+def test_yield_kind_is_not_an_authorization_lock(kind: int, expected_kind: str) -> None:
     prepared = normalize_prepared_transaction({"transaction": "prepared", "kind": kind})
-    assert prepared.kind is None
+    assert prepared.kind == expected_kind
 
 
 LOCKS_RESPONSE: dict[str, object] = {
