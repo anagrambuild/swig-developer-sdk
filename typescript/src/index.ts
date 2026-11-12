@@ -118,6 +118,7 @@ export type {
   PreparedYieldDeposit,
   PreparedYieldExit,
   PreparedYieldWithdrawal,
+  ProjectWalletSummary,
   RampAssetOption,
   RampBuyOrder,
   RampBuyQuote,

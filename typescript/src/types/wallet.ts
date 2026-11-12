@@ -36,6 +36,18 @@ export interface WalletReadArgs {
   network?: Network;
 }
 
+/** Indexed project wallet totals. TVL excludes rent, paymasters, and unpriced assets. */
+export interface ProjectWalletSummary {
+  organizationId: string;
+  projectName: string;
+  network: Network;
+  /** Decimal uint64 string, including indexed wallets that have since closed. */
+  walletsCreated: string;
+  tvlUsd: number;
+  /** Decimal uint64 string. Nonzero means the valuation is partial. */
+  unpricedAssetCount: string;
+}
+
 export interface ListSwigTokenTransactionsArgs extends WalletReadArgs {
   limit?: number;
 }
