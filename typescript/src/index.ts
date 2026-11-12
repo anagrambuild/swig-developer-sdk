@@ -118,7 +118,6 @@ export type {
   PreparedYieldDeposit,
   PreparedYieldExit,
   PreparedYieldWithdrawal,
-  ProjectWalletSummary,
   RampAssetOption,
   RampBuyOrder,
   RampBuyQuote,
@@ -186,3 +185,5 @@ export type {
   YieldSummary,
   YieldWalletArgs,
 } from './types/index.js';
+
+export type { GetProjectSummaryArgs, ProjectSummary } from './types/project.js';

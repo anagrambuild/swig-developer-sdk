@@ -19,3 +19,5 @@ export type * from './wallet-actions.js';
 export type * from './wallet.js';
 export type * from './x402.js';
 export type * from './yield.js';
+
+export type { GetProjectSummaryArgs, ProjectSummary } from './project.js';

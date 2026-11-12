@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { SwigClient } from '../index.js';
+import { SwigClient } from '../../index.js';
 
-describe('project wallet summary', () => {
+describe('project summary', () => {
   test('uses the selected network and preserves uint64 totals', async () => {
     const calls: string[] = [];
     const swig = new SwigClient({
@@ -22,16 +22,14 @@ describe('project wallet summary', () => {
         { preconnect: fetch.preconnect },
       ),
     });
-    expect(await swig.wallets.getProjectSummary({ network: 'devnet' })).toEqual(
-      {
-        organizationId: 'project',
-        projectName: 'App',
-        network: 'devnet',
-        walletsCreated: '9007199254740993',
-        tvlUsd: 42.5,
-        unpricedAssetCount: '2',
-      },
-    );
+    expect(await swig.getProjectSummary({ network: 'devnet' })).toEqual({
+      organizationId: 'project',
+      projectName: 'App',
+      network: 'devnet',
+      walletsCreated: '9007199254740993',
+      tvlUsd: 42.5,
+      unpricedAssetCount: '2',
+    });
     expect(new URL(calls[0] ?? '').pathname).toBe(
       '/wallet/api/project/summary',
     );
@@ -55,11 +53,9 @@ describe('project wallet summary', () => {
         { preconnect: fetch.preconnect },
       ),
     });
-    await expect(swig.wallets.getProjectSummary()).rejects.toThrow('network');
+    await expect(swig.getProjectSummary()).rejects.toThrow('network');
     expect(calls).toBe(0);
-    expect(
-      await swig.wallets.getProjectSummary({ network: 'mainnet' }),
-    ).toMatchObject({
+    expect(await swig.getProjectSummary({ network: 'mainnet' })).toMatchObject({
       walletsCreated: '0',
       tvlUsd: 0,
       unpricedAssetCount: '0',
@@ -96,8 +92,8 @@ describe('project wallet summary', () => {
           preconnect: fetch.preconnect,
         }),
       });
-      await expect(swig.wallets.getProjectSummary()).rejects.toThrow(
-        'Invalid project wallet summary',
+      await expect(swig.getProjectSummary()).rejects.toThrow(
+        'Invalid project summary',
       );
     });
   }

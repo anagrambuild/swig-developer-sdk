@@ -33,7 +33,6 @@ import type {
   PrepareRecoverySetupArgs,
   PrepareTransactionsResponseWire,
   PrepareX402PaymentOptions,
-  ProjectWalletSummary,
   RecoverySetupPlan,
   RemoveAuthorizationLockArgs,
   SetRentClaimerArgs,
@@ -93,56 +92,6 @@ export class WalletsClient {
     private readonly http: HttpClient,
     private readonly defaultNetwork?: Network,
   ) {}
-
-  getProjectSummary = async (
-    args: WalletReadArgs = {},
-  ): Promise<ProjectWalletSummary> => {
-    const network = args.network ?? this.defaultNetwork;
-    if (network !== 'mainnet' && network !== 'devnet') {
-      throw new Error('network must be mainnet or devnet');
-    }
-    const response = await this.http.get<unknown>(
-      `/wallet/api/project/summary?network=${networkParam(network)}`,
-    );
-    if (!response || typeof response !== 'object' || Array.isArray(response)) {
-      throw new Error('Invalid project wallet summary response');
-    }
-    const organizationId =
-      'organizationId' in response ? response.organizationId : undefined;
-    const projectName = 'projectName' in response ? response.projectName : '';
-    const returnedNetwork =
-      'network' in response ? response.network : undefined;
-    const walletsCreated =
-      'walletsCreated' in response ? response.walletsCreated : '0';
-    const tvlUsd = 'tvlUsd' in response ? response.tvlUsd : 0;
-    const unpricedAssetCount =
-      'unpricedAssetCount' in response ? response.unpricedAssetCount : '0';
-    if (
-      typeof organizationId !== 'string' ||
-      !organizationId ||
-      typeof projectName !== 'string' ||
-      returnedNetwork !== networkParam(network) ||
-      typeof walletsCreated !== 'string' ||
-      !/^(0|[1-9][0-9]*)$/.test(walletsCreated) ||
-      BigInt(walletsCreated) > 18446744073709551615n ||
-      typeof tvlUsd !== 'number' ||
-      !Number.isFinite(tvlUsd) ||
-      tvlUsd < 0 ||
-      typeof unpricedAssetCount !== 'string' ||
-      !/^(0|[1-9][0-9]*)$/.test(unpricedAssetCount) ||
-      BigInt(unpricedAssetCount) > 18446744073709551615n
-    ) {
-      throw new Error('Invalid project wallet summary response');
-    }
-    return {
-      organizationId,
-      projectName,
-      network,
-      walletsCreated,
-      tvlUsd,
-      unpricedAssetCount,
-    };
-  };
 
   /** Derive a reserved address without creating or submitting a transaction. */
   reserveAddress = async (

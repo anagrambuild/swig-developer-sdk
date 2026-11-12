@@ -9,6 +9,10 @@ import { PaymasterClient } from '../../paymaster/index.js';
 import { RampClient } from '../../ramp/index.js';
 import { TransactionsClient } from '../../transactions/index.js';
 import type { SwigClientConfig } from '../../types/index.js';
+import {
+  type GetProjectSummaryArgs,
+  type ProjectSummary,
+} from '../../types/project.js';
 import { WalletsClient } from '../../wallets/index.js';
 import { YieldClient } from '../../yield/index.js';
 
@@ -43,4 +47,56 @@ export class SwigClient {
     this.wallets = new WalletsClient(this.#http, this.defaultNetwork);
     this.yield = new YieldClient(this.#http, this.defaultNetwork);
   }
+
+  getProjectSummary = async (
+    args: GetProjectSummaryArgs = {},
+  ): Promise<ProjectSummary> => {
+    const network = args.network ?? this.defaultNetwork;
+    if (network !== 'mainnet' && network !== 'devnet') {
+      throw new Error('network must be mainnet or devnet');
+    }
+    const wireNetwork =
+      network === 'mainnet' ? 'NETWORK_MAINNET' : 'NETWORK_DEVNET';
+    const response = await this.#http.get<unknown>(
+      `/wallet/api/project/summary?network=${wireNetwork}`,
+    );
+    if (!response || typeof response !== 'object' || Array.isArray(response)) {
+      throw new Error('Invalid project summary response');
+    }
+    const organizationId =
+      'organizationId' in response ? response.organizationId : undefined;
+    const projectName = 'projectName' in response ? response.projectName : '';
+    const returnedNetwork =
+      'network' in response ? response.network : undefined;
+    const walletsCreated =
+      'walletsCreated' in response ? response.walletsCreated : '0';
+    const tvlUsd = 'tvlUsd' in response ? response.tvlUsd : 0;
+    const unpricedAssetCount =
+      'unpricedAssetCount' in response ? response.unpricedAssetCount : '0';
+    if (
+      typeof organizationId !== 'string' ||
+      !organizationId ||
+      typeof projectName !== 'string' ||
+      returnedNetwork !== wireNetwork ||
+      typeof walletsCreated !== 'string' ||
+      !/^(0|[1-9][0-9]*)$/.test(walletsCreated) ||
+      BigInt(walletsCreated) > 18446744073709551615n ||
+      typeof tvlUsd !== 'number' ||
+      !Number.isFinite(tvlUsd) ||
+      tvlUsd < 0 ||
+      typeof unpricedAssetCount !== 'string' ||
+      !/^(0|[1-9][0-9]*)$/.test(unpricedAssetCount) ||
+      BigInt(unpricedAssetCount) > 18446744073709551615n
+    ) {
+      throw new Error('Invalid project summary response');
+    }
+    return {
+      organizationId,
+      projectName,
+      network,
+      walletsCreated,
+      tvlUsd,
+      unpricedAssetCount,
+    };
+  };
 }
