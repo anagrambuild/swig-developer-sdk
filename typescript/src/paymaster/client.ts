@@ -1,5 +1,7 @@
+import { PublicKey } from '@solana/web3.js';
 import type { HttpClient } from '../core/index.js';
 import type {
+  ApiPaymaster,
   GetPaymasterBalanceArgs,
   Network,
   PaymasterBalance,
@@ -13,6 +15,38 @@ export class PaymasterClient {
     private readonly http: HttpClient,
     private readonly defaultNetwork?: Network,
   ) {}
+
+  /** Reuse the organization's API paymaster, or create its first one. Does not fund it. */
+  getOrCreate = async (): Promise<ApiPaymaster> => {
+    const response = await this.http.post<unknown>(
+      '/paymaster/api/paymasters/get-or-create',
+      {},
+      { retry: true },
+    );
+    if (
+      typeof response !== 'object' ||
+      response === null ||
+      !('id' in response) ||
+      typeof response.id !== 'string' ||
+      response.id.length === 0 ||
+      !('address' in response) ||
+      typeof response.address !== 'string' ||
+      response.address.length === 0 ||
+      ('label' in response && typeof response.label !== 'string') ||
+      ('created' in response && typeof response.created !== 'boolean')
+    ) {
+      throw new Error('Paymaster initialization response is invalid');
+    }
+    return {
+      id: response.id,
+      address: new PublicKey(response.address).toBase58(),
+      label:
+        'label' in response && typeof response.label === 'string'
+          ? response.label
+          : '',
+      created: 'created' in response ? response.created === true : false,
+    };
+  };
 
   getBalance = async (
     args: GetPaymasterBalanceArgs = {},
