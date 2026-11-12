@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { SwigClient } from '../server/typescript/index.js';
+import { type ApiPaymaster, SwigClient } from '../index.js';
 
 const paymaster = {
   id: 'paymaster-1',
@@ -24,7 +24,8 @@ describe('API paymaster initialization', () => {
           { preconnect: fetch.preconnect },
         ),
       });
-      expect(await swig.paymaster.getOrCreate()).toEqual({
+      const result: ApiPaymaster = await swig.paymaster.getOrCreate();
+      expect(result).toEqual({
         ...paymaster,
         created,
       });
