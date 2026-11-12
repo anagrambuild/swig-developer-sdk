@@ -34,6 +34,7 @@ export type {
   AddRoleAction,
   AddRoleArgs,
   Amount,
+  ApiPaymaster,
   AuthorizationLock,
   AuthorizationLockExpiry,
   AuthorizationLockRequesterAuthority,

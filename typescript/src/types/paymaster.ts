@@ -5,6 +5,14 @@ export interface GetPaymasterBalanceArgs {
   kind?: PaymasterBalanceKind;
 }
 
+/** Organization API paymaster. Funding and balances are specific to each network. */
+export interface ApiPaymaster {
+  id: string;
+  address: string;
+  label: string;
+  created: boolean;
+}
+
 export type PaymasterKind = 'api' | 'idp' | 'unspecified';
 export type PaymasterBalanceKind = Exclude<PaymasterKind, 'unspecified'>;
 
