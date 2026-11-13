@@ -8,6 +8,8 @@ import type {
   BuildTransactionArgs,
   CancelRecoveryArgs,
   ConfigureRecoveryArgs,
+  CreatePolicyArgs,
+  CreatePolicyResult,
   CreateWalletArgs,
   CreateWalletResponseWire,
   CreateWalletResult,
@@ -61,6 +63,11 @@ import {
   normalizeSwigTokenTransactions,
   normalizeSwigUsdBalance,
 } from './normalizers.js';
+import {
+  createPolicyRequest,
+  normalizeCreatedPolicy,
+  normalizePolicyList,
+} from './policy.js';
 import {
   addAuthorizationLockRequest,
   addRecoveryAuthorityRequest,
@@ -158,6 +165,22 @@ export class WalletsClient {
         : {}),
       network,
     };
+  };
+
+  createPolicy = async (
+    args: CreatePolicyArgs,
+  ): Promise<CreatePolicyResult> => {
+    const response = await this.http.post<unknown>(
+      '/wallet/api/policies',
+      createPolicyRequest(args),
+    );
+    return normalizeCreatedPolicy(response);
+  };
+
+  listPolicies = async (): Promise<Policy[]> => {
+    return normalizePolicyList(
+      await this.http.get<unknown>('/wallet/api/policies'),
+    );
   };
 
   getPolicy = async (policyId: string): Promise<Policy> => {
