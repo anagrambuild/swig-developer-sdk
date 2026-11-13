@@ -97,6 +97,7 @@ export interface ClientSignatureRequestWire {
 }
 
 export interface CreateWalletResponseWire extends PreparedTransactionWire {
+  templateSetup?: unknown;
   wallet?: WalletAddressInfo;
   transactions?: PreparedTransactionWire[];
 }
@@ -123,6 +124,7 @@ export interface RecoverySetupPlan {
 }
 
 export interface CreateWalletResult {
+  templateSetup?: import('./policy.js').WalletTemplateSetup;
   wallet: WalletAddressInfo & { network?: Network };
   transactions: PreparedTransaction[];
   clientAuthorityTransactions: PreparedTransaction[];

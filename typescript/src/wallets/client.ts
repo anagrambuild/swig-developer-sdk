@@ -1,4 +1,5 @@
 import type { HttpClient } from '../core/index.js';
+import { templateSetup } from '../policy-templates/codec.js';
 import type {
   AddAuthorizationLockArgs,
   AddRecoveryAuthorityArgs,
@@ -8,12 +9,9 @@ import type {
   BuildTransactionArgs,
   CancelRecoveryArgs,
   ConfigureRecoveryArgs,
-  CreatePolicyArgs,
-  CreatePolicyResult,
   CreateWalletArgs,
   CreateWalletResponseWire,
   CreateWalletResult,
-  DirectWalletAuthority,
   ExecuteRecoveryArgs,
   GetAuthorizationLocksArgs,
   IdpWalletSession,
@@ -35,7 +33,6 @@ import type {
   PrepareRecoverySetupArgs,
   PrepareTransactionsResponseWire,
   PrepareX402PaymentOptions,
-  RecoverySetupPlan,
   RemoveAuthorizationLockArgs,
   SetRentClaimerArgs,
   StartRecoveryArgs,
@@ -63,11 +60,6 @@ import {
   normalizeSwigTokenTransactions,
   normalizeSwigUsdBalance,
 } from './normalizers.js';
-import {
-  createPolicyRequest,
-  normalizeCreatedPolicy,
-  normalizePolicyList,
-} from './policy.js';
 import {
   addAuthorizationLockRequest,
   addRecoveryAuthorityRequest,
@@ -142,14 +134,35 @@ export class WalletsClient {
   };
 
   create = async (args: CreateWalletArgs): Promise<CreateWalletResult> => {
-    const policy = args.policyId
-      ? await this.getPolicy(args.policyId)
-      : undefined;
     const response = await this.http.post<CreateWalletResponseWire>(
       '/transaction/wallet/create',
       createWalletRequest(args, this.defaultNetwork),
     );
     const created = normalizeCreateWalletResponse(response);
+    const setup =
+      response.templateSetup === undefined
+        ? undefined
+        : templateSetup(response.templateSetup);
+    if (args.policyId && !setup)
+      throw new Error('Wallet creation response is missing template setup');
+    if (args.policyId && setup?.template.id !== args.policyId)
+      throw new Error('Wallet template response ID mismatch');
+    const recovery = setup?.template.recovery;
+    const initialAuthority = setup?.authorities.find(
+      (binding) => binding.roleTemplateId === setup.template.initialRole.id,
+    )?.authority;
+    const guardian = setup?.guardianAuthority;
+    if (
+      recovery &&
+      args.recovery?.delaySeconds !== undefined &&
+      args.recovery.delaySeconds !== recovery.delaySeconds
+    )
+      throw new Error('Recovery delay is defined by the wallet template');
+    if (
+      args.recovery?.targetRoleId !== undefined &&
+      args.recovery.targetRoleId !== 0
+    )
+      throw new Error('Template recovery targets the initial role');
     const network = created.network ?? args.network ?? this.defaultNetwork;
 
     return {
@@ -158,29 +171,19 @@ export class WalletsClient {
         ...created.wallet,
         network,
       },
-      ...(policy
+      ...(setup ? { templateSetup: setup } : {}),
+      ...(recovery && initialAuthority && guardian && 'ed25519' in guardian
         ? {
-            recoverySetup: recoverySetupPlanFromPolicy(policy, args),
+            recoverySetup: {
+              requesterAuthority: initialAuthority,
+              guardianPubkey: guardian.ed25519.publicKey,
+              delaySeconds: recovery.delaySeconds,
+              targetRoleId: 0,
+            },
           }
         : {}),
       network,
     };
-  };
-
-  createPolicy = async (
-    args: CreatePolicyArgs,
-  ): Promise<CreatePolicyResult> => {
-    const response = await this.http.post<unknown>(
-      '/wallet/api/policies',
-      createPolicyRequest(args),
-    );
-    return normalizeCreatedPolicy(response);
-  };
-
-  listPolicies = async (): Promise<Policy[]> => {
-    return normalizePolicyList(
-      await this.http.get<unknown>('/wallet/api/policies'),
-    );
   };
 
   getPolicy = async (policyId: string): Promise<Policy> => {
@@ -569,94 +572,6 @@ function walletReadPath(
 
 function networkParam(network: Network): string {
   return network === 'mainnet' ? 'NETWORK_MAINNET' : 'NETWORK_DEVNET';
-}
-
-function recoverySetupPlanFromPolicy(
-  policy: Policy,
-  args: CreateWalletArgs,
-): RecoverySetupPlan | undefined {
-  const requesterAuthority =
-    args.initialUser ?? walletAuthorityFromPolicy(policy.authority);
-  const guardianPubkey =
-    args.recovery?.guardianPubkey ??
-    publicKeyFromPolicyAuthority(policy.guardianAuthority);
-
-  if (!policy.guardianEnabled || !requesterAuthority || !guardianPubkey) {
-    return undefined;
-  }
-
-  return {
-    requesterAuthority,
-    guardianPubkey,
-    delaySeconds:
-      args.recovery?.delaySeconds ??
-      normalizePolicyDelaySeconds(policy.guardianDelaySeconds),
-    ...(args.recovery?.targetRoleId === undefined
-      ? {}
-      : { targetRoleId: args.recovery.targetRoleId }),
-  };
-}
-
-function normalizePolicyDelaySeconds(delaySeconds: unknown): number {
-  if (typeof delaySeconds === 'number' && Number.isFinite(delaySeconds)) {
-    return delaySeconds;
-  }
-  if (typeof delaySeconds === 'string' && /^[0-9]+$/.test(delaySeconds)) {
-    const parsed = Number(delaySeconds);
-    if (Number.isSafeInteger(parsed)) {
-      return parsed;
-    }
-  }
-  return 86_400;
-}
-
-function walletAuthorityFromPolicy(
-  authority: Policy['authority'],
-): DirectWalletAuthority | undefined {
-  if (!authority) {
-    return undefined;
-  }
-
-  if (
-    'ed25519' in authority ||
-    'secp256k1' in authority ||
-    'secp256r1' in authority
-  ) {
-    return authority;
-  }
-  if ('programExecProof' in authority || 'participantSet' in authority) {
-    return undefined;
-  }
-
-  switch (authority.type) {
-    case 'Ed25519':
-      return { ed25519: { publicKey: authority.publicKey } };
-    case 'Secp256k1':
-      return { secp256k1: { publicKey: authority.publicKey } };
-    case 'Secp256r1':
-      return { secp256r1: { publicKey: authority.publicKey } };
-  }
-}
-
-function publicKeyFromPolicyAuthority(
-  authority: Policy['guardianAuthority'],
-): string | undefined {
-  if (!authority) {
-    return undefined;
-  }
-  if ('publicKey' in authority) {
-    return authority.publicKey;
-  }
-  if ('ed25519' in authority) {
-    return authority.ed25519.publicKey;
-  }
-  if ('secp256k1' in authority) {
-    return authority.secp256k1.publicKey;
-  }
-  if ('programExecProof' in authority || 'participantSet' in authority) {
-    return undefined;
-  }
-  return authority.secp256r1.publicKey;
 }
 
 function recoverySetupResult(

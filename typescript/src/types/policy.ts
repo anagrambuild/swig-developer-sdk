@@ -30,26 +30,59 @@ export interface Policy {
 export interface PolicyUser {
   id: string;
   label: string;
-  authority: DirectWalletAuthority;
+  authority?: DirectWalletAuthority;
   actions: unknown[];
 }
 
-export type PolicyInitialUser =
-  | { keySource: 'atCreation'; label?: string; authority?: never }
-  | { keySource: 'stored'; label?: string; authority: DirectWalletAuthority };
-
-export interface CreatePolicyArgs {
+export interface RoleTemplateInput {
   name: string;
-  description?: string;
-  initialUser: PolicyInitialUser;
-  initialActions: AddRoleAction[];
-  additionalUsers?: {
-    label?: string;
-    authority: DirectWalletAuthority;
-    actions: AddRoleAction[];
-  }[];
+  permissions: AddRoleAction[];
+  /** Omit to bind a public key when creating a wallet. */
+  authority?: DirectWalletAuthority;
 }
 
-export interface CreatePolicyResult {
-  policyId: string;
+export type TemplateAuthority =
+  | { keySource: 'atCreation'; authority?: never }
+  | { keySource: 'stored'; authority: DirectWalletAuthority };
+
+export type RoleTemplate = {
+  id: string;
+  name: string;
+  permissions: AddRoleAction[];
+} & TemplateAuthority;
+
+export type TemplateRecovery = {
+  label?: string;
+  delaySeconds: number;
+} & TemplateAuthority;
+
+export interface WalletTemplateInput {
+  name: string;
+  description?: string;
+  initialRoleTemplateId: string;
+  additionalRoleTemplateIds?: string[];
+  rentClaimer?: string;
+  recovery?: TemplateRecovery;
+}
+
+export interface WalletTemplate {
+  id: string;
+  name: string;
+  description: string;
+  initialRole: RoleTemplate;
+  additionalRoles: RoleTemplate[];
+  rentClaimer?: string;
+  recovery?: TemplateRecovery;
+}
+
+export interface RoleAuthorityBinding {
+  roleTemplateId: string;
+  authority: DirectWalletAuthority;
+}
+
+/** Remaining setup after the creation transaction confirms; these are not on-chain roles yet. */
+export interface WalletTemplateSetup {
+  template: WalletTemplate;
+  authorities: RoleAuthorityBinding[];
+  guardianAuthority?: DirectWalletAuthority;
 }

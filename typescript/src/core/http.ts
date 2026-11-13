@@ -42,6 +42,17 @@ export class HttpClient {
     );
   };
 
+  patch = async <TResponse>(
+    path: string,
+    body: unknown,
+  ): Promise<TResponse> => {
+    return this.#request<TResponse>(
+      path,
+      { method: 'PATCH', body: JSON.stringify(body) },
+      false,
+    );
+  };
+
   #request = async <TResponse>(
     path: string,
     init: RequestInit,

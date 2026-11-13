@@ -762,23 +762,29 @@ describe('WalletsClient', () => {
       network: 'devnet',
       fetch: jsonFetch((request) => {
         calls.push(request);
-        if (request.method === 'GET') {
-          return {
-            id: 'policy_123',
-            name: 'Default policy',
-            description: null,
-            authority: {
-              type: 'Ed25519',
-              publicKey: 'initial_user_123',
-            },
-            actions: [{ type: 'All' }],
-            guardianEnabled: false,
-            guardianAuthority: null,
-            guardianDelaySeconds: 86_400,
-          };
-        }
+        expect(request.method).toBe('POST');
 
         return {
+          templateSetup: {
+            template: {
+              id: 'policy_123',
+              name: 'Wallet',
+              initialRole: {
+                id: 'owner',
+                name: 'Owner',
+                permissions: [{ type: 'All' }],
+                keySource: 'WALLET_POLICY_KEY_SOURCE_STORED',
+                authority: { ed25519: { publicKey: 'initial_user_123' } },
+              },
+              additionalRoles: [],
+            },
+            authorities: [
+              {
+                roleTemplateId: 'owner',
+                authority: { ed25519: { publicKey: 'initial_user_123' } },
+              },
+            ],
+          },
           network: 'NETWORK_DEVNET',
           wallet: {
             swigConfigAddress: 'swig_config_123',
@@ -803,12 +809,8 @@ describe('WalletsClient', () => {
       policyId: 'policy_123',
     });
 
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({
-      url: 'http://localhost:8080/wallet/policies/policy_123',
-      method: 'GET',
-    });
-    expect(calls[1]).toMatchObject({
       url: 'http://localhost:8080/transaction/wallet/create',
       method: 'POST',
       body: {
@@ -818,7 +820,7 @@ describe('WalletsClient', () => {
       },
     });
     expect(calls[0]?.headers.get('authorization')).toBe('Bearer sk_test');
-    expect(calls[1]?.headers.get('authorization')).toBe('Bearer sk_test');
+    expect(calls[0]?.headers.get('authorization')).toBe('Bearer sk_test');
     expect(created.wallet).toEqual({
       swigConfigAddress: 'swig_config_123',
       walletAddress: 'wallet_123',
@@ -845,26 +847,39 @@ describe('WalletsClient', () => {
       network: 'devnet',
       fetch: jsonFetch((request) => {
         calls.push(request);
-        if (request.method === 'GET') {
-          return {
-            id: 'policy_recovery_123',
-            name: 'Recovery policy',
-            description: null,
-            authority: {
-              type: 'Secp256r1',
-              publicKey: 'passkey_public_key_123',
-            },
-            actions: [{ type: 'All' }],
-            guardianEnabled: true,
-            guardianAuthority: {
-              type: 'Ed25519',
-              publicKey: 'guardian_123',
-            },
-            guardianDelaySeconds: 86_400,
-          };
-        }
+        expect(request.method).toBe('POST');
 
         return {
+          templateSetup: {
+            template: {
+              id: 'policy_recovery_123',
+              name: 'Wallet',
+              initialRole: {
+                id: 'owner',
+                name: 'Owner',
+                permissions: [{ type: 'All' }],
+                keySource: 'WALLET_POLICY_KEY_SOURCE_STORED',
+                authority: {
+                  secp256r1: { publicKey: 'passkey_public_key_123' },
+                },
+              },
+              additionalRoles: [],
+              recovery: {
+                keySource: 'WALLET_POLICY_KEY_SOURCE_STORED',
+                delaySeconds: 86400,
+                authority: { ed25519: { publicKey: 'guardian_123' } },
+              },
+            },
+            authorities: [
+              {
+                roleTemplateId: 'owner',
+                authority: {
+                  secp256r1: { publicKey: 'passkey_public_key_123' },
+                },
+              },
+            ],
+            guardianAuthority: { ed25519: { publicKey: 'guardian_123' } },
+          },
           network: 'NETWORK_DEVNET',
           wallet: {
             swigConfigAddress: 'swig_config_123',
@@ -887,7 +902,7 @@ describe('WalletsClient', () => {
       policyId: 'policy_recovery_123',
     });
 
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(1);
     expect(created.transactions).toHaveLength(1);
     expect(created.recoverySetup).toEqual({
       requesterAuthority: {
@@ -897,6 +912,7 @@ describe('WalletsClient', () => {
       },
       guardianPubkey: 'guardian_123',
       delaySeconds: 86_400,
+      targetRoleId: 0,
     });
   });
 
@@ -908,20 +924,35 @@ describe('WalletsClient', () => {
       network: 'devnet',
       fetch: jsonFetch((request) => {
         calls.push(request);
-        if (request.method === 'GET') {
-          return {
-            id: 'policy_recovery_at_creation_123',
-            name: 'Recovery policy',
-            description: null,
-            authority: null,
-            actions: [{ type: 'All' }],
-            guardianEnabled: true,
-            guardianAuthority: null,
-            guardianDelaySeconds: '1',
-          };
-        }
+        expect(request.method).toBe('POST');
 
         return {
+          templateSetup: {
+            template: {
+              id: 'policy_recovery_at_creation_123',
+              name: 'Wallet',
+              initialRole: {
+                id: 'owner',
+                name: 'Owner',
+                permissions: [{ type: 'All' }],
+                keySource: 'WALLET_POLICY_KEY_SOURCE_AT_CREATION',
+              },
+              additionalRoles: [],
+              recovery: {
+                keySource: 'WALLET_POLICY_KEY_SOURCE_AT_CREATION',
+                delaySeconds: 86400,
+              },
+            },
+            authorities: [
+              {
+                roleTemplateId: 'owner',
+                authority: {
+                  secp256r1: { publicKey: 'passkey_public_key_123' },
+                },
+              },
+            ],
+            guardianAuthority: { ed25519: { publicKey: 'guardian_123' } },
+          },
           network: 'NETWORK_DEVNET',
           wallet: {
             swigConfigAddress: 'swig_config_123',
@@ -952,7 +983,7 @@ describe('WalletsClient', () => {
       },
     });
 
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(1);
     expect(created.recoverySetup).toEqual({
       requesterAuthority: {
         secp256r1: {
@@ -960,7 +991,8 @@ describe('WalletsClient', () => {
         },
       },
       guardianPubkey: 'guardian_123',
-      delaySeconds: 1,
+      delaySeconds: 86_400,
+      targetRoleId: 0,
     });
   });
 
