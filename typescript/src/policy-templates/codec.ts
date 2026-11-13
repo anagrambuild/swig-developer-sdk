@@ -256,6 +256,12 @@ export function walletRequest(input: WalletTemplateInput) {
   ];
   if (new Set(ids).size !== ids.length)
     throw new Error('Duplicate template role');
+  if (
+    input.recovery &&
+    input.recovery.keySource !== 'stored' &&
+    input.recovery.keySource !== 'atCreation'
+  )
+    throw new Error('Invalid recovery key source');
   const wireRecovery = input.recovery
     ? {
         ...input.recovery,
@@ -312,6 +318,8 @@ export function templateSetup(value: unknown): WalletTemplateSetup {
     value.guardianAuthority == null
       ? undefined
       : policyAuthority(value.guardianAuthority);
+  if (guardianAuthority && !('ed25519' in guardianAuthority))
+    throw new Error('Guardian must be Ed25519');
   if (!!template.recovery !== !!guardianAuthority)
     throw new Error('Template setup guardian does not match recovery');
   if (

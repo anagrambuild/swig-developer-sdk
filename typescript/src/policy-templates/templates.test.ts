@@ -137,3 +137,56 @@ test('template clients use normal API-key authentication and do not retry writes
     ['PATCH', '/wallet/api/role-templates/role%2Fid'],
   ]);
 });
+
+test('rejects unknown recovery modes before transport and unsupported resolved guardians', () => {
+  for (const keySource of [undefined, 'typo', 0]) {
+    expect(() =>
+      Reflect.apply(walletRequest, undefined, [
+        {
+          name: 'Wallet',
+          initialRoleTemplateId: 'owner',
+          recovery: { keySource, delaySeconds: 86400 },
+        },
+      ]),
+    ).toThrow('Invalid recovery key source');
+  }
+  for (const recovery of [
+    { keySource: 'atCreation' as const, delaySeconds: 86400 },
+    {
+      keySource: 'stored' as const,
+      authority: agent.authority,
+      delaySeconds: 86400,
+    },
+  ]) {
+    expect(
+      walletRequest({
+        name: 'Wallet',
+        initialRoleTemplateId: 'owner',
+        recovery,
+      }).recovery?.delaySeconds,
+    ).toBe(86400);
+  }
+  const setup = {
+    template: {
+      ...template,
+      recovery: {
+        keySource: 'WALLET_POLICY_KEY_SOURCE_AT_CREATION',
+        delaySeconds: 86400,
+      },
+    },
+    authorities: [
+      { roleTemplateId: 'owner', authority: agent.authority },
+      { roleTemplateId: 'agent', authority: agent.authority },
+    ],
+  };
+  expect(() =>
+    templateSetup({
+      ...setup,
+      guardianAuthority: { secp256r1: { publicKey: 'key' } },
+    }),
+  ).toThrow('Guardian must be Ed25519');
+  expect(
+    templateSetup({ ...setup, guardianAuthority: agent.authority })
+      .guardianAuthority,
+  ).toEqual(agent.authority);
+});
