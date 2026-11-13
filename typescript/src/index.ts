@@ -103,6 +103,7 @@ export type {
   PaymentRequiredV2,
   Policy,
   PolicyAuthority,
+  PolicyUser,
   PrepareRampTransferArgs,
   PrepareRecoverySetupArgs,
   PrepareX402PaymentOptions,
@@ -187,3 +188,16 @@ export type {
 } from './types/index.js';
 
 export type { GetProjectSummaryArgs, ProjectSummary } from './types/project.js';
+
+export { RoleTemplatesClient } from './policy-templates/roles.js';
+export { WalletTemplatesClient } from './policy-templates/wallets.js';
+export type {
+  RoleAuthorityBinding,
+  RoleTemplate,
+  RoleTemplateInput,
+  TemplateAuthority,
+  TemplateRecovery,
+  WalletTemplate,
+  WalletTemplateInput,
+  WalletTemplateSetup,
+} from './types/policy.js';

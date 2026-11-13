@@ -6,6 +6,8 @@ import {
 import { DexClient } from '../../dex/index.js';
 import { ParticipantSetsClient } from '../../participant-sets/index.js';
 import { PaymasterClient } from '../../paymaster/index.js';
+import { RoleTemplatesClient } from '../../policy-templates/roles.js';
+import { WalletTemplatesClient } from '../../policy-templates/wallets.js';
 import { RampClient } from '../../ramp/index.js';
 import { TransactionsClient } from '../../transactions/index.js';
 import type { SwigClientConfig } from '../../types/index.js';
@@ -25,6 +27,8 @@ export class SwigClient {
   readonly ramp: RampClient;
   readonly transactions: TransactionsClient;
   readonly wallets: WalletsClient;
+  readonly roleTemplates: RoleTemplatesClient;
+  readonly walletTemplates: WalletTemplatesClient;
   /** Yield on Swig wallets; native staking is the first method. */
   readonly yield: YieldClient;
 
@@ -45,6 +49,8 @@ export class SwigClient {
     this.ramp = new RampClient(this.#http, this.defaultNetwork);
     this.transactions = new TransactionsClient(this.#http, this.defaultNetwork);
     this.wallets = new WalletsClient(this.#http, this.defaultNetwork);
+    this.roleTemplates = new RoleTemplatesClient(this.#http);
+    this.walletTemplates = new WalletTemplatesClient(this.#http);
     this.yield = new YieldClient(this.#http, this.defaultNetwork);
   }
 

@@ -1,5 +1,6 @@
 import bs58 from 'bs58';
 
+import { policyAuthority, text } from '../policy-templates/codec.js';
 import type {
   AddAuthorizationLockArgs,
   AddRecoveryAuthorityArgs,
@@ -39,9 +40,23 @@ export function createWalletRequest(
   if (args.initialUser) {
     assertNonParticipantAuthority(args.initialUser, 'initialUser');
   }
+  const roleAuthorities = args.roleAuthorities?.map((binding) => ({
+    roleTemplateId: text(binding.roleTemplateId, 'roleTemplateId'),
+    authority: policyAuthority(binding.authority),
+  }));
+  if (
+    roleAuthorities &&
+    new Set(roleAuthorities.map((binding) => binding.roleTemplateId)).size !==
+      roleAuthorities.length
+  )
+    throw new Error('Duplicate role authority binding');
   return {
     network: toProtoNetwork(resolveNetwork(args.network, defaultNetwork)),
     feePayer: args.feePayer,
+    roleAuthorities,
+    guardianAuthority: args.recovery?.guardianPubkey
+      ? { ed25519: { publicKey: args.recovery.guardianPubkey } }
+      : undefined,
     ...(args.policyId ? { policyId: args.policyId } : {}),
     initialUser: args.initialUser
       ? walletAuthorityRequest(args.initialUser)

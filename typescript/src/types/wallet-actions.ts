@@ -89,6 +89,7 @@ export interface AddRoleArgs {
 }
 
 export interface CreateWalletArgs {
+  roleAuthorities?: import('./policy.js').RoleAuthorityBinding[];
   policyId?: string;
   feePayer: string;
   initialUser?: DirectWalletAuthority;
