@@ -26,6 +26,7 @@ describe('project summary', () => {
       organizationId: 'project',
       projectName: 'App',
       network: 'devnet',
+      recentWallets: [],
       walletsCreated: '9007199254740993',
       tvlUsd: 42.5,
       unpricedAssetCount: '2',
@@ -98,3 +99,63 @@ describe('project summary', () => {
     });
   }
 });
+
+const recentWallet = {
+  swigConfigAddress: '11111111111111111111111111111111',
+  walletAddress: 'So11111111111111111111111111111111111111112',
+  active: true,
+};
+
+test('recent wallets preserve server order and ProtoJSON closed-wallet defaults', async () => {
+  const second = {
+    swigConfigAddress: recentWallet.walletAddress,
+    walletAddress: recentWallet.swigConfigAddress,
+  };
+  const client = new SwigClient({
+    apiKey: 'test',
+    network: 'devnet',
+    fetch: Object.assign(
+      async () =>
+        Response.json({
+          organizationId: 'project',
+          network: 'NETWORK_DEVNET',
+          recentWallets: [recentWallet, second],
+        }),
+      { preconnect: fetch.preconnect },
+    ),
+  });
+  expect((await client.getProjectSummary()).recentWallets).toEqual([
+    recentWallet,
+    { ...second, active: false },
+  ]);
+});
+
+for (const recentWallets of [
+  null,
+  {},
+  [null],
+  [{ ...recentWallet, walletAddress: 'invalid' }],
+  [{ ...recentWallet, active: 'true' }],
+  [{ ...recentWallet, active: null }],
+  [recentWallet, recentWallet],
+  Array(6).fill(recentWallet),
+]) {
+  test(`rejects malformed recent wallets ${JSON.stringify(recentWallets)}`, async () => {
+    const client = new SwigClient({
+      apiKey: 'test',
+      network: 'devnet',
+      fetch: Object.assign(
+        async () =>
+          Response.json({
+            organizationId: 'project',
+            network: 'NETWORK_DEVNET',
+            recentWallets,
+          }),
+        { preconnect: fetch.preconnect },
+      ),
+    });
+    await expect(client.getProjectSummary()).rejects.toThrow(
+      'Invalid project summary',
+    );
+  });
+}
