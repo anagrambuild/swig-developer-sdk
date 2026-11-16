@@ -1,3 +1,4 @@
+import { PublicKey } from '@solana/web3.js';
 import {
   DEFAULT_BACKEND_URL,
   HttpClient,
@@ -14,6 +15,7 @@ import type { SwigClientConfig } from '../../types/index.js';
 import {
   type GetProjectSummaryArgs,
   type ProjectSummary,
+  type RecentProjectWallet,
 } from '../../types/project.js';
 import { WalletsClient } from '../../wallets/index.js';
 import { YieldClient } from '../../yield/index.js';
@@ -96,6 +98,46 @@ export class SwigClient {
     ) {
       throw new Error('Invalid project summary response');
     }
+    const recent = 'recentWallets' in response ? response.recentWallets : [];
+    if (!Array.isArray(recent) || recent.length > 5) {
+      throw new Error('Invalid project summary recent wallets');
+    }
+    const recentWallets: RecentProjectWallet[] = [];
+    const configurations = new Set<string>();
+    for (const item of recent) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        throw new Error('Invalid project summary recent wallet');
+      }
+      const config: unknown = item.swigConfigAddress;
+      const funds: unknown = item.walletAddress;
+      const active: unknown = 'active' in item ? item.active : false;
+      if (
+        typeof config !== 'string' ||
+        typeof funds !== 'string' ||
+        typeof active !== 'boolean'
+      ) {
+        throw new Error('Invalid project summary recent wallet');
+      }
+      try {
+        if (
+          new PublicKey(config).toBase58() !== config ||
+          new PublicKey(funds).toBase58() !== funds
+        ) {
+          throw new Error('Invalid address');
+        }
+      } catch {
+        throw new Error('Invalid project summary recent wallet address');
+      }
+      if (configurations.has(config)) {
+        throw new Error('Invalid project summary duplicate wallet');
+      }
+      configurations.add(config);
+      recentWallets.push({
+        swigConfigAddress: config,
+        walletAddress: funds,
+        active,
+      });
+    }
     return {
       organizationId,
       projectName,
@@ -103,6 +145,7 @@ export class SwigClient {
       walletsCreated,
       tvlUsd,
       unpricedAssetCount,
+      recentWallets,
     };
   };
 }

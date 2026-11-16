@@ -187,7 +187,11 @@ export type {
   YieldWalletArgs,
 } from './types/index.js';
 
-export type { GetProjectSummaryArgs, ProjectSummary } from './types/project.js';
+export type {
+  GetProjectSummaryArgs,
+  ProjectSummary,
+  RecentProjectWallet,
+} from './types/project.js';
 
 export { RoleTemplatesClient } from './policy-templates/roles.js';
 export { WalletTemplatesClient } from './policy-templates/wallets.js';

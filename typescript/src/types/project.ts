@@ -14,4 +14,12 @@ export interface ProjectSummary {
   tvlUsd: number;
   /** Decimal uint64 string. Nonzero means the valuation is partial. */
   unpricedAssetCount: string;
+  /** Up to five wallets, newest indexed creation first. Empty on older servers. */
+  recentWallets: RecentProjectWallet[];
+}
+
+export interface RecentProjectWallet {
+  swigConfigAddress: string;
+  walletAddress: string;
+  active: boolean;
 }
