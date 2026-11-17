@@ -1,6 +1,6 @@
 {
   "name": "@swig-wallet/developer-sdk",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -42,6 +42,11 @@
       "types": "./dist/core.d.ts",
       "import": "./dist/core.js",
       "require": "./dist/core.cjs"
+    },
+    "./onboarding": {
+      "types": "./dist/onboarding.d.ts",
+      "import": "./dist/onboarding.js",
+      "require": "./dist/onboarding.cjs"
     }
   },
   "sideEffects": false,

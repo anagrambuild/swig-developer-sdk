@@ -1,0 +1,36 @@
+{
+  "name": "swig-phantom-starter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx --env-file-if-exists=.env.local server.ts",
+    "build": "tsc --noEmit && vite build",
+    "test": "tsx --test tests/*-check.ts",
+    "setup:agent": "tsx scripts/generate-agent.ts"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6",
+    "@types/node": "26.6.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.3.0",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vite": "8.3.8"
+  },
+  "dependencies": {
+    "@solana/wallet-adapter-phantom": "0.9.30",
+    "@solana/web3.js": "1.99.0",
+    "@swig-wallet/developer-sdk": "file:../..",
+    "bs58": "6.0.0",
+    "buffer": "6.0.3",
+    "express": "5.3.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "zod": "4.6.7"
+  }
+}
