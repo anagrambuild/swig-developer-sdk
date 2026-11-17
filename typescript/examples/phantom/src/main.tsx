@@ -12,6 +12,10 @@ import {
   loginSchema,
   type WalletFlow,
 } from './contracts';
+import {
+  phantomConnectionLabel,
+  requestErrorMessage,
+} from './phantom-feedback';
 import './style.css';
 
 type UiState =
@@ -42,6 +46,7 @@ function App() {
   const [ui, setUi] = useState<UiState>({ type: 'idle' });
   const [flow, setFlow] = useState<WalletFlow | null>(null);
   const [owner, setOwner] = useState<string | null>(null);
+  const [readiness, setReadiness] = useState(phantom.readyState);
   const generation = useRef(0);
   const running = useRef(false);
   const currentOwner = useRef<string | null>(null);
@@ -65,7 +70,6 @@ function App() {
     const invalidate = () => {
       generation.current += 1;
       currentOwner.current = null;
-      setOwner(null);
       setFlow(null);
       setUi({ type: 'idle' });
       void fetch('/api/auth/logout', {
@@ -81,16 +85,23 @@ function App() {
       );
     };
     const accountChanged = () => {
-      if (
-        currentOwner.current &&
-        phantom.publicKey?.toBase58() !== currentOwner.current
-      )
+      const address = phantom.publicKey?.toBase58() ?? null;
+      if (currentOwner.current && address !== currentOwner.current)
         invalidate();
+      setOwner(address);
     };
-    phantom.on('disconnect', invalidate);
+    const disconnected = () => {
+      setOwner(null);
+      invalidate();
+    };
+    phantom.on('readyStateChange', setReadiness);
+    phantom.on('disconnect', disconnected);
     phantom.on('connect', accountChanged);
+    setReadiness(phantom.readyState);
+    accountChanged();
     return () => {
-      phantom.off('disconnect', invalidate);
+      phantom.off('readyStateChange', setReadiness);
+      phantom.off('disconnect', disconnected);
       phantom.off('connect', accountChanged);
       generation.current += 1;
     };
@@ -241,10 +252,7 @@ function App() {
       if (generation.current === run)
         setUi({
           type: 'error',
-          message:
-            error instanceof Error
-              ? error.message
-              : 'The wallet request was cancelled. You can resume safely.',
+          message: requestErrorMessage(error),
         });
     } finally {
       running.current = false;
@@ -281,10 +289,6 @@ function App() {
         <a className="wordmark" href="/">
           swig<span> / playground</span>
         </a>
-        <span className="network">
-          <span />
-          Devnet
-        </span>
       </header>
       <section className="wallet-card" aria-labelledby="title">
         <div className="wallet-mark" aria-hidden="true">
@@ -331,6 +335,38 @@ function App() {
           Allowances reset every 216,000 slots. Actual timing varies.
         </p>
 
+        <section className="account" aria-label="Phantom wallet status">
+          <div>
+            <p aria-live="polite" aria-atomic="true">
+              <strong>Phantom</strong> ·{' '}
+              {phantomConnectionLabel(readiness, owner)}
+              {owner && (
+                <span className="account-key" title={owner}>
+                  {owner.slice(0, 6)}…{owner.slice(-6)}
+                </span>
+              )}
+            </p>
+            <p>
+              Required network ·{' '}
+              <a
+                href="https://help.phantom.com/articles/5997313271699"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Solana Devnet
+              </a>
+            </p>
+          </div>
+          {owner && (
+            <button
+              type="button"
+              onClick={() => void disconnect()}
+              disabled={busy}
+            >
+              Disconnect
+            </button>
+          )}
+        </section>
         {ui.type !== 'ready' && (
           <button
             className="primary"
@@ -340,11 +376,13 @@ function App() {
           >
             {busy
               ? 'Setting up your wallet…'
-              : owner
-                ? flow?.state === 'failed'
-                  ? 'Retry failed transaction'
-                  : 'Resume wallet setup'
-                : 'Connect Phantom'}
+              : flow?.state === 'failed'
+                ? 'Retry failed transaction'
+                : flow
+                  ? 'Resume wallet setup'
+                  : owner
+                    ? 'Sign in with Phantom'
+                    : 'Connect Phantom'}
             <span aria-hidden="true">↗</span>
           </button>
         )}
@@ -388,20 +426,6 @@ function App() {
             >
               Fund devnet wallet ↗
             </a>
-          </div>
-        )}
-        {owner && (
-          <div className="account">
-            <span>
-              Phantom · {owner.slice(0, 6)}…{owner.slice(-6)}
-            </span>
-            <button
-              type="button"
-              onClick={() => void disconnect()}
-              disabled={busy}
-            >
-              Disconnect
-            </button>
           </div>
         )}
       </section>
