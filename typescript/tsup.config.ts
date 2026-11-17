@@ -1,6 +1,7 @@
 import { defineConfig, type Options } from 'tsup';
 
 const entry = {
+  onboarding: 'src/wallets/onboarding.ts',
   core: 'src/core.ts',
   index: 'src/index.ts',
   signers: 'src/signers.ts',

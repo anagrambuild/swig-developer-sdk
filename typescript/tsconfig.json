@@ -1,4 +1,5 @@
 {
+  "exclude": ["node_modules", "dist", "examples/phantom"],
   "compilerOptions": {
     "lib": ["ESNext", "DOM"],
     "target": "ESNext",
