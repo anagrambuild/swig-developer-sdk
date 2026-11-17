@@ -182,7 +182,7 @@ export async function startReservedWalletSetup(
 }
 
 /** Pass only trusted server-side state. Serialize advances per owner. Persist each returned checkpoint
- * before advancing again. In particular, submit checkpoints retain the exact payload/key for replay. */
+ * before advancing again. Persist a submit checkpoint and immediately advance it on the server, without awaiting another user gesture. A saved submit checkpoint must replay its exact payload/key after uncertainty. */
 export async function advanceReservedWalletSetup(
   client: SwigClient,
   rpc: Pick<Connection, 'isBlockhashValid' | 'getSignatureStatuses'>,

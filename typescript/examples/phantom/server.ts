@@ -15,11 +15,11 @@ import { join } from 'node:path';
 import { z } from 'zod';
 
 import {
-  advanceReservedWalletSetup,
   startReservedWalletSetup,
   type ReservedWalletSetup,
 } from '@swig-wallet/developer-sdk/onboarding';
 import { DemoState } from './server/state';
+import { advanceAppWallet } from './server/wallet';
 
 import type { WalletFlow } from './src/contracts';
 import { validateTemplate } from './src/policy';
@@ -226,6 +226,7 @@ app.post('/api/wallet/advance', async (req, res) => {
         template,
         salt: randomBytes(32),
       });
+      state.saveAttempt(attempt);
     } else {
       if (
         attempt.owner !== owner ||
@@ -237,7 +238,8 @@ app.post('/api/wallet/advance', async (req, res) => {
           'CONFIG_CHANGED',
           'Restore the original app configuration before resuming.',
         );
-      attempt = await advanceReservedWalletSetup(
+      attempt = await advanceAppWallet(
+        state,
         swig,
         connection,
         attempt,
@@ -248,8 +250,16 @@ app.post('/api/wallet/advance', async (req, res) => {
             : undefined,
       );
     }
-    state.saveAttempt(attempt);
     res.json(present(attempt));
+  } catch (error) {
+    const saved = state.getAttempt(owner);
+    if (saved?.step.kind === 'submit')
+      throw new AppError(
+        503,
+        'SPONSORSHIP_UNCONFIRMED',
+        `The sponsorship outcome is unconfirmed. Resume to retry the same transaction. If it remains unavailable, reconcile request ${saved.step.idempotencyKey} before preparing another transaction.`,
+      );
+    throw error;
   } finally {
     busyOwners.delete(owner);
   }
