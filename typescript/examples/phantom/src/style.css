@@ -64,22 +64,6 @@ header {
   letter-spacing: 0;
   margin-left: 8px;
 }
-.network {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12px;
-  border: 1px solid var(--line);
-  border-radius: 30px;
-  padding: 7px 11px;
-  background: white;
-}
-.network span {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #007a65;
-}
 .wallet-card {
   max-width: 600px;
   margin: auto;
@@ -268,9 +252,25 @@ h1 {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 18px;
-  font-size: 11px;
+  gap: 10px;
+  padding: 12px 14px;
+  margin: 0 0 14px;
+  border-radius: 10px;
+  background: #f5f7ff;
+  font-size: 12px;
   color: var(--muted);
+}
+.account p {
+  margin: 0;
+  line-height: 1.65;
+}
+.account strong {
+  color: #162139;
+}
+.account-key {
+  display: inline-block;
+  margin-left: 6px;
+  font-family: monospace;
 }
 .account button {
   background: none;
