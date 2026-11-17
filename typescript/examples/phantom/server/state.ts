@@ -13,12 +13,13 @@ const step = z.discriminatedUnion('kind', [
     payer: z.string(),
   }),
   z.object({
-    kind: z.literal('submit'),
+    kind: z.enum(['queued', 'submit']),
     operation,
     transaction: z.string(),
     idempotencyKey: z.string(),
   }),
   z.object({ kind: z.literal('confirm'), operation, signature: z.string() }),
+  z.object({ kind: z.literal('failed'), operation, signature: z.string() }),
   z.object({ kind: z.literal('verify') }),
   z.object({ kind: z.literal('ready') }),
 ]);

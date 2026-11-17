@@ -1,11 +1,19 @@
 import {
   Connection,
   Keypair,
+  PublicKey,
   SystemProgram,
+  TransactionInstruction,
   TransactionMessage,
   VersionedTransaction,
 } from '@solana/web3.js';
+import {
+  Actions,
+  createEd25519AuthorityInfo,
+  Ed25519Authority,
+} from '@swig-wallet/lib';
 import { expect, spyOn, test } from 'bun:test';
+import fixture from '../../../test-fixtures/reserved-wallet.json';
 import { SwigClient } from '../server/typescript/index.js';
 import type { WalletTemplate } from '../types/policy.js';
 import {
@@ -13,7 +21,12 @@ import {
   startReservedWalletSetup,
 } from './onboarding.js';
 
-const owner = Keypair.generate(),
+const owner = Keypair.fromSeed(
+    Buffer.from(
+      '9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60',
+      'hex',
+    ),
+  ),
   agent = Keypair.generate(),
   payer = Keypair.generate();
 const key = owner.publicKey.toBase58(),
@@ -21,8 +34,7 @@ const key = owner.publicKey.toBase58(),
   payerKey = payer.publicKey.toBase58();
 const wallet = {
   network: 'devnet' as const,
-  swigConfigAddress: Keypair.generate().publicKey.toBase58(),
-  walletAddress: Keypair.generate().publicKey.toBase58(),
+  ...fixture.wallet,
 };
 const template: WalletTemplate = {
   id: 'policy',
@@ -64,7 +76,7 @@ function transaction(from: Keypair) {
           lamports: 1,
         }),
       ],
-    }).compileToV0Message(),
+    }).compileToLegacyMessage(),
   );
 }
 test('reserved activation rejects unsupported or colliding authorities before lookup', async () => {
@@ -86,10 +98,40 @@ test('resumes the exact sponsorship, binds Phantom approval, and verifies capped
   const client = new SwigClient({ apiKey: 'test' });
   const rpc = new Connection('http://localhost:8899');
   const creation = {
-    transaction: Buffer.from(transaction(payer).serialize()).toString('base64'),
+    transaction: fixture.transactions[0].transaction,
+    network: 'devnet' as const,
+    kind: 'create-swig-wallet' as const,
+    wallet,
     signatureRequests: [],
   };
-  const role = transaction(owner);
+  const intended = await new Ed25519Authority(
+    owner.publicKey.toBytes(),
+  ).addAuthority({
+    swigAddress: wallet.swigConfigAddress,
+    payer: payerKey,
+    actingRoleId: 0,
+    actions: Actions.set()
+      .solRecurringLimit({ recurringAmount: 10n, window: 20n })
+      .get(),
+    newAuthorityInfo: createEd25519AuthorityInfo(agentKey),
+  });
+  const role = new VersionedTransaction(
+    new TransactionMessage({
+      payerKey: payer.publicKey,
+      recentBlockhash: key,
+      instructions: intended.getWeb3Instructions().map(
+        (ix) =>
+          new TransactionInstruction({
+            programId: new PublicKey(ix.programId.toBytes()),
+            keys: ix.keys.map((m) => ({
+              ...m,
+              pubkey: new PublicKey(m.pubkey.toBytes()),
+            })),
+            data: Buffer.from(ix.data),
+          }),
+      ),
+    }).compileToLegacyMessage(),
+  );
   const handle = client.wallets.use(wallet.swigConfigAddress);
   spyOn(client.wallets, 'use').mockReturnValue(handle);
   spyOn(client.wallets, 'reserveAddress').mockResolvedValue({
@@ -105,16 +147,23 @@ test('resumes the exact sponsorship, binds Phantom approval, and verifies capped
     clientAuthorityTransactions: [],
     operatorSignedTransactions: [],
   });
-  spyOn(client.paymaster, 'getBalance').mockResolvedValue({
+  const balance = spyOn(client.paymaster, 'getBalance');
+  const funded = {
     configured: true,
     address: payerKey,
     balanceLamports: '1',
     balanceSol: 0.000000001,
     id: 'p',
-    kind: 'api',
+    kind: 'api' as const,
     label: 'p',
-  });
-  spyOn(handle.roles, 'add').mockResolvedValue({
+  };
+  balance
+    .mockResolvedValue(funded)
+    .mockResolvedValueOnce({ ...funded, address: key });
+  const add = spyOn(handle.roles, 'add').mockResolvedValue({
+    network: 'devnet',
+    kind: 'add-authority',
+    wallet,
     transaction: Buffer.from(role.serialize()).toString('base64'),
     signatureRequests: [],
   });
@@ -123,7 +172,7 @@ test('resumes the exact sponsorship, binds Phantom approval, and verifies capped
     requestId: 'request',
     spentByPaymaster: '1',
   });
-  spyOn(rpc, 'getSignatureStatuses').mockResolvedValue({
+  const statuses = spyOn(rpc, 'getSignatureStatuses').mockResolvedValue({
     context: { slot: 10 },
     value: [
       {
@@ -164,30 +213,73 @@ test('resumes the exact sponsorship, binds Phantom approval, and verifies capped
   });
   let setup = await startReservedWalletSetup(client, args);
   setup = await advanceReservedWalletSetup(client, rpc, setup);
+  expect(setup.step.kind).toBe('queued');
+  blockhash.mockResolvedValueOnce({ context: { slot: 9 }, value: false });
+  expect((await advanceReservedWalletSetup(client, rpc, setup)).step).toEqual({
+    kind: 'prepare',
+    operation: 'create',
+  });
+  expect(sponsor).not.toHaveBeenCalled();
+  setup = await advanceReservedWalletSetup(client, rpc, setup);
   expect(setup.step.kind).toBe('submit');
   const confirm = await advanceReservedWalletSetup(client, rpc, setup);
   await advanceReservedWalletSetup(client, rpc, structuredClone(setup));
   expect(sponsor.mock.calls[0]).toEqual(sponsor.mock.calls[1]);
+  statuses.mockResolvedValueOnce({
+    context: { slot: 10 },
+    value: [
+      {
+        slot: 10,
+        confirmations: 1,
+        confirmationStatus: 'confirmed',
+        err: { InstructionError: [0, 'InvalidArgument'] },
+      },
+    ],
+  });
+  const failed = await advanceReservedWalletSetup(client, rpc, confirm);
+  expect(failed.step).toEqual({
+    kind: 'failed',
+    operation: 'create',
+    signature: 'receipt',
+  });
+  expect(await advanceReservedWalletSetup(client, rpc, failed)).toEqual(failed);
+  await expect(
+    advanceReservedWalletSetup(client, rpc, failed, {
+      retryFailedSignature: 'different',
+    }),
+  ).rejects.toThrow();
+  expect(
+    (
+      await advanceReservedWalletSetup(client, rpc, failed, {
+        retryFailedSignature: 'receipt',
+      })
+    ).step,
+  ).toEqual({ kind: 'prepare', operation: 'create' });
   setup = await advanceReservedWalletSetup(client, rpc, confirm);
+  const unexpected = transaction(owner);
+  add.mockResolvedValueOnce({
+    kind: 'add-authority',
+    network: 'devnet',
+    wallet,
+    signatureRequests: [],
+    transaction: Buffer.from(unexpected.serialize()).toString('base64'),
+  });
+  await expect(advanceReservedWalletSetup(client, rpc, setup)).rejects.toThrow(
+    'instructions',
+  );
   setup = await advanceReservedWalletSetup(client, rpc, setup);
   expect(setup.step.kind).toBe('sign');
   await expect(
-    advanceReservedWalletSetup(
-      client,
-      rpc,
-      setup,
-      Buffer.from(role.serialize()).toString('base64'),
-    ),
+    advanceReservedWalletSetup(client, rpc, setup, {
+      signedTransaction: Buffer.from(role.serialize()).toString('base64'),
+    }),
   ).rejects.toThrow('signature');
   const other = transaction(owner);
   other.sign([owner]);
   await expect(
-    advanceReservedWalletSetup(
-      client,
-      rpc,
-      setup,
-      Buffer.from(other.serialize()).toString('base64'),
-    ),
+    advanceReservedWalletSetup(client, rpc, setup, {
+      signedTransaction: Buffer.from(other.serialize()).toString('base64'),
+    }),
   ).rejects.toThrow('signature');
   blockhash.mockResolvedValueOnce({ context: { slot: 11 }, value: false });
   expect((await advanceReservedWalletSetup(client, rpc, setup)).step).toEqual({
@@ -195,12 +287,10 @@ test('resumes the exact sponsorship, binds Phantom approval, and verifies capped
     operation: 'agent',
   });
   role.sign([owner]);
-  setup = await advanceReservedWalletSetup(
-    client,
-    rpc,
-    setup,
-    Buffer.from(role.serialize()).toString('base64'),
-  );
+  setup = await advanceReservedWalletSetup(client, rpc, setup, {
+    signedTransaction: Buffer.from(role.serialize()).toString('base64'),
+  });
+  setup = await advanceReservedWalletSetup(client, rpc, setup);
   setup = await advanceReservedWalletSetup(client, rpc, setup);
   setup = await advanceReservedWalletSetup(client, rpc, setup);
   expect(setup.step.kind).toBe('verify');

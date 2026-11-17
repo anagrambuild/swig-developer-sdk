@@ -16,11 +16,13 @@ export const flowSchema = z.object({
     'adding-agent',
     'verifying',
     'ready',
+    'failed',
   ]),
   walletAddress: z.string(),
   configAddress: z.string(),
   owner: z.string(),
   agentPublicKey: z.string(),
+  failedSignature: z.string().optional(),
   transaction: z.string().optional(),
 });
 export type WalletFlow = z.infer<typeof flowSchema>;

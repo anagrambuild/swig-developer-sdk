@@ -151,6 +151,10 @@ function App() {
         throw new Error(
           'The signed-in account differs from Phantom. Reconnect.',
         );
+      let retryFailedSignature =
+        flow?.owner === publicKey && flow.state === 'failed'
+          ? flow.failedSignature
+          : undefined;
       let signedTransaction: string | undefined;
       for (let iteration = 0; iteration < 90; iteration += 1) {
         if (
@@ -164,12 +168,17 @@ function App() {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(
-                signedTransaction ? { signedTransaction } : {},
+                signedTransaction
+                  ? { signedTransaction }
+                  : retryFailedSignature
+                    ? { retryFailedSignature }
+                    : {},
               ),
             }),
           ),
         );
         signedTransaction = undefined;
+        retryFailedSignature = undefined;
         if (generation.current !== run) return;
         if (
           next.owner !== publicKey ||
@@ -179,6 +188,12 @@ function App() {
             'The wallet setup returned different authority keys.',
           );
         setFlow(next);
+        if (next.state === 'failed')
+          throw new Error(
+            'Devnet confirmed that the transaction failed. Review the receipt ' +
+              next.failedSignature +
+              ' and choose Retry to prepare this step again.',
+          );
         if (next.state === 'ready') {
           setUi({ type: 'ready' });
           return;
@@ -326,7 +341,9 @@ function App() {
             {busy
               ? 'Setting up your wallet…'
               : owner
-                ? 'Resume wallet setup'
+                ? flow?.state === 'failed'
+                  ? 'Retry failed transaction'
+                  : 'Resume wallet setup'
                 : 'Connect Phantom'}
             <span aria-hidden="true">↗</span>
           </button>

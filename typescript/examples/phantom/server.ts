@@ -89,19 +89,22 @@ function sessionOwner(request: Request): string {
 function present(setup: ReservedWalletSetup): WalletFlow {
   const step = setup.step;
   const phase =
-    step.kind === 'ready'
-      ? 'ready'
-      : step.kind === 'verify'
-        ? 'verifying'
-        : step.kind === 'sign'
-          ? 'awaiting-approval'
-          : step.operation === 'agent'
-            ? 'adding-agent'
-            : step.kind === 'prepare'
-              ? 'reserved'
-              : 'creating';
+    step.kind === 'failed'
+      ? 'failed'
+      : step.kind === 'ready'
+        ? 'ready'
+        : step.kind === 'verify'
+          ? 'verifying'
+          : step.kind === 'sign'
+            ? 'awaiting-approval'
+            : step.operation === 'agent'
+              ? 'adding-agent'
+              : step.kind === 'prepare'
+                ? 'reserved'
+                : 'creating';
   return {
     state: phase,
+    ...(step.kind === 'failed' ? { failedSignature: step.signature } : {}),
     owner: setup.owner,
     agentPublicKey: setup.agent,
     walletAddress: setup.walletAddress,
@@ -186,7 +189,10 @@ app.post('/api/auth/logout', (req, res) => {
 app.post('/api/wallet/advance', async (req, res) => {
   const owner = sessionOwner(req);
   const body = z
-    .object({ signedTransaction: z.string().max(5000).optional() })
+    .object({
+      signedTransaction: z.string().max(5000).optional(),
+      retryFailedSignature: z.string().max(100).optional(),
+    })
     .strict()
     .parse(req.body);
   if (!swig)
@@ -205,7 +211,7 @@ app.post('/api/wallet/advance', async (req, res) => {
   try {
     let attempt = state.getAttempt(owner);
     if (!attempt) {
-      if (body.signedTransaction)
+      if (body.signedTransaction || body.retryFailedSignature)
         throw new AppError(
           409,
           'UNEXPECTED_SIGNATURE',
@@ -235,7 +241,11 @@ app.post('/api/wallet/advance', async (req, res) => {
         swig,
         connection,
         attempt,
-        body.signedTransaction,
+        body.signedTransaction
+          ? { signedTransaction: body.signedTransaction }
+          : body.retryFailedSignature
+            ? { retryFailedSignature: body.retryFailedSignature }
+            : undefined,
       );
     }
     state.saveAttempt(attempt);

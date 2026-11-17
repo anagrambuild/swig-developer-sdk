@@ -13,6 +13,11 @@ import type {
 import type { WalletTemplate } from '../types/policy.js';
 import type { AddRoleAction } from '../types/wallet-actions.js';
 
+import {
+  reservedOwnerAddresses,
+  verifyReservedIntent,
+} from './reserved-intent.js';
+
 export type AgentPermission =
   | { type: 'programAll' }
   | {
@@ -93,12 +98,13 @@ type Step =
   | { kind: 'prepare'; operation: Operation }
   | { kind: 'sign'; transaction: string; payer: string }
   | {
-      kind: 'submit';
+      kind: 'queued' | 'submit';
       operation: Operation;
       transaction: string;
       idempotencyKey: string;
     }
   | { kind: 'confirm'; operation: Operation; signature: string }
+  | { kind: 'failed'; operation: Operation; signature: string }
   | { kind: 'verify' }
   | { kind: 'ready' };
 
@@ -156,6 +162,12 @@ export async function startReservedWalletSetup(
     rootAuthority: { ed25519: { publicKey: owner } },
     addressOptions: { salt },
   });
+  const expected = reservedOwnerAddresses(owner, salt);
+  if (
+    expected.config.toBase58() !== reserved.wallet.swigConfigAddress ||
+    expected.funds.toBase58() !== reserved.wallet.walletAddress
+  )
+    throw new Error('Reservation address mismatch');
   return {
     network,
     owner,
@@ -175,9 +187,19 @@ export async function advanceReservedWalletSetup(
   client: SwigClient,
   rpc: Pick<Connection, 'isBlockhashValid' | 'getSignatureStatuses'>,
   setup: ReservedWalletSetup,
-  signedTransaction?: string,
+  approval?: { signedTransaction: string } | { retryFailedSignature: string },
 ): Promise<ReservedWalletSetup> {
   const { network, owner, agent, step } = setup;
+  const signedTransaction =
+    approval && 'signedTransaction' in approval
+      ? approval.signedTransaction
+      : undefined;
+  if (
+    approval &&
+    'retryFailedSignature' in approval &&
+    (step.kind !== 'failed' || approval.retryFailedSignature !== step.signature)
+  )
+    throw new Error('The failed transaction changed');
   const wallet = client.wallets.use(setup.swigConfigAddress, {
     network,
     requesterAuthority: { ed25519: { publicKey: owner } },
@@ -216,10 +238,13 @@ export async function advanceReservedWalletSetup(
         });
       if (
         !prepared ||
-        (prepared.wallet &&
-          (prepared.wallet.swigConfigAddress !== setup.swigConfigAddress ||
-            prepared.wallet.walletAddress !== setup.walletAddress)) ||
-        (prepared.network !== undefined && prepared.network !== network) ||
+        prepared.wallet?.swigConfigAddress !== setup.swigConfigAddress ||
+        prepared.wallet.walletAddress !== setup.walletAddress ||
+        prepared.network !== network ||
+        prepared.kind !==
+          (step.operation === 'create'
+            ? 'create-swig-wallet'
+            : 'add-authority') ||
         prepared.signatureRequests.length ||
         prepared.participantSetApprovalPlan
       )
@@ -227,6 +252,7 @@ export async function advanceReservedWalletSetup(
       const tx = VersionedTransaction.deserialize(
         Buffer.from(prepared.transaction, 'base64'),
       );
+      await verifyReservedIntent(tx, setup, payer, step.operation);
       const keys = tx.message.staticAccountKeys.slice(
         0,
         tx.message.header.numRequiredSignatures,
@@ -246,7 +272,7 @@ export async function advanceReservedWalletSetup(
         step:
           step.operation === 'create'
             ? {
-                kind: 'submit',
+                kind: 'queued',
                 operation: 'create',
                 transaction: prepared.transaction,
                 idempotencyKey: randomUUID(),
@@ -290,13 +316,31 @@ export async function advanceReservedWalletSetup(
       return {
         ...setup,
         step: {
-          kind: 'submit',
+          kind: 'queued',
           operation: 'agent',
           transaction: signedTransaction,
           idempotencyKey: randomUUID(),
         },
       };
     }
+    case 'queued': {
+      const tx = VersionedTransaction.deserialize(
+        Buffer.from(step.transaction, 'base64'),
+      );
+      const valid = await rpc.isBlockhashValid(tx.message.recentBlockhash, {
+        commitment: 'confirmed',
+      });
+      return {
+        ...setup,
+        step: valid.value
+          ? { ...step, kind: 'submit' }
+          : { kind: 'prepare', operation: step.operation },
+      };
+    }
+    case 'failed':
+      return approval && 'retryFailedSignature' in approval
+        ? { ...setup, step: { kind: 'prepare', operation: step.operation } }
+        : setup;
     case 'submit': {
       const receipt = await client.transactions.sponsor({
         network,
@@ -324,7 +368,14 @@ export async function advanceReservedWalletSetup(
       )
         return setup;
       if (status.err)
-        throw new Error('Confirmed transaction failed: ' + step.signature);
+        return {
+          ...setup,
+          step: {
+            kind: 'failed',
+            signature: step.signature,
+            operation: step.operation,
+          },
+        };
       return {
         ...setup,
         step:
