@@ -2,7 +2,7 @@ const walletAvailability = {
   Installed: 'Detected · disconnected',
   NotDetected: 'Extension not detected',
   Unsupported: 'Unavailable in this browser',
-  Loadable: 'Open in the Phantom browser',
+  Loadable: 'Desktop extension required',
 };
 
 export function phantomConnectionLabel(
@@ -10,6 +10,15 @@ export function phantomConnectionLabel(
   address: string | null,
 ): string {
   return address ? 'Connected' : walletAvailability[readiness];
+}
+
+export function phantomSetupMessage(
+  readiness: keyof typeof walletAvailability,
+): string | null {
+  if (readiness === 'Installed') return null;
+  if (readiness === 'NotDetected')
+    return 'Install the Phantom browser extension, then reload this page.';
+  return 'Open this local demo on the computer running it, in a desktop browser with the Phantom extension.';
 }
 
 const walletActions = new Map([

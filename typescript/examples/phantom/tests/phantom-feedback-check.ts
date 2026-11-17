@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   phantomConnectionLabel,
+  phantomSetupMessage,
   requestErrorMessage,
 } from '../src/phantom-feedback';
 
@@ -51,6 +52,20 @@ test('wallet status distinguishes extension detection from an account connection
   );
   assert.equal(
     phantomConnectionLabel('Loadable', null),
-    'Open in the Phantom browser',
+    'Desktop extension required',
   );
+});
+
+test('the action explains the desktop requirement on mobile and unsupported browsers', () => {
+  for (const state of ['Loadable', 'Unsupported'] as const) {
+    assert.match(
+      phantomSetupMessage(state) ?? '',
+      /computer running it.*desktop browser with the Phantom extension/,
+    );
+  }
+  assert.match(
+    phantomSetupMessage('NotDetected') ?? '',
+    /Install the Phantom browser extension/,
+  );
+  assert.equal(phantomSetupMessage('Installed'), null);
 });

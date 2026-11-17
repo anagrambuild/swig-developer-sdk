@@ -14,6 +14,7 @@ import {
 } from './contracts';
 import {
   phantomConnectionLabel,
+  phantomSetupMessage,
   requestErrorMessage,
 } from './phantom-feedback';
 import './style.css';
@@ -112,10 +113,8 @@ function App() {
     running.current = true;
     const run = ++generation.current;
     try {
-      if (phantom.readyState !== 'Installed')
-        throw new Error(
-          'Install the Phantom browser extension, then reload this page.',
-        );
+      const setupMessage = phantomSetupMessage(phantom.readyState);
+      if (setupMessage) throw new Error(setupMessage);
       setUi({ type: 'working', message: 'Connect your Phantom account…' });
       await phantom.connect();
       const publicKey = phantom.publicKey?.toBase58();
