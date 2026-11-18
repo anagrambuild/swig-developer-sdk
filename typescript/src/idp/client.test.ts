@@ -91,7 +91,8 @@ describe('project identity providers', () => {
           expect(req.method).toBe(expectedMethod);
           expect(new URL(req.url).pathname).toBe(expectedPath);
           expect(req.headers.get('authorization')).toBe('Bearer sk_project');
-          if (req.method === 'POST') expect(await req.json()).toEqual({});
+          if (req.method === 'POST')
+            expect(await req.json()).toEqual({ providerKey: 'Email' });
           return Response.json(body);
         },
         { preconnect: fetch.preconnect },
@@ -138,23 +139,24 @@ describe('project identity providers', () => {
     expect(calls).toBe(0);
   });
   test('enables the selected provider and rejects a substituted provider', async () => {
-    const path = '/identity/api/providers/email/enable';
+    const path = '/identity/api/providers/enable';
+    const stored = { ...email, providerKey: 'Email' };
     expect(
       await clientWithResponse(
-        { provider: email },
+        { provider: stored },
         'POST',
         path,
-      ).idp.enableProvider('email'),
-    ).toEqual(email);
+      ).idp.enableProvider('Email'),
+    ).toEqual(stored);
     const client = clientWithResponse(
       { provider: { ...email, providerKey: 'google' } },
       'POST',
       path,
     );
-    await expect(client.idp.enableProvider('email')).rejects.toThrow(
+    await expect(client.idp.enableProvider('Email')).rejects.toThrow(
       'did not confirm',
     );
-    await expect(client.idp.enableProvider('../other')).rejects.toThrow(
+    await expect(client.idp.enableProvider('é'.repeat(65))).rejects.toThrow(
       'Invalid identity provider key',
     );
   });

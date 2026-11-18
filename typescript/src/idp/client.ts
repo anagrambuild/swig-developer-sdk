@@ -27,15 +27,20 @@ export interface ProjectIdpProvider {
   eligible: boolean;
 }
 
-const providerKeyPattern = /^[a-z][a-z0-9_-]{0,63}$/;
+function isProviderKey(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    new TextEncoder().encode(value).length <= 128
+  );
+}
 
 function readProvider(value: unknown): ProjectIdpProvider {
   if (
     typeof value !== 'object' ||
     value === null ||
     !('providerKey' in value) ||
-    typeof value.providerKey !== 'string' ||
-    !providerKeyPattern.test(value.providerKey) ||
+    !isProviderKey(value.providerKey) ||
     !('label' in value) ||
     typeof value.label !== 'string' ||
     !('enabled' in value) ||
@@ -68,14 +73,11 @@ export class IdpClient {
   }
 
   async enableProvider(providerKey: string): Promise<ProjectIdpProvider> {
-    if (
-      typeof providerKey !== 'string' ||
-      !providerKeyPattern.test(providerKey)
-    )
+    if (!isProviderKey(providerKey))
       throw new Error('Invalid identity provider key');
     const result = await this.http.post<unknown>(
-      `/identity/api/providers/${providerKey}/enable`,
-      {},
+      '/identity/api/providers/enable',
+      { providerKey },
       { retry: true },
     );
     if (
