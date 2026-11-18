@@ -8,6 +8,7 @@ export {
   IdpClient,
   type EmailWalletApp,
   type EnsureEmailWalletAppInput,
+  type ProjectIdpProvider,
 } from './idp/client.js';
 export {
   DEFAULT_ONE_BUSINESS_URL,
