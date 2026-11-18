@@ -1,4 +1,6 @@
+import { VersionedTransaction } from '@solana/web3.js';
 import bs58 from 'bs58';
+import { createPublicKey, verify } from 'node:crypto';
 import type { HttpClient } from '../core/index.js';
 import type {
   CompileParticipantSetApprovalsArgs,
@@ -6,7 +8,9 @@ import type {
   CompileParticipantSetApprovalsResult,
   Network,
   ParticipantSetApproval,
+  PaymasterSignedTransaction,
   PreparedTransaction,
+  SignTransactionArgs,
   SponsorSignedTransactionArgs,
   SponsorSignedTransactionBundleArgs,
   SubmittedTransaction,
@@ -25,6 +29,68 @@ export class TransactionsClient {
     private readonly http: HttpClient,
     private readonly defaultNetwork?: Network,
   ) {}
+
+  /** Ask the paymaster to sign a transaction and return it for submission. */
+  sign = async (
+    args: SignTransactionArgs,
+  ): Promise<PaymasterSignedTransaction> => {
+    const bytes = base64ToBytes(args.transaction);
+    const transaction = VersionedTransaction.deserialize(bytes);
+    const payer = transaction.message.staticAccountKeys[0];
+    if (
+      !payer ||
+      !transaction.signatures.length ||
+      !Buffer.from(transaction.serialize()).equals(bytes)
+    ) {
+      throw new Error('Invalid transaction for paymaster signing');
+    }
+
+    const encoded = bs58.encode(bytes);
+    const result = await this.http.post<unknown>('/paymaster/sign', {
+      base58_encoded_transaction: encoded,
+      network: args.network ?? this.defaultNetwork,
+      external_id: args.externalId,
+    });
+    if (
+      !result ||
+      typeof result !== 'object' ||
+      !('request_id' in result) ||
+      typeof result.request_id !== 'string' ||
+      !result.request_id ||
+      !('signed_transaction' in result) ||
+      typeof result.signed_transaction !== 'string' ||
+      !result.signed_transaction ||
+      result.signed_transaction.length > encoded.length + 1
+    ) {
+      throw new Error('Invalid paymaster sign response');
+    }
+
+    const signedBytes = bs58.decode(result.signed_transaction);
+    const signed = VersionedTransaction.deserialize(signedBytes);
+    const signature = signed.signatures[0];
+    const key = createPublicKey({
+      format: 'jwk',
+      key: {
+        kty: 'OKP',
+        crv: 'Ed25519',
+        x: payer.toBuffer().toString('base64url'),
+      },
+    });
+    if (
+      !signature ||
+      !verify(null, transaction.message.serialize(), key, signature)
+    ) {
+      throw new Error('Invalid paymaster signature');
+    }
+    transaction.addSignature(payer, signature);
+    if (!Buffer.from(transaction.serialize()).equals(signedBytes)) {
+      throw new Error('Paymaster changed the transaction');
+    }
+    return {
+      requestId: result.request_id,
+      signedTransaction: bytesToBase64(signedBytes),
+    };
+  };
 
   sponsor = async (
     args: SponsorSignedTransactionArgs,

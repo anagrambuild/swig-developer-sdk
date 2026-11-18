@@ -148,11 +148,20 @@ export interface PreparedRecoverySetupResult {
   network?: Network;
 }
 
-export interface SponsorSignedTransactionArgs {
-  externalId?: string;
+export interface SignTransactionArgs {
   transaction: string;
   transactionEncoding?: TransactionEncoding;
   network?: Network;
+  externalId?: string;
+}
+
+export interface PaymasterSignedTransaction {
+  requestId: string;
+  /** Base64-encoded transaction with the paymaster signature. */
+  signedTransaction: string;
+}
+
+export interface SponsorSignedTransactionArgs extends SignTransactionArgs {
   idempotencyKey?: string;
 }
 
