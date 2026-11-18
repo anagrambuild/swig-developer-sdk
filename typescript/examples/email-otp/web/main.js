@@ -1,4 +1,5 @@
 import { createSwigWebClient, Network } from '@swig-wallet/expo-idp-sdk/web';
+import { describeGrant } from './preview.js';
 
 const email = createSwigWebClient({
   redirectUri: location.origin + '/auth/callback',
@@ -61,8 +62,7 @@ verify.onsubmit = (event) => {
       email.cancel();
       throw new Error('The wallet preview does not match the registered agent');
     }
-    preview.textContent =
-      'Wallet ' + wallet.walletAddress + ' · Agent ' + wallet.agentPublicKey;
+    preview.textContent = describeGrant(wallet);
     status.textContent =
       'Email verified. Review the permissions in Swig to create your wallet.';
     verify.hidden = true;
@@ -88,6 +88,7 @@ async function finish(result) {
     throw new Error('Email session verification failed. Start again.');
   verify.hidden = true;
   approve.hidden = true;
+  logout.hidden = false;
   preview.textContent =
     'Devnet wallet ' + url.searchParams.get('wallet_address');
   status.textContent =
@@ -95,3 +96,23 @@ async function finish(result) {
       ? 'Signed in. Review the existing wallet permissions before using the agent.'
       : 'Signed in · Agent role ' + url.searchParams.get('role_id');
 }
+
+const logout = document.querySelector('#logout');
+logout.onclick = () =>
+  run(logout, async () => {
+    if (!(await fetch('/logout', { method: 'POST' })).ok)
+      throw new Error('Could not sign out');
+    location.reload();
+  });
+fetch('/session')
+  .then((response) => (response.ok ? response.json() : null))
+  .then((session) => {
+    if (session?.authenticated) {
+      start.hidden = true;
+      logout.hidden = false;
+      status.textContent = 'Signed in';
+    }
+  })
+  .catch(() => {
+    status.textContent = 'Could not read session status';
+  });

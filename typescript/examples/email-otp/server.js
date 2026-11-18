@@ -1,8 +1,9 @@
-import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { createRemoteJWKSet } from 'jose';
 import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { SwigClient } from '../../dist/index.js';
+import { LoginSessions } from './sessions.js';
 
 const port = Number(process.env.PORT || 4181);
 const origin = 'http://127.0.0.1:' + port;
@@ -30,7 +31,9 @@ const jwks = createRemoteJWKSet(new URL(issuer + '/oidc/jwks.json'));
 const index = await readFile(new URL('./web/index.html', import.meta.url));
 const bundle = await readFile(new URL('./dist/main.js', import.meta.url));
 const attempts = new Map();
+const sessions = new LoginSessions();
 const cleanup = setInterval(() => {
+  sessions.expire();
   for (const [id, attempt] of attempts)
     if (attempt.expires <= Date.now()) attempts.delete(id);
 }, 60000);
@@ -53,8 +56,29 @@ createServer(async (req, res) => {
       .end(script ? bundle : index);
     return;
   }
+  const cookies = new URLSearchParams(
+    (req.headers.cookie || '').split('; ').join('&'),
+  );
+  const sessionId = cookies.get('session');
+  if (req.method === 'GET' && req.url === '/session') {
+    res
+      .writeHead(200, { 'Content-Type': 'application/json' })
+      .end(
+        JSON.stringify({ authenticated: Boolean(sessions.subject(sessionId)) }),
+      );
+    return;
+  }
   if (req.method !== 'POST' || req.headers.origin !== origin) {
     res.writeHead(403).end();
+    return;
+  }
+  if (req.url === '/logout') {
+    sessions.logout(sessionId);
+    res
+      .writeHead(204, {
+        'Set-Cookie': 'session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0',
+      })
+      .end();
     return;
   }
   if (req.url === '/attempt') {
@@ -97,18 +121,24 @@ createServer(async (req, res) => {
       if (body.length > 16384) throw new Error();
     }
     const { idToken, state } = JSON.parse(body);
-    if (state !== attempt.state || typeof idToken !== 'string')
-      throw new Error();
-    const { payload } = await jwtVerify(idToken, jwks, {
+    const session = await sessions.issue(
+      idToken,
+      attempt,
+      state,
       issuer,
-      audience: app.clientId,
-      algorithms: ['EdDSA'],
-      requiredClaims: ['sub', 'exp', 'iat', 'nonce'],
-    });
-    if (payload.nonce !== attempt.oidcNonce || !payload.sub) throw new Error();
+      app.clientId,
+      jwks,
+    );
+    sessions.logout(sessionId);
     res
       .writeHead(204, {
-        'Set-Cookie': 'otp=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0',
+        'Set-Cookie': [
+          'otp=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0',
+          'session=' +
+            session.id +
+            '; HttpOnly; SameSite=Strict; Path=/; Max-Age=' +
+            session.maxAge,
+        ],
       })
       .end();
   } catch {
