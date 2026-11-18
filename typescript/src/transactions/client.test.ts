@@ -66,6 +66,17 @@ describe('TransactionsClient', () => {
       });
       expect(calls).toEqual(['POST https://sdk.test/paymaster/sign']);
 
+      const validPayerSignature = tx.signatures[0]?.slice();
+      if (!validPayerSignature)
+        throw new Error('Fixture is missing its payer signature');
+      const invalidPayerSignature = validPayerSignature.slice();
+      invalidPayerSignature[0] = (invalidPayerSignature[0] ?? 0) ^ 1;
+      tx.addSignature(payer.publicKey, invalidPayerSignature);
+      await expect(client.sign(args)).rejects.toThrow(
+        'Invalid paymaster signature',
+      );
+      tx.addSignature(payer.publicKey, validPayerSignature);
+
       // A valid payer signature alone does not bind the other signature slots.
       tx.addSignature(sender.publicKey, new Uint8Array(64));
       await expect(client.sign(args)).rejects.toThrow(
