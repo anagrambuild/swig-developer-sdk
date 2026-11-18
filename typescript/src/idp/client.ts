@@ -68,7 +68,10 @@ export class IdpClient {
   }
 
   async enableProvider(providerKey: string): Promise<ProjectIdpProvider> {
-    if (!providerKeyPattern.test(providerKey))
+    if (
+      typeof providerKey !== 'string' ||
+      !providerKeyPattern.test(providerKey)
+    )
       throw new Error('Invalid identity provider key');
     const result = await this.http.post<unknown>(
       `/identity/api/providers/${providerKey}/enable`,

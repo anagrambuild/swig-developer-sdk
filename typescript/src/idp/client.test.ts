@@ -118,6 +118,25 @@ describe('project identity providers', () => {
       ).idp.listProviders(),
     ).rejects.toThrow('Invalid project identity provider');
   });
+  test('rejects non-string keys from JavaScript before sending a request', async () => {
+    let calls = 0;
+    const sdk = new SwigClient({
+      apiKey: 'sk_project',
+      fetch: Object.assign(
+        async () => {
+          calls++;
+          return Response.json({ provider: email });
+        },
+        { preconnect: fetch.preconnect },
+      ),
+    });
+    for (const key of [['email'], null, undefined]) {
+      await expect(
+        Reflect.apply(sdk.idp.enableProvider, sdk.idp, [key]),
+      ).rejects.toThrow('Invalid identity provider key');
+    }
+    expect(calls).toBe(0);
+  });
   test('enables the selected provider and rejects a substituted provider', async () => {
     const path = '/identity/api/providers/email/enable';
     expect(
