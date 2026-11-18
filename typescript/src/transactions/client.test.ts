@@ -148,6 +148,7 @@ describe('TransactionsClient', () => {
       transactions.sponsor({
         transaction: bytesToBase64(transactionBytes),
         idempotencyKey: 'sponsor-request-123',
+        externalId: 'order-42',
       }),
     ).resolves.toEqual({
       requestId: 'request_123',
@@ -162,6 +163,7 @@ describe('TransactionsClient', () => {
           base58_encoded_transaction: bs58.encode(transactionBytes),
           network: 'devnet',
           idempotencyKey: 'sponsor-request-123',
+          external_id: 'order-42',
         },
         options: { retry: true },
       },

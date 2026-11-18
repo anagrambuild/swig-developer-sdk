@@ -129,6 +129,7 @@ class SponsorSignedTransactionArgs:
     transaction_encoding: TransactionEncoding | None = None
     network: Network | None = None
     idempotency_key: str | None = None
+    external_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,6 +178,7 @@ class TransactionsClient:
         transaction_encoding: TransactionEncoding | None = None,
         network: Network | None = None,
         idempotency_key: str | None = None,
+        external_id: str | None = None,
     ) -> SubmittedTransaction: ...
 
     async def sponsor(
@@ -187,6 +189,7 @@ class TransactionsClient:
         transaction_encoding: TransactionEncoding | None = None,
         network: Network | None = None,
         idempotency_key: str | None = None,
+        external_id: str | None = None,
     ) -> SubmittedTransaction:
         """Sponsor and submit a signed base64 transaction.
 
@@ -204,6 +207,7 @@ class TransactionsClient:
                     transaction_encoding,
                     network,
                     idempotency_key,
+                    external_id,
                 )
             ):
                 raise TypeError("Pass either args or sponsorship keywords, not both")
@@ -215,6 +219,7 @@ class TransactionsClient:
                 transaction_encoding=transaction_encoding,
                 network=network,
                 idempotency_key=idempotency_key,
+                external_id=external_id,
             )
         transaction_bytes = base64.b64decode(args.transaction)
         response = await self._http.post(
@@ -225,6 +230,7 @@ class TransactionsClient:
                 ).decode("ascii"),
                 "network": args.network or self._default_network,
                 "idempotencyKey": args.idempotency_key,
+                "external_id": args.external_id,
             },
             retry=args.idempotency_key is not None,
         )

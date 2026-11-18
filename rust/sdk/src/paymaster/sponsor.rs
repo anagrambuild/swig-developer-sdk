@@ -49,6 +49,15 @@ impl PaymasterClient {
         &self,
         args: SponsorSignedTransactionArgs,
     ) -> Result<SubmittedTransaction, SponsorError> {
+        self.sponsor_with_external_id(args, None).await
+    }
+
+    /// Submits a transaction with an optional caller-supplied external identifier.
+    pub async fn sponsor_with_external_id(
+        &self,
+        args: SponsorSignedTransactionArgs,
+        external_id: Option<String>,
+    ) -> Result<SubmittedTransaction, SponsorError> {
         args.transaction
             .sanitize()
             .map_err(|_| SponsorError::InvalidInput("invalid transaction"))?;
@@ -59,6 +68,7 @@ impl PaymasterClient {
             transaction_bytes,
             self.network.into(),
             args.idempotency_key,
+            external_id,
         )
         .await
         .map_err(|error| match error {

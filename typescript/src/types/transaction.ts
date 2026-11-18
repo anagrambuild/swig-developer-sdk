@@ -149,6 +149,7 @@ export interface PreparedRecoverySetupResult {
 }
 
 export interface SponsorSignedTransactionArgs {
+  externalId?: string;
   transaction: string;
   transactionEncoding?: TransactionEncoding;
   network?: Network;

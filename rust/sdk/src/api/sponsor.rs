@@ -12,6 +12,7 @@ pub(crate) async fn sponsor(
     transaction: Vec<u8>,
     network: Network,
     idempotency_key: Option<String>,
+    external_id: Option<String>,
 ) -> Result<SubmittedTransaction, HttpError> {
     let keyed = idempotency_key.as_ref().is_some_and(|key| !key.is_empty());
     let request = SponsorRequest {
@@ -21,6 +22,7 @@ pub(crate) async fn sponsor(
             Network::Mainnet => "mainnet",
         },
         idempotency_key,
+        external_id,
     };
     let body = serde_json::to_vec(&request).map_err(|_| HttpError::RequestFailed)?;
     let bytes = if keyed {

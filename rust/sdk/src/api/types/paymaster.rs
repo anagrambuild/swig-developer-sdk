@@ -61,6 +61,8 @@ pub(crate) struct SponsorRequest {
     pub network: &'static str,
     #[serde(rename = "idempotencyKey", skip_serializing_if = "Option::is_none")]
     pub idempotency_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_id: Option<String>,
 }
 
 #[serde_as]

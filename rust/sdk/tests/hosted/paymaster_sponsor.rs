@@ -130,6 +130,7 @@ async fn keyed_retry_limit_is_exact_and_does_not_rebuild_payload() -> Result<(),
         "base58_encoded_transaction": bs58::encode(bincode::serialize(&transaction)?).into_string(),
         "network": "devnet",
         "idempotencyKey": "sponsor-retry-key",
+        "external_id": "order-42",
     });
     queue(
         &client.http,
@@ -142,10 +143,13 @@ async fn keyed_retry_limit_is_exact_and_does_not_rebuild_payload() -> Result<(),
     )?;
     assert!(matches!(
         client
-            .sponsor(SponsorSignedTransactionArgs {
-                transaction,
-                idempotency_key: Some("sponsor-retry-key".into())
-            })
+            .sponsor_with_external_id(
+                SponsorSignedTransactionArgs {
+                    transaction,
+                    idempotency_key: Some("sponsor-retry-key".into()),
+                },
+                Some("order-42".into()),
+            )
             .await,
         Err(SponsorError::RequestFailed)
     ));
@@ -196,6 +200,7 @@ async fn sponsorship_encodes_native_transaction_and_preserves_negative_spending(
     assert_eq!(request.url().path(), "/paymaster/sponsor");
     assert_eq!(body["network"], "devnet");
     assert!(body.get("idempotencyKey").is_none());
+    assert!(body.get("external_id").is_none());
     let encoded = body["base58_encoded_transaction"]
         .as_str()
         .ok_or("transaction")?;
