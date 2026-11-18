@@ -267,11 +267,17 @@ async def test_keyword_and_legacy_sponsorship_have_the_same_wire_contract() -> N
         transport=httpx.MockTransport(handler),
     ) as client:
         modern = await client.transactions.sponsor(
-            transaction="YQ==", network="devnet", idempotency_key="one"
+            transaction="YQ==",
+            network="devnet",
+            idempotency_key="one",
+            external_id="order-42",
         )
         legacy = await client.transactions.sponsor(
             SponsorSignedTransactionArgs(
-                transaction="YQ==", network="devnet", idempotency_key="one"
+                transaction="YQ==",
+                network="devnet",
+                idempotency_key="one",
+                external_id="order-42",
             )
         )
         modern_bundle = await client.transactions.sponsor_bundle(
@@ -292,6 +298,7 @@ async def test_keyword_and_legacy_sponsorship_have_the_same_wire_contract() -> N
             "base58_encoded_transaction": "2g",
             "network": "devnet",
             "idempotencyKey": "one",
+            "external_id": "order-42",
         }
     )
     assert (

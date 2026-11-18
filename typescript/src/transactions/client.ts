@@ -37,6 +37,7 @@ export class TransactionsClient {
         ),
         network: args.network ?? this.defaultNetwork,
         idempotencyKey: args.idempotencyKey,
+        external_id: args.externalId,
       },
       { retry: Boolean(args.idempotencyKey) },
     );
