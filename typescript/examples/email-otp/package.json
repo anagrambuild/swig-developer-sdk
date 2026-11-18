@@ -1,0 +1,17 @@
+{
+  "name": "swig-email-wallet-starter",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "bun build web/main.js --target=browser --outfile=dist/main.js",
+    "start": "node --env-file=.env.local server.js",
+    "setup:agent": "bun ../phantom/scripts/generate-agent.ts"
+  },
+  "dependencies": {
+    "@swig-wallet/expo-idp-sdk": "git+https://github.com/anagrambuild/swig-idp-sdk.git#b0204a84ccd840679e56476110654519b7316d9f",
+    "jose": "^6.1.3"
+  }
+}

@@ -3,3 +3,5 @@ examples/x402/.local/
 dist/
 examples/phantom/.local/
 examples/phantom/package-lock.json
+examples/email-otp/.local/
+examples/email-otp/package-lock.json
