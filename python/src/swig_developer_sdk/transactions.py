@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from typing import Literal, TypeAlias, cast, overload
 
 import base58
+from solders.message import to_bytes_versioned
+from solders.pubkey import Pubkey
+from solders.signature import Signature
+from solders.transaction import SanitizeError, VersionedTransaction
 
 from .common import (
     Network,
@@ -117,6 +121,12 @@ class SignedPreparedTransaction:
 
 
 @dataclass(frozen=True, slots=True)
+class PaymasterSignedTransaction:
+    request_id: str
+    signed_transaction: str
+
+
+@dataclass(frozen=True, slots=True)
 class SubmittedTransaction:
     request_id: str
     signature: str
@@ -164,6 +174,61 @@ class TransactionsClient:
     ) -> None:
         self._http = http
         self._default_network = default_network
+
+    async def sign(
+        self,
+        *,
+        transaction: str,
+        network: Network | None = None,
+        external_id: str | None = None,
+    ) -> PaymasterSignedTransaction:
+        """Add the paymaster signature and return the transaction in base64.
+
+        Pass a base64 Solana transaction with the paymaster as fee payer.
+        Other signatures are preserved. The request uses the call's network,
+        then the client's network, then the service's mainnet default.
+        Signing makes one request and leaves submission to the caller.
+        """
+        original = base64.b64decode(transaction, validate=True)
+        message, payer, signature_offset = _paymaster_signing_fields(original)
+        body = _mapping(
+            await self._http.post(
+                "/paymaster/sign",
+                {
+                    "base58_encoded_transaction": base58.b58encode(original).decode(
+                        "ascii"
+                    ),
+                    "network": network or self._default_network,
+                    "external_id": external_id,
+                },
+            ),
+            "Paymaster sign response",
+        )
+        request_id = _required_string(body.get("request_id"), "request_id")
+        encoded = _required_string(body.get("signed_transaction"), "signed_transaction")
+        # Bound the base58 conversion by the size of the transaction we sent.
+        if len(encoded) > len(original) * 2 or encoded != encoded.rstrip():
+            raise SwigResponseError("Invalid base58 signed_transaction")
+        try:
+            signed = base58.b58decode(encoded)
+        except ValueError as error:
+            raise SwigResponseError("Invalid base58 signed_transaction") from error
+        signature_end = signature_offset + Signature.LENGTH
+        if (
+            len(signed) != len(original)
+            or signed[:signature_offset] != original[:signature_offset]
+            or signed[signature_end:] != original[signature_end:]
+        ):
+            raise SwigResponseError(
+                "Paymaster changed the message or another signature"
+            )
+        signature = Signature.from_bytes(signed[signature_offset:signature_end])
+        if not signature.verify(payer, message):
+            raise SwigResponseError("Invalid paymaster signature")
+        return PaymasterSignedTransaction(
+            request_id=request_id,
+            signed_transaction=base64.b64encode(signed).decode("ascii"),
+        )
 
     @overload
     async def sponsor(
@@ -450,6 +515,36 @@ def normalize_prepared_transactions_result(
         ),
         network=network,
     )
+
+
+def _paymaster_signing_fields(transaction: bytes) -> tuple[bytes, Pubkey, int]:
+    if transaction[:1] == b"\x81":
+        # SIMD-0385 puts static addresses after the 42-byte versioned header
+        # and all signatures at the tail. solders 0.28 parses legacy and v0.
+        addresses_offset = 42
+        if len(transaction) < addresses_offset:
+            raise ValueError("Truncated v1 transaction header")
+        signer_count = transaction[1]
+        address_count = transaction[addresses_offset - 1]
+        signature_offset = len(transaction) - signer_count * Signature.LENGTH
+        if (
+            not 1 <= signer_count <= address_count
+            or signature_offset < addresses_offset + address_count * Pubkey.LENGTH
+        ):
+            raise ValueError("Invalid v1 transaction signer or address count")
+        payer = Pubkey.from_bytes(
+            transaction[addresses_offset : addresses_offset + Pubkey.LENGTH]
+        )
+        return transaction[:signature_offset], payer, signature_offset
+    try:
+        parsed = VersionedTransaction.from_bytes(transaction)
+        parsed.sanitize()
+    except (ValueError, SanitizeError) as error:
+        raise ValueError("Invalid Solana transaction") from error
+    if bytes(parsed) != transaction:
+        raise ValueError("Invalid serialized Solana transaction")
+    # For both legacy and v0 the first byte is the signature count.
+    return to_bytes_versioned(parsed.message), parsed.message.account_keys[0], 1
 
 
 def normalize_submitted_transaction(response: object) -> SubmittedTransaction:

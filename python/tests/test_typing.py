@@ -13,6 +13,7 @@ import pytest
         (
             """from swig_developer_sdk import (
     SwigClient, WalletAuthority, SponsorSignedTransactionArgs,
+    PaymasterSignedTransaction,
 )
 from swig_developer_sdk.signers import sign_prepared_transaction
 
@@ -27,7 +28,12 @@ async def use_sdk() -> str:
         prepared = await wallet.transfer.sol(
             fee_payer="payer", destination="dest", amount=1,
         )
-        submitted = await client.transactions.sponsor(transaction=prepared.transaction)
+        signed: PaymasterSignedTransaction = await client.transactions.sign(
+            transaction=prepared.transaction, network="devnet", external_id="order-1",
+        )
+        submitted = await client.transactions.sponsor(
+            transaction=signed.signed_transaction,
+        )
         await client.transactions.sponsor(
             SponsorSignedTransactionArgs(transaction="YQ=="),
         )
@@ -56,6 +62,13 @@ invalid: ProgramExecAuthority = {
             """from swig_developer_sdk import SwigClient
 async def invalid(client: SwigClient) -> None:
     await client.transactions.sponsor()
+""",
+            False,
+        ),
+        (
+            """from swig_developer_sdk import SwigClient
+async def invalid(client: SwigClient) -> None:
+    await client.transactions.sign(transaction="tx", idempotency_key="key")
 """,
             False,
         ),
