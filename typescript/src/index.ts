@@ -5,6 +5,11 @@ export {
   DexTransactionsClient,
 } from './dex/index.js';
 export {
+  IdpClient,
+  type EmailWalletApp,
+  type EnsureEmailWalletAppInput,
+} from './idp/client.js';
+export {
   DEFAULT_ONE_BUSINESS_URL,
   OneBusinessGrantAccessCallbackError,
   buildOneBusinessGrantAccessUrl,

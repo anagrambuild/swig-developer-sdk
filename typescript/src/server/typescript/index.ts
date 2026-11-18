@@ -5,6 +5,7 @@ import {
   resolveRetryOptions,
 } from '../../core/index.js';
 import { DexClient } from '../../dex/index.js';
+import { IdpClient } from '../../idp/client.js';
 import { ParticipantSetsClient } from '../../participant-sets/index.js';
 import { PaymasterClient } from '../../paymaster/index.js';
 import { RoleTemplatesClient } from '../../policy-templates/roles.js';
@@ -24,6 +25,7 @@ export class SwigClient {
   readonly #http: HttpClient;
   readonly defaultNetwork: SwigClientConfig['network'];
   readonly dex: DexClient;
+  readonly idp: IdpClient;
   readonly paymaster: PaymasterClient;
   readonly participantSets: ParticipantSetsClient;
   readonly ramp: RampClient;
@@ -42,6 +44,7 @@ export class SwigClient {
       fetch: config.fetch ?? fetch,
       retry: resolveRetryOptions(config.retryOptions),
     });
+    this.idp = new IdpClient(this.#http);
     this.dex = new DexClient(this.#http, this.defaultNetwork);
     this.paymaster = new PaymasterClient(this.#http, this.defaultNetwork);
     this.participantSets = new ParticipantSetsClient(
