@@ -1,4 +1,7 @@
-import { VersionedTransaction } from '@solana/web3.js';
+import {
+  getTransactionDecoder,
+  getTransactionEncoder,
+} from '@solana/transactions';
 import bs58 from 'bs58';
 import { createPublicKey, verify } from 'node:crypto';
 import type { HttpClient } from '../core/index.js';
@@ -35,15 +38,10 @@ export class TransactionsClient {
     args: SignTransactionArgs,
   ): Promise<PaymasterSignedTransaction> => {
     const bytes = base64ToBytes(args.transaction);
-    const transaction = VersionedTransaction.deserialize(bytes);
-    const payer = transaction.message.staticAccountKeys[0];
-    if (
-      !payer ||
-      !transaction.signatures.length ||
-      !Buffer.from(transaction.serialize()).equals(bytes)
-    ) {
-      throw new Error('Invalid transaction for paymaster signing');
-    }
+    const decoder = getTransactionDecoder();
+    const transaction = decoder.decode(bytes);
+    const [payer] = Object.keys(transaction.signatures);
+    if (!payer) throw new Error('Transaction is missing its fee payer');
 
     const encoded = bs58.encode(bytes);
     const result = await this.http.post<unknown>('/paymaster/sign', {
@@ -66,24 +64,34 @@ export class TransactionsClient {
     }
 
     const signedBytes = bs58.decode(result.signed_transaction);
-    const signed = VersionedTransaction.deserialize(signedBytes);
-    const signature = signed.signatures[0];
+    const signed = decoder.decode(signedBytes);
+    const [signedPayer, signature] = Object.entries(signed.signatures)[0] ?? [];
+    if (signedPayer !== payer || !signature) {
+      throw new Error('Missing paymaster signature');
+    }
     const key = createPublicKey({
       format: 'jwk',
       key: {
         kty: 'OKP',
         crv: 'Ed25519',
-        x: payer.toBuffer().toString('base64url'),
+        x: Buffer.from(bs58.decode(payer)).toString('base64url'),
       },
     });
     if (
-      !signature ||
-      !verify(null, transaction.message.serialize(), key, signature)
+      !verify(
+        null,
+        Buffer.from(transaction.messageBytes),
+        key,
+        Buffer.from(signature),
+      )
     ) {
       throw new Error('Invalid paymaster signature');
     }
-    transaction.addSignature(payer, signature);
-    if (!Buffer.from(transaction.serialize()).equals(signedBytes)) {
+    const expected = getTransactionEncoder().encode({
+      ...transaction,
+      signatures: { ...transaction.signatures, [payer]: signature },
+    });
+    if (!Buffer.from(expected).equals(signedBytes)) {
       throw new Error('Paymaster changed the transaction');
     }
     return {

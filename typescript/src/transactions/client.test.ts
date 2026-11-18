@@ -73,10 +73,41 @@ describe('TransactionsClient', () => {
       );
       tx.addSignature(payer.publicKey, new Uint8Array(64));
       await expect(client.sign(args)).rejects.toThrow(
-        'Invalid paymaster signature',
+        'Missing paymaster signature',
       );
     });
   }
+
+  test('sign preserves a v1 message with its signatures at the end', async () => {
+    // Signed getTransaction fixture from the paymaster backend.
+    const signed = Buffer.from(
+      'gQEAAQwAAAAGhoWdOMgKlyFIGEFpF+C/j8oVfkZPmMz9D/qd6S/UggEFyoTiTXdhUBQKFFAB/JZaRp9/+qq44d72uHsnwhwnZ459Jbtx8Ujed9Z7sMeyVrIT3x6JCftdlPGzI9E24xRHK4IeTael0NiJg7w/YTr89LR+cV4kDlwt4UIZ7iM4gtBtAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANDOlC4efFBuIY3w198cUvr9w1KeSNZ00dskx1tUzMvkANAwAAAAIABARQAAEAAgMAAAEAIAD7/6XyxGmB28d+vHdY/8iLZCfN+WeKs8alx3iWOAPnYunxyc+BG99zsbtOLOMEosAUgsfF3ODUnvLEINKijQG4URcIAAAACAAAAE2nfKtvTNbFcmLsydZHawTD8EIeCYSLYWzYzpMVZsWivSHo3XEyLXWe7nuHA4jCg9+LvCeArE4NYwP0++hIyAM=',
+      'base64',
+    );
+    const unsigned = Buffer.from(signed);
+    unsigned.fill(0, unsigned.length - 64);
+    const http = new HttpClient({
+      apiKey: 'fixture',
+      baseUrl: 'https://sdk.test',
+      retry: { maxRetries: 0, retryDelay: 0, backoffMultiplier: 1 },
+      fetch: Object.assign(
+        async () =>
+          Response.json({
+            request_id: 'req-v1',
+            signed_transaction: bs58.encode(signed),
+          }),
+        { preconnect: fetch.preconnect },
+      ),
+    });
+    expect(
+      await new TransactionsClient(http).sign({
+        transaction: unsigned.toString('base64'),
+      }),
+    ).toEqual({
+      requestId: 'req-v1',
+      signedTransaction: signed.toString('base64'),
+    });
+  });
 
   test('compiles detached ParticipantSet approvals without submitting', async () => {
     const calls: Array<{ path: string; body: unknown }> = [];
