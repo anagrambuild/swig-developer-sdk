@@ -71,7 +71,7 @@ test('Verify email proceeds directly to trusted approval and validates the regis
   };
   const input = { challengeId: 'challenge', code: '123456' };
   const complete = { status: 'complete', callbackUrl: 'callback' };
-  const pending = { status: 'approval_required', wallet };
+  const pending = { status: 'approval_required', permissions: wallet };
   const email = {
     verify: async () => {
       events.push('verify');

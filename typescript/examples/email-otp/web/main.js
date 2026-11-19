@@ -96,6 +96,7 @@ async function finish(result) {
     throw new Error('Email session verification failed. Start again.');
   verify.hidden = true;
   approve.hidden = true;
+  restart.hidden = true;
   logout.hidden = false;
   preview.textContent =
     'Devnet wallet ' + url.searchParams.get('wallet_address');
