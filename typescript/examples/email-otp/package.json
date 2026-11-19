@@ -12,7 +12,7 @@
     "setup:https": "node --env-file=.env.local setup-https.js"
   },
   "dependencies": {
-    "@swig-wallet/expo-idp-sdk": "git+https://github.com/anagrambuild/swig-idp-sdk.git#b0204a84ccd840679e56476110654519b7316d9f",
+    "@swig-wallet/expo-idp-sdk": "git+https://github.com/anagrambuild/swig-idp-sdk.git#6b3f01d942ee97fbe4e354904a03eb55cb42245c",
     "jose": "^6.1.3"
   }
 }
