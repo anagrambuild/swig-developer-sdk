@@ -1,10 +1,9 @@
 import { PhantomWalletAdapter } from '@solana/wallet-adapter-phantom';
-import { VersionedTransaction } from '@solana/web3.js';
 import bs58 from 'bs58';
-import { Buffer } from 'buffer';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { z } from 'zod';
+import { signReviewedAgentGrant } from './agent-approval';
 import {
   appConfigSchema,
   challengeSchema,
@@ -129,7 +128,7 @@ function App() {
         throw new Error('Phantom did not return a signing account.');
       currentOwner.current = publicKey;
       setOwner(publicKey);
-      const reviewed =
+      let reviewed =
         ui.type === 'review' &&
         flow?.state === 'awaiting-approval' &&
         flow.owner === publicKey
@@ -233,40 +232,21 @@ function App() {
         };
         setUi({ type: 'working', message: messages[next.state] });
         if (next.state === 'awaiting-approval') {
-          if (!next.transaction)
-            throw new Error('The agent approval transaction is missing.');
-          if (
-            !reviewed ||
-            reviewed.walletAddress !== next.walletAddress ||
-            reviewed.agentPublicKey !== next.agentPublicKey ||
-            reviewed.transaction !== next.transaction ||
-            reviewed.allowance.sol !== next.allowance.sol ||
-            reviewed.allowance.token !== next.allowance.token ||
-            reviewed.allowance.window !== next.allowance.window
-          ) {
-            setUi({ type: 'review' });
-            return;
-          }
-          const transaction = VersionedTransaction.deserialize(
-            Buffer.from(next.transaction, 'base64'),
+          signedTransaction = await signReviewedAgentGrant(
+            reviewed,
+            next,
+            (transaction) => phantom.signTransaction(transaction),
           );
-          const originalMessage = Buffer.from(transaction.message.serialize());
-          const signed = await phantom.signTransaction(transaction);
+          reviewed = undefined;
           if (
             generation.current !== run ||
             phantom.publicKey?.toBase58() !== publicKey
           )
             return;
-          if (
-            !Buffer.from(signed.message.serialize()).equals(originalMessage)
-          ) {
-            throw new Error(
-              'Phantom changed the transaction message. Nothing was submitted.',
-            );
+          if (!signedTransaction) {
+            setUi({ type: 'review' });
+            return;
           }
-          signedTransaction = Buffer.from(signed.serialize()).toString(
-            'base64',
-          );
         } else {
           await new Promise((resolve) => window.setTimeout(resolve, 1500));
         }
