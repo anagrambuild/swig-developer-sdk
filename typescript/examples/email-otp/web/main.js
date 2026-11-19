@@ -53,7 +53,10 @@ verify.onsubmit = (event) => {
     status.textContent = 'Verifying email…';
     const result = await verifyWalletEmail(
       email,
-      { challengeId: challenge.challengeId, code: document.querySelector('#code').value },
+      {
+        challengeId: challenge.challengeId,
+        code: document.querySelector('#code').value,
+      },
       app.agentPublicKey,
     );
     if (result.status === 'complete') {

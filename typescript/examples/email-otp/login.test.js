@@ -55,14 +55,28 @@ test('Verify email proceeds directly to trusted approval and validates the regis
   const events = [];
   const popup = { document: { body: {} }, close: () => events.push('close') };
   const previous = globalThis.window;
-  t.after(() => { if (previous === undefined) delete globalThis.window; else globalThis.window = previous; });
-  globalThis.window = { open: () => { events.push('open'); return popup; } };
-  const wallet = { agentPublicKey: 'agent', agentPolicy: { mint: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU' } };
+  t.after(() => {
+    if (previous === undefined) delete globalThis.window;
+    else globalThis.window = previous;
+  });
+  globalThis.window = {
+    open: () => {
+      events.push('open');
+      return popup;
+    },
+  };
+  const wallet = {
+    agentPublicKey: 'agent',
+    agentPolicy: { mint: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU' },
+  };
   const input = { challengeId: 'challenge', code: '123456' };
   const complete = { status: 'complete', callbackUrl: 'callback' };
   const pending = { status: 'approval_required', wallet };
   const email = {
-    verify: async () => { events.push('verify'); return pending; },
+    verify: async () => {
+      events.push('verify');
+      return pending;
+    },
     approve: async (request, options) => {
       assert.deepEqual(request, { challengeId: input.challengeId });
       assert.equal(options.approvalWindow, popup);
@@ -74,7 +88,10 @@ test('Verify email proceeds directly to trusted approval and validates the regis
   assert.equal(await verifyWalletEmail(email, input, 'agent'), complete);
   assert.deepEqual(events, ['open', 'verify', 'approve', 'close']);
   events.length = 0;
-  await assert.rejects(verifyWalletEmail(email, input, 'other'), /registered agent/);
+  await assert.rejects(
+    verifyWalletEmail(email, input, 'other'),
+    /registered agent/,
+  );
   assert.deepEqual(events, ['open', 'verify', 'cancel', 'close']);
   globalThis.window.open = () => null;
   assert.equal(await verifyWalletEmail(email, input, 'agent'), pending);
