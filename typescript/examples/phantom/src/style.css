@@ -73,23 +73,6 @@ header {
   background: #fff;
   box-shadow: 0 14px 50px #16213906;
 }
-.wallet-mark {
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
-  background: #eeeaff;
-  color: var(--accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font:
-    600 29px 'Space Grotesk',
-    sans-serif;
-  margin-bottom: 28px;
-}
-.wallet-mark span {
-  font-size: 20px;
-}
 .eyebrow {
   font-size: 10px;
   letter-spacing: 1.8px;
@@ -110,62 +93,23 @@ h1 {
   line-height: 1.7;
   margin: 18px 0 26px;
 }
-.policy {
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
+.policy-summary {
+  border-block: 1px solid var(--line);
+  padding: 14px 0;
+  margin-bottom: 18px;
 }
-.policy > div {
-  display: grid;
-  grid-template-columns: 30px 1fr auto;
-  gap: 12px;
-  align-items: start;
-  padding: 18px 0;
+.policy-summary h2 {
+  font-size: 15px;
+  margin: 0;
 }
-.policy > div + div {
-  border-top: 1px solid var(--line);
-}
-.role-icon {
-  width: 30px;
-  height: 30px;
-  border-radius: 10px;
-  background: #eeeaff;
-  color: var(--accent);
-  display: grid;
-  place-items: center;
-  font-size: 12px;
-  font-weight: 700;
-}
-.agent-icon {
-  background: #e8f4f0;
-  color: #007a65;
-}
-.policy strong {
-  font-size: 13px;
-}
-.policy p {
-  margin: 4px 0 0;
-  font-size: 12px;
+.policy-summary p {
+  font-size: 14px;
   line-height: 1.55;
-  color: var(--muted);
+  margin: 7px 0;
 }
-.policy small {
-  display: block;
-  font-size: 11px;
-  line-height: 1.6;
-  margin-top: 5px;
-  color: var(--muted);
-}
-.role-tag {
-  font-size: 10px;
-  color: var(--muted);
-  white-space: nowrap;
-  margin-top: 4px;
-}
-.timing {
-  font-size: 10px;
-  color: var(--muted);
-  line-height: 1.6;
-  margin: 10px 0 27px;
+.policy-summary code {
+  overflow-wrap: anywhere;
+  font-size: 12px;
 }
 .primary {
   width: 100%;
@@ -344,15 +288,6 @@ dd {
   h1 {
     font-size: 36px;
     letter-spacing: -1.4px;
-  }
-  .desktop {
-    display: none;
-  }
-  .role-tag {
-    display: none;
-  }
-  .policy > div {
-    grid-template-columns: 30px 1fr;
   }
   footer {
     flex-direction: column;

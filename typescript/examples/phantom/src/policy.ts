@@ -1,8 +1,6 @@
-import type { WalletTemplate } from '@swig-wallet/developer-sdk';
+import type { AddRoleAction, WalletTemplate } from '@swig-wallet/developer-sdk';
 
 export const usdcMint = '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU';
-// This app is intentionally scoped to the policy the developer approved.
-// A changed template must not silently change what this screen asks users to grant.
 export function validateTemplate(
   template: WalletTemplate,
   policyId: string,
@@ -24,23 +22,44 @@ export function validateTemplate(
       'The saved policy has changed. Review it before creating another wallet.',
     );
   }
-  const program = agent.permissions.filter((a) => a.type === 'programAll');
-  const token = agent.permissions.filter(
-    (a) => a.type === 'tokenRecurringLimit',
-  );
-  const sol = agent.permissions.filter((a) => a.type === 'solRecurringLimit');
+  readAgentAllowance(agent.permissions);
+}
+
+export function readAgentAllowance(permissions: AddRoleAction[]) {
+  const program = permissions.filter((a) => a.type === 'programAll');
+  const token = permissions.filter((a) => a.type === 'tokenRecurringLimit');
+  const sol = permissions.filter((a) => a.type === 'solRecurringLimit');
+  const tokenLimit = token[0];
+  const solLimit = sol[0];
   if (
+    permissions.length !== 3 ||
     program.length !== 1 ||
-    token.length !== 1 ||
-    sol.length !== 1 ||
-    token[0]?.mint !== usdcMint ||
-    String(token[0]?.recurringAmount) !== '100000000' ||
-    String(token[0]?.window) !== '216000' ||
-    String(sol[0]?.recurringAmount) !== '1000000000' ||
-    String(sol[0]?.window) !== '216000'
-  ) {
+    !tokenLimit ||
+    !solLimit ||
+    tokenLimit.mint !== usdcMint ||
+    String(tokenLimit.window) !== String(solLimit.window)
+  )
     throw new Error(
-      'The saved agent permissions differ from the approved 100 USDC and 1 SOL policy.',
+      'This starter requires any-program access with recurring Devnet USDC and SOL limits over the same window.',
     );
+  const values = [
+    tokenLimit.recurringAmount,
+    solLimit.recurringAmount,
+    solLimit.window,
+  ];
+  for (const value of values) {
+    if (
+      (typeof value === 'number' && !Number.isSafeInteger(value)) ||
+      !/^[1-9]\d{0,19}$/.test(String(value)) ||
+      BigInt(value) > 18446744073709551615n
+    )
+      throw new Error(
+        'Invalid recurring allowance in the saved wallet policy.',
+      );
   }
+  return {
+    token: String(tokenLimit.recurringAmount),
+    sol: String(solLimit.recurringAmount),
+    window: String(solLimit.window),
+  };
 }

@@ -11,6 +11,8 @@ const start = document.querySelector('#start'),
 const status = document.querySelector('#status'),
   preview = document.querySelector('#preview'),
   restart = document.querySelector('#restart');
+const title = document.querySelector('#title');
+const intro = document.querySelector('#intro');
 let challenge, app;
 restart.onclick = () => {
   email.cancel();
@@ -44,6 +46,8 @@ start.onsubmit = (event) => {
       state: app.state,
       oidcNonce: app.oidcNonce,
     });
+    title.textContent = 'Check your email';
+    intro.hidden = true;
     status.textContent = 'Code sent to ' + challenge.maskedRecipient;
     start.hidden = true;
     verify.hidden = false;
@@ -65,8 +69,9 @@ verify.onsubmit = (event) => {
       () => {
         verify.hidden = true;
         document.querySelector('#code').value = '';
+        title.textContent = 'Review wallet access';
         status.textContent =
-          'Email verified. Complete wallet approval in Swig.';
+          'Approve the saved policy in the Swig window. Your wallet address will appear here.';
       },
     );
     if (result.status === 'complete') {
@@ -98,8 +103,8 @@ async function finish(result) {
   approve.hidden = true;
   restart.hidden = true;
   logout.hidden = false;
-  preview.textContent =
-    'Devnet wallet ' + url.searchParams.get('wallet_address');
+  title.textContent = 'Your Swig wallet';
+  preview.textContent = url.searchParams.get('wallet_address');
   status.textContent =
     url.searchParams.get('agent_access') === 'review_existing_role'
       ? 'Signed in. Review the existing wallet permissions before using the agent.'
@@ -119,6 +124,8 @@ fetch('/session')
     if (session?.authenticated) {
       start.hidden = true;
       logout.hidden = false;
+      title.textContent = 'Your Swig wallet';
+      intro.hidden = true;
       status.textContent = 'Signed in';
     }
   })
