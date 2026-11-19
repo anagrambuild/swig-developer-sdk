@@ -1,9 +1,9 @@
+import { ed25519 } from '@noble/curves/ed25519';
 import {
   getTransactionDecoder,
   getTransactionEncoder,
 } from '@solana/transactions';
 import bs58 from 'bs58';
-import { createPublicKey, verify } from 'node:crypto';
 import type { HttpClient } from '../core/index.js';
 import type {
   CompileParticipantSetApprovalsArgs,
@@ -69,20 +69,12 @@ export class TransactionsClient {
     if (signedPayer !== payer || !signature) {
       throw new Error('Missing paymaster signature');
     }
-    const key = createPublicKey({
-      format: 'jwk',
-      key: {
-        kty: 'OKP',
-        crv: 'Ed25519',
-        x: Buffer.from(bs58.decode(payer)).toString('base64url'),
-      },
-    });
     if (
-      !verify(
-        null,
-        Buffer.from(transaction.messageBytes),
-        key,
-        Buffer.from(signature),
+      !ed25519.verify(
+        Uint8Array.from(signature),
+        Uint8Array.from(transaction.messageBytes),
+        bs58.decode(payer),
+        { zip215: false },
       )
     ) {
       throw new Error('Invalid paymaster signature');
@@ -91,7 +83,10 @@ export class TransactionsClient {
       ...transaction,
       signatures: { ...transaction.signatures, [payer]: signature },
     });
-    if (!Buffer.from(expected).equals(signedBytes)) {
+    if (
+      expected.length !== signedBytes.length ||
+      !expected.every((byte, i) => byte === signedBytes[i])
+    ) {
       throw new Error('Paymaster changed the transaction');
     }
     return {

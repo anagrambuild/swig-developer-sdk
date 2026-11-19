@@ -5,6 +5,7 @@
     "": {
       "name": "@swig-wallet/developer-sdk",
       "dependencies": {
+        "@noble/curves": "^1.8.2",
         "@solana/transactions": "8.6.0",
         "@solana/web3.js": "^1.98.0",
         "@swig-wallet/lib": "^2.1.0",
@@ -14,7 +15,6 @@
       "devDependencies": {
         "@eslint/eslintrc": "^3.3.1",
         "@eslint/js": "^9.27.0",
-        "@noble/curves": "^1.8.2",
         "@noble/hashes": "^1.7.0",
         "@solana/kit": "^5.4.0",
         "@solana/spl-token": "^0.4.13",
