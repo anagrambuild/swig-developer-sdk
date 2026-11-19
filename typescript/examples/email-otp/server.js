@@ -5,18 +5,18 @@ import { readFile } from 'node:fs/promises';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import { SwigClient } from '../../dist/index.js';
-import { verifyHttpsRegistration } from './check-https.js';
+import { verifyRegistration } from './check-registration.js';
 import { appOrigin, isLoopback } from './origin.js';
 import { LoginSessions } from './sessions.js';
 
 const origin = appOrigin(process.env.SWIG_APP_ORIGIN);
 const local = isLoopback(origin.hostname);
-const port = local
-  ? Number(origin.port || 443)
+const https = origin.protocol === 'https:';
+let port = local
+  ? Number(origin.port || (https ? 443 : 80))
   : Number(process.env.PORT || 4181);
 if (!Number.isInteger(port) || port < 1 || port > 65535)
   throw new Error('Set a valid port for the email app.');
-const callbackUrl = new URL('/auth/callback', origin).href;
 const apiKey = process.env.SWIG_API_KEY;
 const walletTemplateId = process.env.SWIG_WALLET_TEMPLATE_ID;
 if (!apiKey || !walletTemplateId)
@@ -33,16 +33,35 @@ const jwks = createRemoteJWKSet(new URL(issuer + '/oidc/jwks.json'));
 const index = await readFile(new URL('./web/index.html', import.meta.url));
 const bundle = await readFile(new URL('./dist/main.js', import.meta.url));
 // Local TLS terminates here. A configured external origin terminates TLS at its reverse proxy.
-const server = local
-  ? createHttpsServer({
-      cert: await readFile('.local/localhost.pem'),
-      key: await readFile('.local/localhost-key.pem'),
-    })
-  : createHttpServer();
+const server =
+  local && https
+    ? createHttpsServer({
+        cert: await readFile('.local/localhost.pem'),
+        key: await readFile('.local/localhost-key.pem'),
+      })
+    : createHttpServer();
 const starting = (_req, res) => res.writeHead(503).end();
 server.on('request', starting);
-server.listen(port, origin.hostname === '[::1]' ? '::1' : '127.0.0.1');
-await once(server, 'listening');
+const choosePort =
+  process.env.SWIG_APP_ORIGIN === undefined && process.env.PORT === undefined;
+for (;;) {
+  try {
+    server.listen(port, origin.hostname === '[::1]' ? '::1' : '127.0.0.1');
+    await once(server, 'listening');
+    break;
+  } catch (error) {
+    if (!choosePort || error.code !== 'EADDRINUSE' || port === 65535)
+      throw error;
+    port++;
+  }
+}
+if (choosePort) origin.port = String(port);
+const callbackUrl = new URL('/auth/callback', origin).href;
+// Cookies share a host across ports, so parallel HTTP demos need distinct names.
+const otpCookie = https ? 'otp' : 'swig_otp_' + port;
+const sessionCookie = https ? 'session' : 'swig_session_' + port;
+const cookieFlags =
+  (https ? '; Secure' : '') + '; HttpOnly; SameSite=Strict; Path=/';
 const app = await sdk.idp.ensureEmailWalletApp({
   network: 'devnet',
   callbackUrl,
@@ -80,7 +99,7 @@ server.on('request', async (req, res) => {
   const cookies = new URLSearchParams(
     (req.headers.cookie || '').split('; ').join('&'),
   );
-  const sessionId = cookies.get('session');
+  const sessionId = cookies.get(sessionCookie);
   if (req.method === 'GET' && req.url === '/session') {
     res
       .writeHead(200, { 'Content-Type': 'application/json' })
@@ -97,8 +116,7 @@ server.on('request', async (req, res) => {
     sessions.logout(sessionId);
     res
       .writeHead(204, {
-        'Set-Cookie':
-          'session=; Secure; HttpOnly; SameSite=Strict; Path=/; Max-Age=0',
+        'Set-Cookie': sessionCookie + '=' + cookieFlags + '; Max-Age=0',
       })
       .end();
     return;
@@ -111,10 +129,7 @@ server.on('request', async (req, res) => {
     res
       .writeHead(200, {
         'Content-Type': 'application/json',
-        'Set-Cookie':
-          'otp=' +
-          cookie +
-          '; Secure; HttpOnly; SameSite=Strict; Path=/; Max-Age=600',
+        'Set-Cookie': otpCookie + '=' + cookie + cookieFlags + '; Max-Age=600',
       })
       .end(
         JSON.stringify({
@@ -131,10 +146,7 @@ server.on('request', async (req, res) => {
     res.writeHead(404).end();
     return;
   }
-  const cookie = req.headers.cookie
-    ?.split('; ')
-    .find((v) => v.startsWith('otp='))
-    ?.slice(4);
+  const cookie = cookies.get(otpCookie);
   const attempt = attempts.get(cookie);
   attempts.delete(cookie);
   try {
@@ -157,10 +169,12 @@ server.on('request', async (req, res) => {
     res
       .writeHead(204, {
         'Set-Cookie': [
-          'otp=; Secure; HttpOnly; SameSite=Strict; Path=/; Max-Age=0',
-          'session=' +
+          otpCookie + '=' + cookieFlags + '; Max-Age=0',
+          sessionCookie +
+            '=' +
             session.id +
-            '; Secure; HttpOnly; SameSite=Strict; Path=/; Max-Age=' +
+            cookieFlags +
+            '; Max-Age=' +
             session.maxAge,
         ],
       })
@@ -169,5 +183,5 @@ server.on('request', async (req, res) => {
     res.writeHead(401).end('Email sign-in could not be verified. Start again.');
   }
 });
-await verifyHttpsRegistration(origin, app.clientId, agentPublicKey);
+await verifyRegistration(origin, app.clientId, agentPublicKey);
 console.log('Ready for email sign-in at', origin.origin);

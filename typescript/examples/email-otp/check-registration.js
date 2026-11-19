@@ -1,8 +1,4 @@
-export async function verifyHttpsRegistration(
-  origin,
-  clientId,
-  agentPublicKey,
-) {
+export async function verifyRegistration(origin, clientId, agentPublicKey) {
   const response = await fetch(new URL('/attempt', origin), {
     method: 'POST',
     headers: { Origin: origin.origin },
@@ -10,7 +6,7 @@ export async function verifyHttpsRegistration(
     signal: AbortSignal.timeout(10000),
   });
   if (!response.ok)
-    throw new Error('The email app could not start an HTTPS login attempt.');
+    throw new Error('The email app could not start a login attempt.');
   const attempt = await response.json();
   if (
     attempt.clientId !== clientId ||
@@ -18,6 +14,6 @@ export async function verifyHttpsRegistration(
     attempt.callbackUrl !== new URL('/auth/callback', origin).href
   )
     throw new Error(
-      'The HTTPS endpoint does not match this registered client, callback and agent.',
+      'The app endpoint does not match this registered client, callback and agent.',
     );
 }
