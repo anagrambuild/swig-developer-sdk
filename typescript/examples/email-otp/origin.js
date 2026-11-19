@@ -1,4 +1,5 @@
-export function appOrigin(value = 'https://127.0.0.1:4181') {
+export function appOrigin(value, port = process.env.PORT || '4181') {
+  value ??= 'https://127.0.0.1:' + port;
   const url = new URL(value);
   if (
     !/^https:\/\/(?:[a-z0-9.-]+|\[::1\])(?::\d{1,5})?\/?$/i.test(value) ||

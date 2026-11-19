@@ -1,9 +1,11 @@
 import { createRemoteJWKSet } from 'jose';
 import { randomBytes } from 'node:crypto';
+import { once } from 'node:events';
 import { readFile } from 'node:fs/promises';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import { SwigClient } from '../../dist/index.js';
+import { verifyHttpsRegistration } from './check-https.js';
 import { appOrigin, isLoopback } from './origin.js';
 import { LoginSessions } from './sessions.js';
 
@@ -37,6 +39,10 @@ const server = local
       key: await readFile('.local/localhost-key.pem'),
     })
   : createHttpServer();
+const starting = (_req, res) => res.writeHead(503).end();
+server.on('request', starting);
+server.listen(port, origin.hostname === '[::1]' ? '::1' : '127.0.0.1');
+await once(server, 'listening');
 const app = await sdk.idp.ensureEmailWalletApp({
   network: 'devnet',
   callbackUrl,
@@ -53,6 +59,7 @@ const cleanup = setInterval(() => {
 }, 60000);
 cleanup.unref();
 
+server.off('request', starting);
 server.on('request', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -162,6 +169,5 @@ server.on('request', async (req, res) => {
     res.writeHead(401).end('Email sign-in could not be verified. Start again.');
   }
 });
-server.listen(port, origin.hostname === '[::1]' ? '::1' : '127.0.0.1', () =>
-  console.log('Email wallet app listening at', origin.origin),
-);
+await verifyHttpsRegistration(origin, app.clientId, agentPublicKey);
+console.log('Ready for email sign-in at', origin.origin);

@@ -28,7 +28,7 @@ if (isLoopback(origin.hostname)) {
       );
   }
   console.log(
-    'Local TLS files are ready. After startup, run npm run check:https to verify trust.',
+    'Local TLS files are ready. Startup will verify TLS trust and the registered callback.',
   );
 } else {
   console.log(
