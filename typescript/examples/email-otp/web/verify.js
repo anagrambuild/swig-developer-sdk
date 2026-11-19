@@ -22,7 +22,8 @@ export async function verifyWalletEmail(
     if (
       !permissions ||
       permissions.agentPublicKey !== agentPublicKey ||
-      permissions.agentPolicy.mint !== '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU'
+      permissions.agentPolicy.mint !==
+        '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU'
     ) {
       email.cancel();
       throw new Error(
