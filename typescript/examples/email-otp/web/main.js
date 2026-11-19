@@ -1,5 +1,5 @@
 import { createSwigWebClient, Network } from '@swig-wallet/expo-idp-sdk/web';
-import { describeGrant } from './preview.js';
+import { verifyWalletEmail } from './verify.js';
 
 const email = createSwigWebClient({
   redirectUri: location.origin + '/auth/callback',
@@ -49,23 +49,19 @@ start.onsubmit = (event) => {
 verify.onsubmit = (event) => {
   event.preventDefault();
   run(verify.querySelector('button'), async () => {
-    const result = await email.verify({
-      challengeId: challenge.challengeId,
-      code: document.querySelector('#code').value,
-    });
+    restart.hidden = true;
+    status.textContent = 'Verifying email…';
+    const result = await verifyWalletEmail(
+      email,
+      { challengeId: challenge.challengeId, code: document.querySelector('#code').value },
+      app.agentPublicKey,
+    );
     if (result.status === 'complete') {
       await finish(result);
       return;
     }
-    const wallet = result.wallet;
-    if (!wallet || wallet.agentPublicKey !== app.agentPublicKey) {
-      email.cancel();
-      throw new Error('The wallet preview does not match the registered agent');
-    }
-    preview.textContent = describeGrant(wallet);
-    status.textContent =
-      'Email verified. Review the permissions in Swig to create your wallet.';
     verify.hidden = true;
+    status.textContent = 'Your browser blocked the approval window.';
     approve.hidden = false;
     approve.focus();
   });

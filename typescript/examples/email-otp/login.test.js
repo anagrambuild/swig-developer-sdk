@@ -4,7 +4,7 @@ import test from 'node:test';
 import { verifyRegistration } from './check-registration.js';
 import { appOrigin, isLoopback } from './origin.js';
 import { LoginSessions } from './sessions.js';
-import { describeGrant } from './web/preview.js';
+import { verifyWalletEmail } from './web/verify.js';
 
 test('only a verified login issues an expiring application session', async () => {
   const issuer = 'https://issuer.test',
@@ -51,28 +51,37 @@ test('only a verified login issues an expiring application session', async () =>
   assert.equal(sessions.subject(id), 'verified-user');
   assert.equal(sessions.subject(id, Date.now() + 300001), undefined);
 });
-test('the preview displays the observed mint and both human-readable limits', () => {
-  const agentPolicy = {
-    mint: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',
-    tokenAmount: '100000000',
-    solAmount: '1000000000',
-    window: '216000',
+test('Verify email proceeds directly to trusted approval and validates the registered agent and mint', async (t) => {
+  const events = [];
+  const popup = { document: { body: {} }, close: () => events.push('close') };
+  const previous = globalThis.window;
+  t.after(() => { if (previous === undefined) delete globalThis.window; else globalThis.window = previous; });
+  globalThis.window = { open: () => { events.push('open'); return popup; } };
+  const wallet = { agentPublicKey: 'agent', agentPolicy: { mint: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU' } };
+  const input = { challengeId: 'challenge', code: '123456' };
+  const complete = { status: 'complete', callbackUrl: 'callback' };
+  const pending = { status: 'approval_required', wallet };
+  const email = {
+    verify: async () => { events.push('verify'); return pending; },
+    approve: async (request, options) => {
+      assert.deepEqual(request, { challengeId: input.challengeId });
+      assert.equal(options.approvalWindow, popup);
+      events.push('approve');
+      return complete;
+    },
+    cancel: () => events.push('cancel'),
   };
-  const wallet = {
-    walletAddress: 'wallet',
-    agentPublicKey: 'agent',
-    agentPolicy,
-  };
-  assert.match(
-    describeGrant(wallet),
-    /100 Devnet USDC .* and 1 SOL per 216000 slots/,
-  );
-  assert.throws(() =>
-    describeGrant({
-      ...wallet,
-      agentPolicy: { ...agentPolicy, mint: 'other' },
-    }),
-  );
+  assert.equal(await verifyWalletEmail(email, input, 'agent'), complete);
+  assert.deepEqual(events, ['open', 'verify', 'approve', 'close']);
+  events.length = 0;
+  await assert.rejects(verifyWalletEmail(email, input, 'other'), /registered agent/);
+  assert.deepEqual(events, ['open', 'verify', 'cancel', 'close']);
+  globalThis.window.open = () => null;
+  assert.equal(await verifyWalletEmail(email, input, 'agent'), pending);
+  wallet.agentPolicy.mint = 'other';
+  await assert.rejects(verifyWalletEmail(email, input, 'agent'), /Devnet USDC/);
+  email.verify = async () => complete;
+  assert.equal(await verifyWalletEmail(email, input, 'agent'), complete);
 });
 
 test('accepts HTTP on literal loopback hosts and HTTPS for hosted callbacks', () => {
