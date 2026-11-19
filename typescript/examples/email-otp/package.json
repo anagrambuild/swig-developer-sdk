@@ -8,7 +8,9 @@
   "scripts": {
     "build": "bun build web/main.js --target=browser --outfile=dist/main.js",
     "start": "node --env-file=.env.local server.js",
-    "setup:agent": "bun ../phantom/scripts/generate-agent.ts"
+    "setup:agent": "bun ../phantom/scripts/generate-agent.ts",
+    "check:https": "node --use-system-ca --env-file=.env.local check-https.js",
+    "setup:https": "node --env-file=.env.local setup-https.js"
   },
   "dependencies": {
     "@swig-wallet/expo-idp-sdk": "git+https://github.com/anagrambuild/swig-idp-sdk.git#b0204a84ccd840679e56476110654519b7316d9f",
