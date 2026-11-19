@@ -103,13 +103,19 @@ pub(crate) fn decode_transaction(value: &str) -> Result<VersionedTransaction, Ap
             "noncanonical Base64 transaction",
         ));
     }
+    decode_transaction_bytes(&bytes)
+}
+
+pub(crate) fn decode_transaction_bytes(
+    bytes: &[u8],
+) -> Result<VersionedTransaction, ApiConversionError> {
     let byte_limit = u64::try_from(bytes.len())
         .map_err(|_| ApiConversionError::Invalid("transaction exceeds decoder limit"))?;
     let transaction: VersionedTransaction = bincode::DefaultOptions::new()
         .with_fixint_encoding()
         .with_limit(byte_limit)
         .reject_trailing_bytes()
-        .deserialize(&bytes)
+        .deserialize(bytes)
         .map_err(|_| ApiConversionError::Invalid("invalid Solana transaction"))?;
     transaction
         .sanitize()

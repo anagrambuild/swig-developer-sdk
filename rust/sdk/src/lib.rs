@@ -33,9 +33,10 @@ pub use participants::{
     PrepareCreateParticipantSetError,
 };
 pub use paymaster::{
-    GetPaymasterBalanceError, PaymasterBalance, PaymasterClient, PaymasterKind, SponsorBundleError,
-    SponsorError, SponsorSignedTransactionArgs, SponsorSignedTransactionBundleArgs,
-    SubmittedTransaction, SubmittedTransactionBundle,
+    GetPaymasterBalanceError, PaymasterBalance, PaymasterClient, PaymasterKind, PaymasterSignError,
+    SignTransactionArgs, SignedTransaction, SponsorBundleError, SponsorError,
+    SponsorSignedTransactionArgs, SponsorSignedTransactionBundleArgs, SubmittedTransaction,
+    SubmittedTransactionBundle,
 };
 pub use ramp::*;
 pub use signing::{
@@ -155,6 +156,10 @@ mod participant_compilation_tests;
 #[cfg(test)]
 #[path = "../tests/hosted/paymaster_balances.rs"]
 mod paymaster_balance_tests;
+
+#[cfg(test)]
+#[path = "../tests/hosted/paymaster_sign.rs"]
+mod paymaster_sign_tests;
 
 #[cfg(test)]
 #[path = "../tests/hosted/paymaster_sponsor.rs"]
