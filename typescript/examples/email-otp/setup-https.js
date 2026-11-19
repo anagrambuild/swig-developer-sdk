@@ -3,7 +3,9 @@ import { mkdir, readdir } from 'node:fs/promises';
 import { appOrigin, isLoopback } from './origin.js';
 
 const origin = appOrigin(process.env.SWIG_APP_ORIGIN);
-if (isLoopback(origin.hostname)) {
+if (origin.protocol === 'http:') {
+  console.log('Loopback HTTP is ready; start the app with npm start.');
+} else if (isLoopback(origin.hostname)) {
   await mkdir('.local', { recursive: true, mode: 0o700 });
   const files = await readdir('.local');
   const cert = 'localhost.pem';

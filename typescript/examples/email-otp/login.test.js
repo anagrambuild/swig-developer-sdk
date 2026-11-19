@@ -1,7 +1,7 @@
 import { generateKeyPair, SignJWT } from 'jose';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { verifyHttpsRegistration } from './check-https.js';
+import { verifyRegistration } from './check-registration.js';
 import { appOrigin, isLoopback } from './origin.js';
 import { LoginSessions } from './sessions.js';
 import { describeGrant } from './web/preview.js';
@@ -75,11 +75,18 @@ test('the preview displays the observed mint and both human-readable limits', ()
   );
 });
 
-test('registers exact HTTPS callbacks for loopback and HTTPS proxies', () => {
-  assert.equal(appOrigin(undefined, '4181').origin, 'https://127.0.0.1:4181');
-  assert.equal(appOrigin(undefined, '4312').origin, 'https://127.0.0.1:4312');
+test('accepts HTTP on literal loopback hosts and HTTPS for hosted callbacks', () => {
+  assert.equal(appOrigin(undefined, '4181').origin, 'http://127.0.0.1:4181');
+  assert.equal(appOrigin(undefined, '4312').origin, 'http://127.0.0.1:4312');
   for (const host of ['localhost', '127.0.0.1', '[::1]']) {
     assert.ok(isLoopback(appOrigin('https://' + host + ':4182').hostname));
+  }
+  for (const raw of [
+    'http://localhost:3000',
+    'http://127.0.0.1:51837',
+    'http://localhost',
+  ]) {
+    assert.equal(appOrigin(raw).origin, raw);
   }
   const proxy = appOrigin('https://wallet.example/');
   assert.equal(isLoopback(proxy.hostname), false);
@@ -88,7 +95,13 @@ test('registers exact HTTPS callbacks for loopback and HTTPS proxies', () => {
     'https://wallet.example/auth/callback',
   );
   for (const invalid of [
-    'http://127.0.0.1:4181',
+    'http://localhost.example:4181',
+    'http://wallet.example',
+    'http://127.1:4181',
+    'http://10.0.0.1:3000',
+    'http://[::1]:4181',
+    'http://localhost:0',
+    'http://user@localhost:3000',
     'https://user@wallet.example',
     'https://wallet.example/?',
     'https://wallet.example/#',
@@ -99,32 +112,37 @@ test('registers exact HTTPS callbacks for loopback and HTTPS proxies', () => {
   }
 });
 
-test('readiness proves the public HTTPS endpoint serves this registration and agent', async (t) => {
-  const origin = appOrigin('https://wallet.example');
-  const attempt = {
-    clientId: 'this-client',
-    agentPublicKey: 'this-agent',
-    callbackUrl: 'https://wallet.example/auth/callback',
-  };
-  const http = t.mock.method(globalThis, 'fetch', async () =>
-    Response.json(attempt),
-  );
-  await verifyHttpsRegistration(
-    origin,
-    attempt.clientId,
-    attempt.agentPublicKey,
-  );
-  for (const wrong of [
-    { clientId: 'other' },
-    { agentPublicKey: 'stale' },
-    { callbackUrl: 'https://other.example/auth/callback' },
-  ]) {
-    http.mock.mockImplementation(async () =>
-      Response.json({ ...attempt, ...wrong }),
-    );
-    await assert.rejects(
-      verifyHttpsRegistration(origin, attempt.clientId, attempt.agentPublicKey),
-      /does not match/,
-    );
+test('readiness checks the registered origin, client and agent', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const origin of [
+      appOrigin('http://localhost:4312'),
+      appOrigin('https://wallet.example'),
+    ]) {
+      const attempt = {
+        clientId: 'this-client',
+        agentPublicKey: 'this-agent',
+        callbackUrl: new URL('/auth/callback', origin).href,
+      };
+      globalThis.fetch = async () => Response.json(attempt);
+      await verifyRegistration(
+        origin,
+        attempt.clientId,
+        attempt.agentPublicKey,
+      );
+      for (const wrong of [
+        { clientId: 'other' },
+        { agentPublicKey: 'stale' },
+        { callbackUrl: 'http://localhost:4313/auth/callback' },
+      ]) {
+        globalThis.fetch = async () => Response.json({ ...attempt, ...wrong });
+        await assert.rejects(
+          verifyRegistration(origin, attempt.clientId, attempt.agentPublicKey),
+          /does not match/,
+        );
+      }
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });
