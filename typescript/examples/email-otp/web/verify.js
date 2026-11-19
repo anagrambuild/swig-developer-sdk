@@ -1,4 +1,9 @@
-export async function verifyWalletEmail(email, input, agentPublicKey) {
+export async function verifyWalletEmail(
+  email,
+  input,
+  agentPublicKey,
+  onVerified,
+) {
   // Reserve the window while the Verify email click still has browser activation.
   const popup = window.open(
     'about:blank',
@@ -11,6 +16,7 @@ export async function verifyWalletEmail(email, input, agentPublicKey) {
       popup.document.body.textContent = 'Verifying your email…';
     }
     const result = await email.verify(input);
+    onVerified();
     if (result.status === 'complete') return result;
     const wallet = result.wallet;
     if (
@@ -23,7 +29,7 @@ export async function verifyWalletEmail(email, input, agentPublicKey) {
         'The wallet approval does not match the registered agent or Devnet USDC',
       );
     }
-    if (!popup) return result;
+    if (!popup || popup.closed) return result;
     return await email.approve(
       { challengeId: input.challengeId },
       { approvalWindow: popup },

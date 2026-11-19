@@ -85,20 +85,62 @@ test('Verify email proceeds directly to trusted approval and validates the regis
     },
     cancel: () => events.push('cancel'),
   };
-  assert.equal(await verifyWalletEmail(email, input, 'agent'), complete);
-  assert.deepEqual(events, ['open', 'verify', 'approve', 'close']);
+  const verified = () => events.push('verified');
+  assert.equal(
+    await verifyWalletEmail(email, input, 'agent', verified),
+    complete,
+  );
+  assert.deepEqual(events, ['open', 'verify', 'verified', 'approve', 'close']);
   events.length = 0;
   await assert.rejects(
-    verifyWalletEmail(email, input, 'other'),
+    verifyWalletEmail(email, input, 'other', verified),
     /registered agent/,
   );
-  assert.deepEqual(events, ['open', 'verify', 'cancel', 'close']);
+  assert.deepEqual(events, ['open', 'verify', 'verified', 'cancel', 'close']);
+  events.length = 0;
+  popup.closed = true;
+  assert.equal(
+    await verifyWalletEmail(email, input, 'agent', verified),
+    pending,
+  );
+  assert.deepEqual(events, ['open', 'verify', 'verified', 'close']);
+  popup.closed = false;
+  const rejected = new Error('setup simulation failed');
+  email.approve = async () => {
+    throw rejected;
+  };
+  events.length = 0;
+  await assert.rejects(
+    verifyWalletEmail(email, input, 'agent', verified),
+    rejected,
+  );
+  assert.deepEqual(events, ['open', 'verify', 'verified', 'close']);
+  const verifyConsent = email.verify;
+  email.verify = async () => {
+    throw new Error('invalid code');
+  };
+  events.length = 0;
+  await assert.rejects(
+    verifyWalletEmail(email, input, 'agent', verified),
+    /invalid code/,
+  );
+  assert.deepEqual(events, ['open', 'close']);
+  email.verify = verifyConsent;
   globalThis.window.open = () => null;
-  assert.equal(await verifyWalletEmail(email, input, 'agent'), pending);
+  assert.equal(
+    await verifyWalletEmail(email, input, 'agent', verified),
+    pending,
+  );
   wallet.agentPolicy.mint = 'other';
-  await assert.rejects(verifyWalletEmail(email, input, 'agent'), /Devnet USDC/);
+  await assert.rejects(
+    verifyWalletEmail(email, input, 'agent', verified),
+    /Devnet USDC/,
+  );
   email.verify = async () => complete;
-  assert.equal(await verifyWalletEmail(email, input, 'agent'), complete);
+  assert.equal(
+    await verifyWalletEmail(email, input, 'agent', verified),
+    complete,
+  );
 });
 
 test('accepts HTTP on literal loopback hosts and HTTPS for hosted callbacks', () => {

@@ -23,6 +23,10 @@ async function run(button, operation) {
   } catch (error) {
     status.textContent =
       error instanceof Error ? error.message : 'Email sign-in failed';
+    if (button === approve && error?.code !== 'popup_blocked')
+      approve.hidden = true;
+    if (button.form === verify && error?.code !== 'invalid_code')
+      verify.hidden = true;
     restart.hidden = false;
   } finally {
     button.disabled = false;
@@ -58,13 +62,18 @@ verify.onsubmit = (event) => {
         code: document.querySelector('#code').value,
       },
       app.agentPublicKey,
+      () => {
+        verify.hidden = true;
+        document.querySelector('#code').value = '';
+        status.textContent =
+          'Email verified. Complete wallet approval in Swig.';
+      },
     );
     if (result.status === 'complete') {
       await finish(result);
       return;
     }
-    verify.hidden = true;
-    status.textContent = 'Your browser blocked the approval window.';
+    status.textContent = 'Open the Swig window to review wallet access.';
     approve.hidden = false;
     approve.focus();
   });
