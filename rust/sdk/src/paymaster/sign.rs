@@ -23,6 +23,8 @@ pub enum PaymasterSignError {
     AuthenticationFailed,
     #[error("permission denied")]
     PermissionDenied,
+    #[error("paymaster not found")]
+    PaymasterNotFound,
     #[error("paymaster precondition failed")]
     FailedPrecondition,
     #[error("paymaster quota exhausted")]
@@ -68,13 +70,13 @@ impl PaymasterClient {
                 HttpError::Unauthenticated => PaymasterSignError::AuthenticationFailed,
                 HttpError::PermissionDenied => PaymasterSignError::PermissionDenied,
                 HttpError::InvalidArgument => PaymasterSignError::InvalidInput("signing rejected"),
+                HttpError::NotFound => PaymasterSignError::PaymasterNotFound,
                 HttpError::FailedPrecondition => PaymasterSignError::FailedPrecondition,
                 HttpError::ResourceExhausted => PaymasterSignError::ResourceExhausted,
                 HttpError::Unavailable => PaymasterSignError::ServiceUnavailable,
-                HttpError::NotFound
-                | HttpError::AlreadyExists
-                | HttpError::Aborted
-                | HttpError::UnexpectedStatus(_) => PaymasterSignError::UnexpectedServiceFailure,
+                HttpError::AlreadyExists | HttpError::Aborted | HttpError::UnexpectedStatus(_) => {
+                    PaymasterSignError::UnexpectedServiceFailure
+                }
             })?;
         if response.request_id.trim().is_empty() {
             return Err(PaymasterSignError::InvalidResponse("missing request ID"));

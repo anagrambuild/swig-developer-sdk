@@ -248,3 +248,22 @@ async fn sign_rejects_invalid_input_before_sending_and_does_not_retry_after_send
     }
     Ok(())
 }
+
+#[tokio::test]
+async fn sign_reports_a_fee_payer_missing_from_the_project() -> Result<(), Box<dyn Error>> {
+    let client = PaymasterClient::new(config())?;
+    let (transaction, _) = transactions(false)?;
+    queue(&client.http, vec![Ok(response(404, json!({"code": 5})))])?;
+    let result = client
+        .sign(SignTransactionArgs {
+            transaction,
+            external_id: None,
+        })
+        .await;
+    assert!(matches!(result, Err(PaymasterSignError::PaymasterNotFound)));
+    assert_eq!(
+        client.http.test.lock().map_err(|_| "lock")?.requests.len(),
+        1
+    );
+    Ok(())
+}
