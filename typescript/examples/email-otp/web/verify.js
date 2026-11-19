@@ -18,11 +18,12 @@ export async function verifyWalletEmail(
     const result = await email.verify(input);
     onVerified();
     if (result.status === 'complete') return result;
-    const wallet = result.wallet;
+    const permissions = result.permissions ?? result.wallet;
     if (
-      !wallet ||
-      wallet.agentPublicKey !== agentPublicKey ||
-      wallet.agentPolicy.mint !== '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU'
+      !permissions ||
+      permissions.agentPublicKey !== agentPublicKey ||
+      permissions.agentPolicy.mint !==
+        '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU'
     ) {
       email.cancel();
       throw new Error(
