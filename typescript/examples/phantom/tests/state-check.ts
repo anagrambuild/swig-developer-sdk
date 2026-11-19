@@ -33,6 +33,10 @@ test('login verifies the exact server challenge and consumes it once', () => {
       'http://127.0.0.1:4173',
     );
     const signature = signMessage(owner, challenge.message);
+    assert.equal(
+      challenge.message.split('\n\n')[1],
+      'Sign in to your Devnet Swig wallet.',
+    );
     const session = state.authenticate(challenge.id, signature);
     assert.equal(state.sessionOwner(session.token), owner.publicKey.toBase58());
     assert.equal(state.sessionOwner('wrong-token'), null);

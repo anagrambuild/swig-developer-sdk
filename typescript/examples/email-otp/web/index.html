@@ -1,80 +1,165 @@
 <!doctype html>
 <html lang="en">
-  <meta charset="utf-8" /><meta
-    name="viewport"
-    content="width=device-width,initial-scale=1"
-  />
-  <title>Swig email wallet</title>
-  <style>
-    body {
-      font: 17px/1.5 system-ui;
-      color: #183332;
-      background: #f5f6f2;
-      margin: 0;
-    }
-    main {
-      max-width: 32rem;
-      margin: 10vh auto;
-      padding: 2rem;
-    }
-    h1 {
-      font-size: 2.35rem;
-      letter-spacing: -0.04em;
-    }
-    form {
-      display: grid;
-      gap: 0.6rem;
-      margin: 1rem 0;
-    }
-    input,
-    button {
-      font: inherit;
-      padding: 0.7rem;
-      border: 1px solid #849b93;
-      border-radius: 0.4rem;
-    }
-    button {
-      background: #164941;
-      color: white;
-      cursor: pointer;
-    }
-    button:disabled {
-      opacity: 0.55;
-    }
-    p {
-      overflow-wrap: anywhere;
-    }
-    button:focus-visible,
-    input:focus-visible {
-      outline: 3px solid #db9c41;
-    }
-    [hidden] {
-      display: none;
-    }
-  </style>
-  <main>
-    <h1>Swig email wallet</h1>
-    <form id="start">
-      <label for="email">Email address</label
-      ><input id="email" autocomplete="email" type="email" required /><button>
-        Send code
-      </button>
-    </form>
-    <form id="verify" hidden>
-      <label for="code">Verification code</label
-      ><input
-        id="code"
-        inputmode="numeric"
-        autocomplete="one-time-code"
-        pattern="[0-9]{6}"
-        required
-      /><button>Verify email</button>
-    </form>
-    <p id="preview" style="white-space: pre-line"></p>
-    <button id="approve" hidden>Open Swig approval</button>
-    <p id="status" role="status" aria-live="polite"></p>
-    <button id="logout" hidden>Sign out</button>
-    <button id="restart" hidden>Start again</button>
-  </main>
-  <script type="module" src="/main.js"></script>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Swig · Email wallet</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font:
+          16px/1.55 'DM Sans',
+          system-ui,
+          sans-serif;
+        color: #123c38;
+        background: #edf4f2;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: clamp(1rem, 5vw, 4rem);
+      }
+      header,
+      main {
+        max-width: 33rem;
+        margin-inline: auto;
+      }
+      header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        margin-bottom: 1rem;
+      }
+      header strong {
+        font-size: 1.7rem;
+        letter-spacing: -0.07em;
+      }
+      header span {
+        color: #45645e;
+        font-size: 0.85rem;
+      }
+      main {
+        padding: clamp(1.4rem, 5vw, 2.8rem);
+        border: 1px solid #becec8;
+        border-radius: 1.2rem;
+        background: white;
+      }
+      h1 {
+        font-size: clamp(1.9rem, 5vw, 2.65rem);
+        letter-spacing: -0.055em;
+        line-height: 1.1;
+        margin: 0 0 0.8rem;
+      }
+      p {
+        color: #45645e;
+        margin: 0 0 1.25rem;
+      }
+      form {
+        display: grid;
+        gap: 0.7rem;
+        margin-top: 1.75rem;
+      }
+      label {
+        font-weight: 600;
+      }
+      input,
+      button {
+        width: 100%;
+        font: inherit;
+        min-height: 3rem;
+        border: 1px solid #96aba3;
+        border-radius: 0.5rem;
+        padding: 0.65rem 0.9rem;
+      }
+      input {
+        color: inherit;
+        background: #f8faf9;
+      }
+      #code {
+        font:
+          1.2rem ui-monospace,
+          monospace;
+        letter-spacing: 0.22em;
+      }
+      button {
+        background: #14544c;
+        color: white;
+        cursor: pointer;
+        border-color: transparent;
+        font-weight: 600;
+      }
+      button:hover:enabled {
+        background: #0e4039;
+      }
+      button:disabled {
+        opacity: 0.65;
+        cursor: wait;
+      }
+      #restart,
+      #logout {
+        background: white;
+        color: #14544c;
+        border-color: #96aba3;
+      }
+      #restart:hover,
+      #logout:hover {
+        background: #edf4f2;
+      }
+      #status:not(:empty) {
+        margin-top: 1rem;
+      }
+      #preview:not(:empty) {
+        overflow-wrap: anywhere;
+        background: #edf4f2;
+        border-radius: 0.5rem;
+        padding: 1rem;
+        font:
+          0.92rem/1.6 ui-monospace,
+          monospace;
+      }
+      :focus-visible {
+        outline: 3px solid #b57819;
+        outline-offset: 3px;
+      }
+      [hidden],
+      p:empty {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <header><strong>swig</strong><span>Solana Devnet</span></header>
+    <main>
+      <h1 id="title">Sign in with email</h1>
+      <p id="intro">
+        Get a verification code to open your Swig wallet. Review the project’s
+        agent permissions in Swig.
+      </p>
+      <form id="start">
+        <label for="email">Email address</label>
+        <input id="email" autocomplete="email" type="email" required />
+        <button>Send verification code</button>
+      </form>
+      <form id="verify" hidden>
+        <label for="code">Verification code</label>
+        <input
+          id="code"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          pattern="[0-9]{6}"
+          maxlength="6"
+          required
+        />
+        <button>Verify email</button>
+      </form>
+      <p id="preview"></p>
+      <button id="approve" hidden>Open Swig approval</button>
+      <p id="status" role="status" aria-live="polite"></p>
+      <button id="logout" hidden>Sign out</button>
+      <button id="restart" hidden>Start again</button>
+    </main>
+    <script type="module" src="/main.js"></script>
+  </body>
 </html>

@@ -64,7 +64,7 @@ export class DemoState {
   ): { id: string; message: string } {
     this.db.prepare('DELETE FROM challenges WHERE expires < ?').run(Date.now());
     const id = randomBytes(32).toString('hex');
-    const message = `${new URL(origin).host} wants you to sign in with your Solana account:\n${owner}\n\nSign in to create your Devnet Swig wallet. Your agent receives 100 test USDC and 1 SOL per approximately daily window.\n\nURI: ${origin}\nVersion: 1\nChain ID: solana:devnet\nNonce: ${id}\nIssued At: ${new Date().toISOString()}`;
+    const message = `${new URL(origin).host} wants you to sign in with your Solana account:\n${owner}\n\nSign in to your Devnet Swig wallet.\n\nURI: ${origin}\nVersion: 1\nChain ID: solana:devnet\nNonce: ${id}\nIssued At: ${new Date().toISOString()}`;
     this.db
       .prepare('INSERT INTO challenges VALUES (?, ?, ?, ?)')
       .run(id, owner, message, Date.now() + 300_000);

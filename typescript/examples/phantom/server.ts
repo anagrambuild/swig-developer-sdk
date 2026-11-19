@@ -22,7 +22,7 @@ import { DemoState } from './server/state';
 import { advanceAppWallet } from './server/wallet';
 
 import type { WalletFlow } from './src/contracts';
-import { validateTemplate } from './src/policy';
+import { readAgentAllowance, validateTemplate } from './src/policy';
 
 const origin = 'http://127.0.0.1:4173';
 const directory = join(process.cwd(), '.local');
@@ -104,6 +104,7 @@ function present(setup: ReservedWalletSetup): WalletFlow {
                 : 'creating';
   return {
     state: phase,
+    allowance: readAgentAllowance(setup.permissions),
     ...(step.kind === 'failed' ? { failedSignature: step.signature } : {}),
     owner: setup.owner,
     agentPublicKey: setup.agent,

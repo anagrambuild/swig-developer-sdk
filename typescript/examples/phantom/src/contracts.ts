@@ -9,6 +9,11 @@ export const appConfigSchema = z.object({
 export const challengeSchema = z.object({ message: z.string() });
 export const loginSchema = z.object({ owner: z.string() });
 export const flowSchema = z.object({
+  allowance: z.object({
+    token: z.string().regex(/^[1-9]\d*$/),
+    sol: z.string().regex(/^[1-9]\d*$/),
+    window: z.string().regex(/^[1-9]\d*$/),
+  }),
   state: z.enum([
     'reserved',
     'creating',

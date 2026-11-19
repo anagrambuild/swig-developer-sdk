@@ -1,10 +1,9 @@
 import { PhantomWalletAdapter } from '@solana/wallet-adapter-phantom';
-import { VersionedTransaction } from '@solana/web3.js';
 import bs58 from 'bs58';
-import { Buffer } from 'buffer';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { z } from 'zod';
+import { signReviewedAgentGrant } from './agent-approval';
 import {
   appConfigSchema,
   challengeSchema,
@@ -23,6 +22,7 @@ type UiState =
   | { type: 'idle' }
   | { type: 'working'; message: string }
   | { type: 'error'; message: string }
+  | { type: 'review' }
   | { type: 'ready' };
 
 async function responseBody(request: Promise<Response>): Promise<unknown> {
@@ -37,6 +37,12 @@ async function responseBody(request: Promise<Response>): Promise<unknown> {
     );
   }
   return body;
+}
+
+function tokenUnits(raw: string, decimals: number) {
+  const digits = raw.padStart(decimals + 1, '0');
+  const fraction = digits.slice(-decimals).replace(/0+$/, '');
+  return digits.slice(0, -decimals) + (fraction ? '.' + fraction : '');
 }
 
 function App() {
@@ -122,45 +128,53 @@ function App() {
         throw new Error('Phantom did not return a signing account.');
       currentOwner.current = publicKey;
       setOwner(publicKey);
-      setUi({
-        type: 'working',
-        message: 'Approve the sign-in message in Phantom…',
-      });
-      const challenge = challengeSchema.parse(
-        await responseBody(
-          fetch('/api/auth/challenge', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ publicKey }),
-          }),
-        ),
-      );
-      if (
-        generation.current !== run ||
-        phantom.publicKey?.toBase58() !== publicKey
-      )
-        return;
-      const signature = await phantom.signMessage(
-        new TextEncoder().encode(challenge.message),
-      );
-      if (
-        generation.current !== run ||
-        phantom.publicKey?.toBase58() !== publicKey
-      )
-        return;
-      const login = loginSchema.parse(
-        await responseBody(
-          fetch('/api/auth/session', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ signature: bs58.encode(signature) }),
-          }),
-        ),
-      );
-      if (login.owner !== publicKey)
-        throw new Error(
-          'The signed-in account differs from Phantom. Reconnect.',
+      let reviewed =
+        ui.type === 'review' &&
+        flow?.state === 'awaiting-approval' &&
+        flow.owner === publicKey
+          ? flow
+          : undefined;
+      if (!reviewed) {
+        setUi({
+          type: 'working',
+          message: 'Approve the sign-in message in Phantom…',
+        });
+        const challenge = challengeSchema.parse(
+          await responseBody(
+            fetch('/api/auth/challenge', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ publicKey }),
+            }),
+          ),
         );
+        if (
+          generation.current !== run ||
+          phantom.publicKey?.toBase58() !== publicKey
+        )
+          return;
+        const signature = await phantom.signMessage(
+          new TextEncoder().encode(challenge.message),
+        );
+        if (
+          generation.current !== run ||
+          phantom.publicKey?.toBase58() !== publicKey
+        )
+          return;
+        const login = loginSchema.parse(
+          await responseBody(
+            fetch('/api/auth/session', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ signature: bs58.encode(signature) }),
+            }),
+          ),
+        );
+        if (login.owner !== publicKey)
+          throw new Error(
+            'The signed-in account differs from Phantom. Reconnect.',
+          );
+      }
       let retryFailedSignature =
         flow?.owner === publicKey && flow.state === 'failed'
           ? flow.failedSignature
@@ -218,28 +232,21 @@ function App() {
         };
         setUi({ type: 'working', message: messages[next.state] });
         if (next.state === 'awaiting-approval') {
-          if (!next.transaction)
-            throw new Error('The agent approval transaction is missing.');
-          const transaction = VersionedTransaction.deserialize(
-            Buffer.from(next.transaction, 'base64'),
+          signedTransaction = await signReviewedAgentGrant(
+            reviewed,
+            next,
+            (transaction) => phantom.signTransaction(transaction),
           );
-          const originalMessage = Buffer.from(transaction.message.serialize());
-          const signed = await phantom.signTransaction(transaction);
+          reviewed = undefined;
           if (
             generation.current !== run ||
             phantom.publicKey?.toBase58() !== publicKey
           )
             return;
-          if (
-            !Buffer.from(signed.message.serialize()).equals(originalMessage)
-          ) {
-            throw new Error(
-              'Phantom changed the transaction message. Nothing was submitted.',
-            );
+          if (!signedTransaction) {
+            setUi({ type: 'review' });
+            return;
           }
-          signedTransaction = Buffer.from(signed.serialize()).toString(
-            'base64',
-          );
         } else {
           await new Promise((resolve) => window.setTimeout(resolve, 1500));
         }
@@ -290,50 +297,33 @@ function App() {
         </a>
       </header>
       <section className="wallet-card" aria-labelledby="title">
-        <div className="wallet-mark" aria-hidden="true">
-          s<span>↗</span>
-        </div>
-        <p className="eyebrow">PHANTOM + YOUR AGENT</p>
+        <p className="eyebrow">Solana Devnet</p>
         <h1 id="title">
-          Your wallet.
-          <br />
-          An agent with limits.
+          {ui.type === 'ready'
+            ? 'Your Swig wallet'
+            : ui.type === 'review'
+              ? 'Review agent access'
+              : 'Sign in with Phantom'}
         </h1>
         <p className="intro">
-          Sign in with Phantom to create your Swig wallet.
-          <br className="desktop" /> You keep full control. Your agent gets a
-          daily allowance.
+          Your Phantom account controls this wallet. Your project’s saved policy
+          sets the agent’s permissions.
         </p>
-
-        <div className="policy">
-          <div>
-            <span className="role-icon" aria-hidden="true">
-              P
-            </span>
-            <div>
-              <strong>You</strong>
-              <p>Full control, including managing roles</p>
-            </div>
-            <span className="role-tag">Phantom</span>
-          </div>
-          <div>
-            <span className="role-icon agent-icon" aria-hidden="true">
-              A
-            </span>
-            <div>
-              <strong>Your agent</strong>
-              <p>100 test USDC + 1 SOL per approximately daily window</p>
-              <small>
-                Any program or venue, including transfers within those limits.
-              </small>
-            </div>
-            <span className="role-tag">Local key</span>
-          </div>
-        </div>
-        <p className="timing">
-          Allowances reset every 216,000 slots. Actual timing varies.
-        </p>
-
+        {flow && (
+          <section className="policy-summary" aria-label="Agent permissions">
+            <h2>Agent allowance</h2>
+            <p>
+              <strong>{tokenUnits(flow.allowance.token, 6)} Devnet USDC</strong>{' '}
+              and <strong>{tokenUnits(flow.allowance.sol, 9)} SOL</strong> per{' '}
+              {BigInt(flow.allowance.window).toLocaleString('en-US')} slots
+              {flow.allowance.window === '216000' ? ' (about one day)' : ''}.
+            </p>
+            <p>
+              Any program, including transfers. The agent key is{' '}
+              <code>{flow.agentPublicKey}</code>.
+            </p>
+          </section>
+        )}
         <section className="account" aria-label="Phantom wallet status">
           <div>
             <p aria-live="polite" aria-atomic="true">
@@ -375,13 +365,15 @@ function App() {
           >
             {busy
               ? 'Setting up your wallet…'
-              : flow?.state === 'failed'
-                ? 'Retry failed transaction'
-                : flow
-                  ? 'Resume wallet setup'
-                  : owner
-                    ? 'Sign in with Phantom'
-                    : 'Connect Phantom'}
+              : ui.type === 'review'
+                ? 'Approve agent in Phantom'
+                : flow?.state === 'failed'
+                  ? 'Retry failed transaction'
+                  : flow
+                    ? 'Resume wallet setup'
+                    : owner
+                      ? 'Sign in with Phantom'
+                      : 'Connect Phantom'}
             <span aria-hidden="true">↗</span>
           </button>
         )}
@@ -452,7 +444,7 @@ function App() {
             <dt>Agent public key</dt>
             <dd>{config?.agentPublicKey || 'Loading…'}</dd>
             <dt>Policy</dt>
-            <dd>Phantom + Agent (Devnet)</dd>
+            <dd>{config?.policyId ?? 'Loading…'}</dd>
             <dt>Creation</dt>
             <dd>Reserved address → wallet activation → agent approval</dd>
           </dl>
