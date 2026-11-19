@@ -1,5 +1,5 @@
 import { createSwigWebClient, Network } from '@swig-wallet/expo-idp-sdk/web';
-import { describeGrant } from './preview.js';
+import { verifyWalletEmail } from './verify.js';
 
 const email = createSwigWebClient({
   redirectUri: location.origin + '/auth/callback',
@@ -23,6 +23,10 @@ async function run(button, operation) {
   } catch (error) {
     status.textContent =
       error instanceof Error ? error.message : 'Email sign-in failed';
+    if (button === approve && error?.code !== 'popup_blocked')
+      approve.hidden = true;
+    if (button.form === verify && error?.code !== 'invalid_code')
+      verify.hidden = true;
     restart.hidden = false;
   } finally {
     button.disabled = false;
@@ -49,23 +53,27 @@ start.onsubmit = (event) => {
 verify.onsubmit = (event) => {
   event.preventDefault();
   run(verify.querySelector('button'), async () => {
-    const result = await email.verify({
-      challengeId: challenge.challengeId,
-      code: document.querySelector('#code').value,
-    });
+    restart.hidden = true;
+    status.textContent = 'Verifying email…';
+    const result = await verifyWalletEmail(
+      email,
+      {
+        challengeId: challenge.challengeId,
+        code: document.querySelector('#code').value,
+      },
+      app.agentPublicKey,
+      () => {
+        verify.hidden = true;
+        document.querySelector('#code').value = '';
+        status.textContent =
+          'Email verified. Complete wallet approval in Swig.';
+      },
+    );
     if (result.status === 'complete') {
       await finish(result);
       return;
     }
-    const wallet = result.wallet;
-    if (!wallet || wallet.agentPublicKey !== app.agentPublicKey) {
-      email.cancel();
-      throw new Error('The wallet preview does not match the registered agent');
-    }
-    preview.textContent = describeGrant(wallet);
-    status.textContent =
-      'Email verified. Review the permissions in Swig to create your wallet.';
-    verify.hidden = true;
+    status.textContent = 'Open the Swig window to review wallet access.';
     approve.hidden = false;
     approve.focus();
   });

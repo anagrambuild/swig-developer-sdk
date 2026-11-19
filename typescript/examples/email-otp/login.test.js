@@ -4,7 +4,7 @@ import test from 'node:test';
 import { verifyRegistration } from './check-registration.js';
 import { appOrigin, isLoopback } from './origin.js';
 import { LoginSessions } from './sessions.js';
-import { describeGrant } from './web/preview.js';
+import { verifyWalletEmail } from './web/verify.js';
 
 test('only a verified login issues an expiring application session', async () => {
   const issuer = 'https://issuer.test',
@@ -51,27 +51,95 @@ test('only a verified login issues an expiring application session', async () =>
   assert.equal(sessions.subject(id), 'verified-user');
   assert.equal(sessions.subject(id, Date.now() + 300001), undefined);
 });
-test('the preview displays the observed mint and both human-readable limits', () => {
-  const agentPolicy = {
-    mint: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',
-    tokenAmount: '100000000',
-    solAmount: '1000000000',
-    window: '216000',
+test('Verify email proceeds directly to trusted approval and validates the registered agent and mint', async (t) => {
+  const events = [];
+  const popup = { document: { body: {} }, close: () => events.push('close') };
+  const previous = globalThis.window;
+  t.after(() => {
+    if (previous === undefined) delete globalThis.window;
+    else globalThis.window = previous;
+  });
+  globalThis.window = {
+    open: () => {
+      events.push('open');
+      return popup;
+    },
   };
   const wallet = {
-    walletAddress: 'wallet',
     agentPublicKey: 'agent',
-    agentPolicy,
+    agentPolicy: { mint: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU' },
   };
-  assert.match(
-    describeGrant(wallet),
-    /100 Devnet USDC .* and 1 SOL per 216000 slots/,
+  const input = { challengeId: 'challenge', code: '123456' };
+  const complete = { status: 'complete', callbackUrl: 'callback' };
+  const pending = { status: 'approval_required', wallet };
+  const email = {
+    verify: async () => {
+      events.push('verify');
+      return pending;
+    },
+    approve: async (request, options) => {
+      assert.deepEqual(request, { challengeId: input.challengeId });
+      assert.equal(options.approvalWindow, popup);
+      events.push('approve');
+      return complete;
+    },
+    cancel: () => events.push('cancel'),
+  };
+  const verified = () => events.push('verified');
+  assert.equal(
+    await verifyWalletEmail(email, input, 'agent', verified),
+    complete,
   );
-  assert.throws(() =>
-    describeGrant({
-      ...wallet,
-      agentPolicy: { ...agentPolicy, mint: 'other' },
-    }),
+  assert.deepEqual(events, ['open', 'verify', 'verified', 'approve', 'close']);
+  events.length = 0;
+  await assert.rejects(
+    verifyWalletEmail(email, input, 'other', verified),
+    /registered agent/,
+  );
+  assert.deepEqual(events, ['open', 'verify', 'verified', 'cancel', 'close']);
+  events.length = 0;
+  popup.closed = true;
+  assert.equal(
+    await verifyWalletEmail(email, input, 'agent', verified),
+    pending,
+  );
+  assert.deepEqual(events, ['open', 'verify', 'verified', 'close']);
+  popup.closed = false;
+  const rejected = new Error('setup simulation failed');
+  email.approve = async () => {
+    throw rejected;
+  };
+  events.length = 0;
+  await assert.rejects(
+    verifyWalletEmail(email, input, 'agent', verified),
+    rejected,
+  );
+  assert.deepEqual(events, ['open', 'verify', 'verified', 'close']);
+  const verifyConsent = email.verify;
+  email.verify = async () => {
+    throw new Error('invalid code');
+  };
+  events.length = 0;
+  await assert.rejects(
+    verifyWalletEmail(email, input, 'agent', verified),
+    /invalid code/,
+  );
+  assert.deepEqual(events, ['open', 'close']);
+  email.verify = verifyConsent;
+  globalThis.window.open = () => null;
+  assert.equal(
+    await verifyWalletEmail(email, input, 'agent', verified),
+    pending,
+  );
+  wallet.agentPolicy.mint = 'other';
+  await assert.rejects(
+    verifyWalletEmail(email, input, 'agent', verified),
+    /Devnet USDC/,
+  );
+  email.verify = async () => complete;
+  assert.equal(
+    await verifyWalletEmail(email, input, 'agent', verified),
+    complete,
   );
 });
 
