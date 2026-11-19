@@ -1,13 +1,22 @@
 import { createRemoteJWKSet } from 'jose';
 import { randomBytes } from 'node:crypto';
+import { once } from 'node:events';
 import { readFile } from 'node:fs/promises';
-import { createServer } from 'node:http';
+import { createServer as createHttpServer } from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
 import { SwigClient } from '../../dist/index.js';
+import { verifyHttpsRegistration } from './check-https.js';
+import { appOrigin, isLoopback } from './origin.js';
 import { LoginSessions } from './sessions.js';
 
-const port = Number(process.env.PORT || 4181);
-const origin = 'http://127.0.0.1:' + port;
-const callbackUrl = origin + '/auth/callback';
+const origin = appOrigin(process.env.SWIG_APP_ORIGIN);
+const local = isLoopback(origin.hostname);
+const port = local
+  ? Number(origin.port || 443)
+  : Number(process.env.PORT || 4181);
+if (!Number.isInteger(port) || port < 1 || port > 65535)
+  throw new Error('Set a valid port for the email app.');
+const callbackUrl = new URL('/auth/callback', origin).href;
 const apiKey = process.env.SWIG_API_KEY;
 const walletTemplateId = process.env.SWIG_WALLET_TEMPLATE_ID;
 if (!apiKey || !walletTemplateId)
@@ -19,6 +28,21 @@ const agentPublicKey =
   process.env.SWIG_AGENT_PUBLIC_KEY ||
   (await readFile('.local/agent-public-key', 'utf8')).trim();
 const projectPaymasterAddress = process.env.SWIG_PROJECT_PAYMASTER_ADDRESS;
+const issuer = 'https://backend.prod.infra.onswig.com/identity/public';
+const jwks = createRemoteJWKSet(new URL(issuer + '/oidc/jwks.json'));
+const index = await readFile(new URL('./web/index.html', import.meta.url));
+const bundle = await readFile(new URL('./dist/main.js', import.meta.url));
+// Local TLS terminates here. A configured external origin terminates TLS at its reverse proxy.
+const server = local
+  ? createHttpsServer({
+      cert: await readFile('.local/localhost.pem'),
+      key: await readFile('.local/localhost-key.pem'),
+    })
+  : createHttpServer();
+const starting = (_req, res) => res.writeHead(503).end();
+server.on('request', starting);
+server.listen(port, origin.hostname === '[::1]' ? '::1' : '127.0.0.1');
+await once(server, 'listening');
 const app = await sdk.idp.ensureEmailWalletApp({
   network: 'devnet',
   callbackUrl,
@@ -26,10 +50,6 @@ const app = await sdk.idp.ensureEmailWalletApp({
   agentPublicKey,
   projectPaymasterAddress,
 });
-const issuer = 'https://backend.prod.infra.onswig.com/identity/public';
-const jwks = createRemoteJWKSet(new URL(issuer + '/oidc/jwks.json'));
-const index = await readFile(new URL('./web/index.html', import.meta.url));
-const bundle = await readFile(new URL('./dist/main.js', import.meta.url));
 const attempts = new Map();
 const sessions = new LoginSessions();
 const cleanup = setInterval(() => {
@@ -39,11 +59,12 @@ const cleanup = setInterval(() => {
 }, 60000);
 cleanup.unref();
 
-createServer(async (req, res) => {
+server.off('request', starting);
+server.on('request', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
-  if (req.headers.host !== new URL(origin).host) {
+  if (req.headers.host !== origin.host) {
     res.writeHead(403).end();
     return;
   }
@@ -68,7 +89,7 @@ createServer(async (req, res) => {
       );
     return;
   }
-  if (req.method !== 'POST' || req.headers.origin !== origin) {
+  if (req.method !== 'POST' || req.headers.origin !== origin.origin) {
     res.writeHead(403).end();
     return;
   }
@@ -76,7 +97,8 @@ createServer(async (req, res) => {
     sessions.logout(sessionId);
     res
       .writeHead(204, {
-        'Set-Cookie': 'session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0',
+        'Set-Cookie':
+          'session=; Secure; HttpOnly; SameSite=Strict; Path=/; Max-Age=0',
       })
       .end();
     return;
@@ -90,7 +112,9 @@ createServer(async (req, res) => {
       .writeHead(200, {
         'Content-Type': 'application/json',
         'Set-Cookie':
-          'otp=' + cookie + '; HttpOnly; SameSite=Strict; Path=/; Max-Age=600',
+          'otp=' +
+          cookie +
+          '; Secure; HttpOnly; SameSite=Strict; Path=/; Max-Age=600',
       })
       .end(
         JSON.stringify({
@@ -133,10 +157,10 @@ createServer(async (req, res) => {
     res
       .writeHead(204, {
         'Set-Cookie': [
-          'otp=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0',
+          'otp=; Secure; HttpOnly; SameSite=Strict; Path=/; Max-Age=0',
           'session=' +
             session.id +
-            '; HttpOnly; SameSite=Strict; Path=/; Max-Age=' +
+            '; Secure; HttpOnly; SameSite=Strict; Path=/; Max-Age=' +
             session.maxAge,
         ],
       })
@@ -144,6 +168,6 @@ createServer(async (req, res) => {
   } catch {
     res.writeHead(401).end('Email sign-in could not be verified. Start again.');
   }
-}).listen(port, '127.0.0.1', () =>
-  console.log('Email wallet app listening at', origin),
-);
+});
+await verifyHttpsRegistration(origin, app.clientId, agentPublicKey);
+console.log('Ready for email sign-in at', origin.origin);

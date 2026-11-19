@@ -1,6 +1,8 @@
 import { generateKeyPair, SignJWT } from 'jose';
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { verifyHttpsRegistration } from './check-https.js';
+import { appOrigin, isLoopback } from './origin.js';
 import { LoginSessions } from './sessions.js';
 import { describeGrant } from './web/preview.js';
 
@@ -71,4 +73,58 @@ test('the preview displays the observed mint and both human-readable limits', ()
       agentPolicy: { ...agentPolicy, mint: 'other' },
     }),
   );
+});
+
+test('registers exact HTTPS callbacks for loopback and HTTPS proxies', () => {
+  assert.equal(appOrigin(undefined, '4181').origin, 'https://127.0.0.1:4181');
+  assert.equal(appOrigin(undefined, '4312').origin, 'https://127.0.0.1:4312');
+  for (const host of ['localhost', '127.0.0.1', '[::1]']) {
+    assert.ok(isLoopback(appOrigin('https://' + host + ':4182').hostname));
+  }
+  const proxy = appOrigin('https://wallet.example/');
+  assert.equal(isLoopback(proxy.hostname), false);
+  assert.equal(
+    new URL('/auth/callback', proxy).href,
+    'https://wallet.example/auth/callback',
+  );
+  for (const invalid of [
+    'http://127.0.0.1:4181',
+    'https://user@wallet.example',
+    'https://wallet.example/?',
+    'https://wallet.example/#',
+    'https://wallet.example/other',
+    'https://wallet.example/../',
+  ]) {
+    assert.throws(() => appOrigin(invalid));
+  }
+});
+
+test('readiness proves the public HTTPS endpoint serves this registration and agent', async (t) => {
+  const origin = appOrigin('https://wallet.example');
+  const attempt = {
+    clientId: 'this-client',
+    agentPublicKey: 'this-agent',
+    callbackUrl: 'https://wallet.example/auth/callback',
+  };
+  const http = t.mock.method(globalThis, 'fetch', async () =>
+    Response.json(attempt),
+  );
+  await verifyHttpsRegistration(
+    origin,
+    attempt.clientId,
+    attempt.agentPublicKey,
+  );
+  for (const wrong of [
+    { clientId: 'other' },
+    { agentPublicKey: 'stale' },
+    { callbackUrl: 'https://other.example/auth/callback' },
+  ]) {
+    http.mock.mockImplementation(async () =>
+      Response.json({ ...attempt, ...wrong }),
+    );
+    await assert.rejects(
+      verifyHttpsRegistration(origin, attempt.clientId, attempt.agentPublicKey),
+      /does not match/,
+    );
+  }
 });
